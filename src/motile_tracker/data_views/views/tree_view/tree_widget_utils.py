@@ -117,11 +117,11 @@ def extract_sorted_tracks(
     node_to_track_id = dict(
         zip(node_ids_list, df_attrs[tracklet_key].to_list(), strict=True)
     )
+    # Column-oriented feature access: index feat_cols[key][row] by node row instead
+    # of building an O(nodes x features) dict-of-dicts and re-reading it per node.
     feat_cols = {key: df_attrs[key].to_list() for key in node_feature_keys}
-    node_to_feat = {
-        node: {key: feat_cols[key][i] for key in node_feature_keys}
-        for i, node in enumerate(node_ids_list)
-    }
+    node_feature_key_set = set(node_feature_keys)
+    node_to_row = {node: i for i, node in enumerate(node_ids_list)}
 
     # Batch-fetch all edges in one query and build adjacency maps.
     # This replaces all per-node predecessors/successors/in_degree/out_degree calls.
@@ -139,16 +139,17 @@ def extract_sorted_tracks(
     track_list = []
     parent_mapping = []
 
-    # Identify parent nodes (nodes with more than one child) and end nodes
-    parent_nodes = [n for n in node_ids_list if len(parent_to_children.get(n, [])) > 1]
-    end_nodes = [n for n in node_ids_list if n not in parent_to_children]
+    # Identify parent nodes (nodes with more than one child) and end nodes.
+    # Sets, so per-node membership checks in the loop below are O(1), not O(N).
+    parent_nodes = {n for n in node_ids_list if len(parent_to_children.get(n, [])) > 1}
+    end_nodes = {n for n in node_ids_list if n not in parent_to_children}
 
     # BFS to collect tracklets, cutting edges at division (parent) nodes
     tracklets = get_tracklets(
         parent_to_children,
         child_to_parent,
         node_ids_list,
-        set(parent_nodes),
+        parent_nodes,
         node_to_track_id,
     )
 
@@ -159,6 +160,19 @@ def extract_sorted_tracks(
     tid_to_color = dict(
         zip(unique_track_ids, colormap.map(np.asarray(unique_track_ids)), strict=True)
     )
+
+    # Precompute per-feature display metadata once (was re-read from tracks.features
+    # for every node inside the loop below).
+    node_features_meta = [
+        (
+            feature_key,
+            feature.get("display_name", feature_key),
+            feature.get("value_names", None),
+            feature.get("num_values", 1),
+        )
+        for feature_key, feature in tracks.features.items()
+        if feature.get("feature_type") != "edge" and feature_key in node_feature_key_set
+    ]
 
     for node_set in tracklets:
         # Sort nodes in each tracklet by time using the precomputed dict
@@ -191,15 +205,14 @@ def extract_sorted_tracks(
                 "symbol": symbol,
             }
 
-            for feature_key, feature in tracks.features.items():
-                if feature.get("feature_type") == "edge":
-                    continue
-                if feature_key not in node_to_feat[node]:
-                    continue
-                display_name = feature.get("display_name", feature_key)
-                value_names = feature.get("value_names", None)
-                val = node_to_feat[node][feature_key]
-                num_values = feature.get("num_values", 1)
+            row = node_to_row[node]
+            for (
+                feature_key,
+                display_name,
+                value_names,
+                num_values,
+            ) in node_features_meta:
+                val = feat_cols[feature_key][row]
                 if num_values > 1:
                     for i in range(num_values):
                         v = val[i]
@@ -244,8 +257,10 @@ def extract_sorted_tracks(
         prev_axis_order,
     )
 
+    # dict lookup instead of x_axis_order.index() per node (was O(nodes x tracks)).
+    x_axis_pos_by_track = {tid: i for i, tid in enumerate(x_axis_order)}
     for node in track_list:
-        node["x_axis_pos"] = x_axis_order.index(node["track_id"])
+        node["x_axis_pos"] = x_axis_pos_by_track[node["track_id"]]
 
     df = pd.DataFrame(track_list)
     return df, x_axis_order
