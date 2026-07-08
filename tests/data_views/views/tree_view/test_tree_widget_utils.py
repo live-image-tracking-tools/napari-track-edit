@@ -1,9 +1,11 @@
 import napari
+import numpy as np
 import pandas as pd
 import polars as pl
 from funtracks.annotators import TrackAnnotator
 from funtracks.data_model import SolutionTracks
 from funtracks.features import Feature
+from funtracks.user_actions import UserDeleteEdge, UserDeleteNodes
 from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
 
 from motile_tracker.data_views.views.tree_view.tree_widget_utils import (
@@ -11,6 +13,66 @@ from motile_tracker.data_views.views.tree_view.tree_widget_utils import (
     get_features_from_tracks,
     get_tracklets,
 )
+
+
+def _normalize(df: pd.DataFrame) -> pd.DataFrame:
+    """Make a track_df comparable: stable row order, hashable color/state cells."""
+    df = df.sort_values("node_id").reset_index(drop=True)
+    df = df.copy()
+    df["color"] = df["color"].apply(lambda c: tuple(np.asarray(c).tolist()))
+    df["state"] = df["state"].astype(str)
+    return df[sorted(df.columns)]
+
+
+def _assert_reuse_matches_full(tracks, colormap, prev_attrs, prev_axis):
+    """The cached-attr reuse path must produce the same track_df as a full fetch."""
+    reuse_df, reuse_axis, _ = extract_sorted_tracks(
+        tracks, colormap, prev_axis, cached_node_attrs=prev_attrs
+    )
+    full_df, full_axis, _ = extract_sorted_tracks(
+        tracks, colormap, prev_axis, cached_node_attrs=None
+    )
+    pd.testing.assert_frame_equal(_normalize(reuse_df), _normalize(full_df))
+    assert reuse_axis == full_axis
+
+
+def test_extract_sorted_tracks_attr_reuse_equivalence(solution_tracks_2d):
+    """Reusing cached node attributes (refetching only tracklet_id) must yield the
+    exact same dataframe as a full fetch, for a no-op, a plain delete, a
+    division-adjacent delete (relabels a tracklet), and an edge delete."""
+    tracks = solution_tracks_2d
+    colormap = napari.utils.colormaps.label_colormap(49, seed=0.5, background_value=0)
+
+    # Full build → cache the node attributes.
+    _, axis, attrs = extract_sorted_tracks(tracks, colormap)
+
+    # (a) no edit: cache == current node set
+    _assert_reuse_matches_full(tracks, colormap, attrs, axis)
+
+    # (b) delete a child node at the division (relabels the sibling's tracklet, so
+    # the tracklet_id refetch must reflect the change)
+    UserDeleteNodes(tracks, nodes=[2])
+    _assert_reuse_matches_full(tracks, colormap, attrs, axis)
+
+
+def test_extract_sorted_tracks_attr_reuse_after_edge_delete(solution_tracks_2d):
+    """Deleting an edge changes tracklet structure; the tracklet refetch in the reuse
+    path must capture it so the result matches a full fetch."""
+    import tracksdata as td
+
+    tracks = solution_tracks_2d
+    colormap = napari.utils.colormaps.label_colormap(49, seed=0.5, background_value=0)
+    _, axis, attrs = extract_sorted_tracks(tracks, colormap)
+
+    # delete the edge from the division parent (1) to child (3)
+    edge_df = tracks.graph.edge_attrs(
+        attr_keys=[td.DEFAULT_ATTR_KEYS.EDGE_SOURCE, td.DEFAULT_ATTR_KEYS.EDGE_TARGET]
+    )
+    src = edge_df[td.DEFAULT_ATTR_KEYS.EDGE_SOURCE].to_list()
+    tgt = edge_df[td.DEFAULT_ATTR_KEYS.EDGE_TARGET].to_list()
+    UserDeleteEdge(tracks, (int(src[0]), int(tgt[0])))
+
+    _assert_reuse_matches_full(tracks, colormap, attrs, axis)
 
 
 def test_track_df(solution_tracks_2d):
@@ -35,7 +97,7 @@ def test_track_df(solution_tracks_2d):
         background_value=0,
     )
 
-    track_df, _ = extract_sorted_tracks(tracks, colormap)
+    track_df, _, _ = extract_sorted_tracks(tracks, colormap)
     assert isinstance(track_df, pd.DataFrame)
     assert track_df.loc[track_df["node_id"] == 1, "custom_attr"].values[0] == 10
     assert track_df.loc[track_df["node_id"] == 2, "custom_attr"].values[0] == 0
@@ -101,7 +163,7 @@ def test_extract_sorted_tracks_incomplete_lineage():
     )
 
     colormap = napari.utils.colormaps.label_colormap(49, seed=0.5, background_value=0)
-    track_df, _ = extract_sorted_tracks(tracks, colormap)
+    track_df, _, _ = extract_sorted_tracks(tracks, colormap)
 
     # C (node 3) must be in its own tracklet with track_id=2, not merged into A+B (track_id=1)
     node_c_track_id = track_df.loc[track_df["node_id"] == 3, "track_id"].values[0]

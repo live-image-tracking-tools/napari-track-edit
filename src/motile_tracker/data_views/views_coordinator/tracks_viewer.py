@@ -4,7 +4,14 @@ from typing import Optional
 
 import napari
 import pandas as pd
-from funtracks.actions import AddNode, BasicAction, DeleteNode
+from funtracks.actions import (
+    AddEdge,
+    AddNode,
+    BasicAction,
+    DeleteEdge,
+    DeleteNode,
+    UpdateTrackIDs,
+)
 from funtracks.data_model import SolutionTracks
 from funtracks.exceptions import InvalidActionError
 from funtracks.user_actions import (
@@ -109,6 +116,11 @@ class TracksViewer:
 
         self.track_df = pd.DataFrame()  # initialize empty dataframe
         self.axis_order: list[int] = []
+        # Cache of the node-attribute frame from the last track_df build, reused by
+        # update_track_df to skip the expensive feature fetch on topology-only edits.
+        # Invalidated (see _on_action_applied) whenever an action changes node values.
+        self._cached_node_attrs = None
+        self._node_attrs_reusable = True
 
         self.tracks_list = TracksList()
         self.tracks_list.view_tracks.connect(self.update_tracks)
@@ -217,16 +229,23 @@ class TracksViewer:
         # in the case menu_manager was never initialized, we cannot directly check if
         # widgets exist, so we always update the track_df if self.tracks is not None.
 
+        # refresh_view means a new tracks object, so the cached attrs are stale.
+        # Otherwise reuse them unless a value-changing action invalidated them.
         if refresh_view:
-            self.track_df, self.axis_order = extract_sorted_tracks(
-                self.tracks, self.colormap
-            )
+            prev_axis_order = None
+            cached = None
         else:
-            self.track_df, self.axis_order = extract_sorted_tracks(
-                self.tracks,
-                self.colormap,
-                self.axis_order,
-            )
+            prev_axis_order = self.axis_order
+            cached = self._cached_node_attrs if self._node_attrs_reusable else None
+
+        self.track_df, self.axis_order, self._cached_node_attrs = extract_sorted_tracks(
+            self.tracks,
+            self.colormap,
+            prev_axis_order,
+            cached,
+        )
+        # Cache now reflects current node values; next edit starts reusable again.
+        self._node_attrs_reusable = True
 
     def _refresh(self, node: str | None = None, refresh_view: bool = False) -> None:
         """Call refresh function on napari layers and the submit signal that tracks are
@@ -414,6 +433,14 @@ class TracksViewer:
             self.selected_nodes.deleted_items.add(action.node)
         elif isinstance(action, AddNode):
             self.selected_nodes.deleted_items.discard(action.node)
+
+        # Node feature values (position, area, ...) are unchanged by topology and
+        # tracklet-id edits, so the cached node attributes can be reused. Any other
+        # action (attribute or segmentation edits) changes values and invalidates it.
+        if not isinstance(
+            action, AddNode | DeleteNode | AddEdge | DeleteEdge | UpdateTrackIDs
+        ):
+            self._node_attrs_reusable = False
 
     def update_selection(
         self, set_view: bool = True, update_counts: bool = False
