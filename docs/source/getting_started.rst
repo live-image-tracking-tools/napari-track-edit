@@ -110,6 +110,10 @@ The tracking results can also be visualized as a lineage tree.
 You can open the lineage tree widget via ``Plugins`` > ``Motile Tracker`` > ``Widget - Lineage View``.
 For more details, go to the :doc:`Tree View <tree_view>` documentation.
 
+Tracking from scratch
+*********************
+Instead of automatic tracking, it is also possible to manually track from scratch. The ``Tracks List`` widget offers the option to create an empty tree that you can populate yourself by adding nodes as points or as segmentation labels.
+
 Displaying feature measurements
 *******************************
 If you are tracking with a segmentation layer, you can select size and shape features to measure in the ``Features`` widget.
