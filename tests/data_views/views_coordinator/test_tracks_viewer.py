@@ -195,6 +195,55 @@ class TestEdgeOperations:
         # Conflicting edge should have been removed by force
         assert not tracks.graph.has_edge(3, 4)
 
+    def test_set_division_makes_and_breaks_division(self, viewer, graph_2d, click_node):
+        """Test set_division connects a mother to two daughters and back again.
+
+        Node 4 (t2) already has daughter 5 (t4), node 6 (t4) is unconnected, so the
+        first call completes the division and the second call breaks it.
+        """
+        tracks = MotileRun(graph=graph_2d, run_name="test", ndim=3, time_attr="t")
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(tracks=tracks, name="test")
+
+        click_node(tracks_viewer, 5)
+        click_node(tracks_viewer, 6, append=True)
+        click_node(tracks_viewer, 4, append=True)
+
+        tracks_viewer.set_division()
+        assert tracks.graph.has_edge(4, 5)
+        assert tracks.graph.has_edge(4, 6)
+
+        # Running it again on the same trio breaks the division
+        tracks_viewer.set_division()
+        assert not tracks.graph.has_edge(4, 5)
+        assert not tracks.graph.has_edge(4, 6)
+
+        # Undo restores the division
+        tracks_viewer.undo()
+        assert tracks.graph.has_edge(4, 5)
+        assert tracks.graph.has_edge(4, 6)
+
+    def test_set_division_invalid_selection_warns(self, viewer, graph_2d, click_node):
+        """Test set_division shows a warning instead of raising on a bad selection."""
+        tracks = MotileRun(graph=graph_2d, run_name="test", ndim=3, time_attr="t")
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(tracks=tracks, name="test")
+
+        # Nodes 2 and 3 are both at t=1, so there is no unique mother node
+        click_node(tracks_viewer, 2)
+        click_node(tracks_viewer, 3, append=True)
+        click_node(tracks_viewer, 5, append=True)
+
+        with patch(
+            "motile_tracker.data_views.views_coordinator.tracks_viewer.QMessageBox.warning"
+        ) as warning:
+            tracks_viewer.set_division()
+
+        warning.assert_called_once()
+        assert "exactly one node to be earlier" in warning.call_args[0][2]
+        assert not tracks.graph.has_edge(2, 5)
+        assert not tracks.graph.has_edge(3, 5)
+
 
 class TestDisplayModes:
     """Tests for display mode switching and filtering."""

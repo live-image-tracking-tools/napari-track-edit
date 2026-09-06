@@ -184,7 +184,7 @@ class EditingMenu(QWidget):
         node_box.setLayout(node_box_layout)
 
         edge_box = QGroupBox("Edit Edge(s)")
-        edge_box.setMaximumHeight(120)
+        edge_box.setMaximumHeight(170)
         edge_box_layout = QVBoxLayout()
 
         self.delete_edge_btn = QPushButton("Break [B]")
@@ -193,16 +193,24 @@ class EditingMenu(QWidget):
         self.create_edge_btn = QPushButton("Add [A]")
         self.create_edge_btn.clicked.connect(self.tracks_viewer.create_edge)
         self.create_edge_btn.setEnabled(False)
+        self.set_division_btn = QPushButton("Make/break division [Y]")
+        self.set_division_btn.setToolTip(
+            "Select a parent node and its two child nodes to connect them as a "
+            "division, or to break an existing division."
+        )
+        self.set_division_btn.clicked.connect(self.tracks_viewer.set_division)
+        self.set_division_btn.setEnabled(False)
 
         edge_box_layout.addWidget(self.delete_edge_btn)
         edge_box_layout.addWidget(self.create_edge_btn)
+        edge_box_layout.addWidget(self.set_division_btn)
 
         edge_box.setLayout(edge_box_layout)
 
-        self.undo_btn = QPushButton("Undo (Z)")
+        self.undo_btn = QPushButton("Undo [Z]")
         self.undo_btn.clicked.connect(self.tracks_viewer.undo)
 
-        self.redo_btn = QPushButton("Redo (R)")
+        self.redo_btn = QPushButton("Redo [R]")
         self.redo_btn.clicked.connect(self.tracks_viewer.redo)
 
         box_layout.addWidget(node_box)
@@ -215,7 +223,7 @@ class EditingMenu(QWidget):
         main_layout = QVBoxLayout()
         main_layout.addWidget(box)
         self.setLayout(main_layout)
-        self.setMaximumHeight(450)
+        self.setMaximumHeight(500)
 
     def update_track_id_color(self):
         """Display track ID value and color"""
@@ -236,6 +244,8 @@ class EditingMenu(QWidget):
         """Set the buttons to enabled/disabled depending on the selected nodes"""
 
         n_selected = len(self.tracks_viewer.selected_nodes)
+        self.set_division_btn.setEnabled(n_selected == 3)
+
         if n_selected == 0:
             self.delete_node_btn.setEnabled(False)
             self.delete_edge_btn.setEnabled(False)
@@ -268,4 +278,4 @@ class EditingSelectionWidget(QWidget):
         selection_editing_layout.addWidget(selection_widget)
         selection_editing_layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(selection_editing_layout)
-        self.setMaximumHeight(600)
+        self.setMaximumHeight(650)

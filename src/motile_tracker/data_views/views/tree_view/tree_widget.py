@@ -237,6 +237,10 @@ class TreeWidget(QWidget):
         """Swap the nodes by swapping upstream edges"""
         self.tracks_viewer.swap_nodes()
 
+    def set_division(self):
+        """Make or break a division between the three selected nodes"""
+        self.tracks_viewer.set_division()
+
     def undo(self):
         """Undo action."""
         self.tracks_viewer.undo()
