@@ -44,6 +44,34 @@ def click_node():
 
 
 @pytest.fixture(autouse=True)
+def isolate_napari_settings(tmp_path_factory, monkeypatch):
+    """Redirect napari's settings singleton to a throwaway file for each test.
+
+    `napari.settings.get_settings()` is a process-wide singleton that reads
+    from and autosaves to a real file on disk (the user's actual napari
+    config, outside of test isolation). Our keybind registration
+    (`register_napari_actions`) reads/writes `get_settings().shortcuts`, so
+    without this, running the test suite mutates the real napari settings
+    file on whichever machine runs it - and, symmetrically, stale keybind
+    state from a previous manual napari session or test run can leak into
+    what a test sees.
+
+    Uses its own `tmp_path_factory`-allocated directory rather than a
+    test's own `tmp_path` fixture - some tests assert on the exact contents
+    of `tmp_path` (e.g. `test_tracks_list.py`'s
+    `assert list(tmp_path.iterdir()) == [...]`), and a stray settings.yaml
+    dropped into that same directory breaks those assertions.
+    """
+    import napari.settings as napari_settings_module
+
+    settings_dir = tmp_path_factory.mktemp("napari_settings")
+    monkeypatch.setattr(napari_settings_module, "_SETTINGS", None)
+    napari_settings_module.get_settings(path=settings_dir / "settings.yaml")
+    yield
+    monkeypatch.setattr(napari_settings_module, "_SETTINGS", None)
+
+
+@pytest.fixture(autouse=True)
 def reset_tracks_viewer():
     """Reset TracksViewer singleton before and after each test.
 

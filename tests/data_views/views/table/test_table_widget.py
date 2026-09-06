@@ -163,11 +163,11 @@ def test_table_widget_keybinds(colored_table_widget, qtbot):
 
     The table widget supports keybinds that are delegated to tracks_viewer:
     - D / Delete: delete_node
-    - A: create_edge
+    - Shift+A: create_edge
     - B: delete_edge
     - S: swap_nodes
     - Z: undo
-    - R: redo
+    - R / Ctrl+Shift+Z: redo
     - Escape: deselect
     - E: restore_selection
     """
@@ -215,8 +215,8 @@ def test_table_widget_keybinds(colored_table_widget, qtbot):
     qtbot.keyPress(table_widget, Qt.Key_Delete)
     delete_mock.assert_called_once()
 
-    # Test A key calls create_edge
-    qtbot.keyPress(table_widget, Qt.Key_A)
+    # Test Shift+A key calls create_edge
+    qtbot.keyPress(table_widget, Qt.Key_A, Qt.KeyboardModifier.ShiftModifier)
     create_edge_mock.assert_called_once()
 
     # Test B key calls delete_edge
@@ -233,6 +233,15 @@ def test_table_widget_keybinds(colored_table_widget, qtbot):
 
     # Test R key calls redo
     qtbot.keyPress(table_widget, Qt.Key_R)
+    redo_mock.assert_called_once()
+
+    # Test Ctrl+Shift+Z also calls redo
+    redo_mock.reset_mock()
+    qtbot.keyPress(
+        table_widget,
+        Qt.Key_Z,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+    )
     redo_mock.assert_called_once()
 
     # Test Escape key calls deselect

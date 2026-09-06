@@ -17,8 +17,7 @@ from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
 from motile_tracker.data_views.keybindings_config import (
-    KEYMAP,
-    bind_keymap,
+    register_napari_actions,
 )
 from motile_tracker.data_views.node_type import NodeType
 from motile_tracker.data_views.views.layers.track_labels import new_label
@@ -147,7 +146,7 @@ class TracksViewer:
         self.tracks_list.colormap = self.colormap
 
     def set_keybinds(self):
-        bind_keymap(self.viewer, KEYMAP, self)
+        register_napari_actions(napari.Viewer, self)
 
     def request_new_track(self) -> None:
         """Request a new track id (with new segmentation label if a seg layer is present)"""
