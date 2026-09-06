@@ -174,6 +174,14 @@ class TestTrackColormapGetColors:
 
         assert np.array_equal(colors[0], [0, 0, 0, 0])
 
+    def test_get_color_unknown_node_matches_get_colors(self, solution_tracks_2d):
+        # get_color and get_colors must agree on unknown nodes: both transparent
+        # black, not one returning None and the other a placeholder color.
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+
+        assert np.array_equal(cmap.get_color(999), [0, 0, 0, 0])
+
     def test_reflects_alpha_overrides(self, solution_tracks_2d):
         cmap = TrackColormap()
         cmap.set_tracks(solution_tracks_2d)
@@ -243,8 +251,25 @@ class TestTrackColormapColorAlphaSeparation:
         cmap.remove_node(1)
 
         assert 1 not in cmap.nodes
-        assert cmap.get_color(1) is None
+        assert np.array_equal(cmap.get_color(1), [0, 0, 0, 0])
         assert cmap.get_alpha(1, default=None) is None
+
+
+class TestTrackColormapDefaultAlpha:
+    def test_set_tracks_uses_configured_default_alpha(self, solution_tracks_2d):
+        cmap = TrackColormap(default_alpha=0.5)
+        cmap.set_tracks(solution_tracks_2d)
+
+        for node in solution_tracks_2d.graph.node_ids():
+            assert cmap.get_alpha(node) == 0.5
+
+    def test_add_node_uses_configured_default_alpha(self, solution_tracks_2d):
+        cmap = TrackColormap(default_alpha=0.5)
+        cmap.set_tracks(solution_tracks_2d)
+
+        cmap.add_node(999, 1)
+
+        assert cmap.get_alpha(999) == 0.5
 
 
 class TestTrackColormapMap:
