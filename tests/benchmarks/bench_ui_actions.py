@@ -15,6 +15,8 @@ under the ``offscreen`` Qt platform, which lacks a real GL context.
 
 from __future__ import annotations
 
+import platform
+
 from synthetic_data import pick_nodes, tracklet_nodes
 
 # Rounds pytest-benchmark collects per measurement. The report gates on the *median*
@@ -25,6 +27,11 @@ from synthetic_data import pick_nodes, tracklet_nodes
 # minutes-long test. Those stay single-shot to keep CI time bounded.
 ROUNDS = 3  # default: enough samples for a robust median
 ROUNDS_BULK = 1  # ~50s bulk delete / its undo -- too expensive to repeat
+# macOS CI runners are noisier than Linux/Windows; more rounds (not a higher regression
+# ceiling) is what actually reduces spurious failures, since the gate already takes the
+# median. Raise this (rather than the ceiling) if a macOS-only benchmark reads as noisy.
+if platform.system() == "Darwin":
+    ROUNDS = ROUNDS * 2
 
 # ----------------------------------------------------------------------------------
 # Loading
