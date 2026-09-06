@@ -36,3 +36,39 @@ def confirm_force_operation(message: str) -> tuple[bool, bool]:
         return True, True
     else:
         return False, False
+
+
+def ask_connect_mode() -> bool | None:
+    """
+    Ask whether the selected nodes should be connected with divisions or linearly.
+
+    Returns:
+        True to connect linearly, False to connect with divisions, and None if the
+        user cancelled.
+    """
+
+    msg = QMessageBox()
+    msg.setWindowTitle("Connect nodes")
+    msg.setTextFormat(Qt.PlainText)
+    msg.setText(
+        "One or more of the selected nodes already has an outgoing edge.\n\n"
+        "Connect with divisions to keep those edges, or connect linearly to break "
+        "them and turn the selection into one linear track."
+    )
+    msg.setIconPixmap(QIcon.fromTheme("dialog-question").pixmap(64, 64))
+
+    divisions_button = msg.addButton("With divisions [C]", QMessageBox.YesRole)
+    linear_button = msg.addButton("Linear [Shift+C]", QMessageBox.AcceptRole)
+    msg.addButton("Cancel", QMessageBox.RejectRole)
+
+    msg.setDefaultButton(divisions_button)
+
+    msg.exec_()
+    clicked = msg.clickedButton()
+
+    if clicked is divisions_button:
+        return False
+    elif clicked is linear_button:
+        return True
+    else:
+        return None

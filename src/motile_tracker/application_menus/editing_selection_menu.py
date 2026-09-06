@@ -187,15 +187,17 @@ class EditingMenu(QWidget):
         edge_box.setMaximumHeight(120)
         edge_box_layout = QVBoxLayout()
 
-        self.delete_edge_btn = QPushButton("Break [B]")
-        self.delete_edge_btn.clicked.connect(self.tracks_viewer.delete_edge)
-        self.delete_edge_btn.setEnabled(False)
-        self.create_edge_btn = QPushButton("Add [A]")
-        self.create_edge_btn.clicked.connect(self.tracks_viewer.create_edge)
-        self.create_edge_btn.setEnabled(False)
+        self.connect_nodes_btn = QPushButton("Connect / Disconnect [C]")
+        self.connect_nodes_btn.setToolTip(
+            "Connect the selected nodes into one track, or break them apart again if "
+            "they are already connected. If some of them already have an outgoing "
+            "edge, you are asked whether to keep those edges as divisions ([C]) or "
+            "to break them into one linear track ([Shift+C])"
+        )
+        self.connect_nodes_btn.clicked.connect(self.tracks_viewer.connect_nodes)
+        self.connect_nodes_btn.setEnabled(False)
 
-        edge_box_layout.addWidget(self.delete_edge_btn)
-        edge_box_layout.addWidget(self.create_edge_btn)
+        edge_box_layout.addWidget(self.connect_nodes_btn)
 
         edge_box.setLayout(edge_box_layout)
 
@@ -238,20 +240,18 @@ class EditingMenu(QWidget):
         n_selected = len(self.tracks_viewer.selected_nodes)
         if n_selected == 0:
             self.delete_node_btn.setEnabled(False)
-            self.delete_edge_btn.setEnabled(False)
-            self.create_edge_btn.setEnabled(False)
+            self.connect_nodes_btn.setEnabled(False)
             self.swap_nodes_btn.setEnabled(False)
 
         elif n_selected == 2:
             self.delete_node_btn.setEnabled(True)
-            self.delete_edge_btn.setEnabled(True)
-            self.create_edge_btn.setEnabled(True)
+            self.connect_nodes_btn.setEnabled(True)
             self.swap_nodes_btn.setEnabled(True)
 
         else:
             self.delete_node_btn.setEnabled(True)
-            self.delete_edge_btn.setEnabled(False)
-            self.create_edge_btn.setEnabled(False)
+            self.connect_nodes_btn.setEnabled(n_selected > 2)
+            self.swap_nodes_btn.setEnabled(False)
 
 
 class EditingSelectionWidget(QWidget):

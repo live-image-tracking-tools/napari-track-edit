@@ -19,6 +19,7 @@ from motile_tracker.data_views.keybindings_config import (
     TREE_WIDGET_MODIFIER_ACTIONS,
     TREE_WIDGET_NAVIGATION_KEYS,
     TREE_WIDGET_SPECIFIC_ACTIONS,
+    resolve_key_action,
 )
 from motile_tracker.data_views.views.tree_view.flip_axes_widget import FlipTreeWidget
 from motile_tracker.data_views.views.tree_view.navigation_widget import NavigationWidget
@@ -190,7 +191,7 @@ class TreeWidget(QWidget):
         4. Navigation (arrow keys)
         """
         # Handle tree-widget-specific keybinds first (higher priority)
-        action_name = TREE_WIDGET_SPECIFIC_ACTIONS.get(event.key())
+        action_name = resolve_key_action(TREE_WIDGET_SPECIFIC_ACTIONS, event)
         if action_name:
             method = getattr(self, action_name, None)
             if method:
@@ -199,7 +200,7 @@ class TreeWidget(QWidget):
                 return
 
         # Try general keybinds (these also work in table widget)
-        action_name = GENERAL_KEY_ACTIONS.get(event.key())
+        action_name = resolve_key_action(GENERAL_KEY_ACTIONS, event)
         if action_name:
             method = getattr(self.tracks_viewer, action_name, None)
             if method:
@@ -225,13 +226,13 @@ class TreeWidget(QWidget):
         """Delete a node."""
         self.tracks_viewer.delete_node()
 
-    def create_edge(self):
-        """Create an edge."""
-        self.tracks_viewer.create_edge()
+    def connect_nodes_with_divisions(self):
+        """Connect or disconnect the selected nodes, keeping existing divisions."""
+        self.tracks_viewer.connect_nodes_with_divisions()
 
-    def delete_edge(self):
-        """Delete an edge."""
-        self.tracks_viewer.delete_edge()
+    def connect_nodes_linearly(self):
+        """Connect or disconnect the selected nodes into a single linear track."""
+        self.tracks_viewer.connect_nodes_linearly()
 
     def swap_nodes(self):
         """Swap the nodes by swapping upstream edges"""

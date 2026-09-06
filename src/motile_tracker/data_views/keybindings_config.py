@@ -4,6 +4,7 @@ This module defines all keybindings in a unified way, specifying:
 - The action to perform (method name)
 - Keys for napari layers (string format)
 - Keys for Qt widgets (Qt.Key constants)
+- Optionally the Qt modifier that must be held ("qt_modifiers", default: none)
 - The target(s) for the action: "tracks_viewer", "tree_widget", or both
 
 An action can target multiple objects. It will be available in the following ways:
@@ -20,6 +21,7 @@ from qtpy.QtCore import Qt
 
 if TYPE_CHECKING:
     from napari.layers import Labels, Points
+    from qtpy.QtGui import QKeyEvent
 
     from motile_tracker.data_views.views.layers.track_labels import TrackLabels
     from motile_tracker.data_views.views.layers.track_points import TrackPoints
@@ -48,14 +50,15 @@ KEYBINDINGS = {
         "qt_keys": [Qt.Key_D, Qt.Key_Delete],
         "targets": ["tracks_viewer"],
     },
-    "create_edge": {
-        "napari_keys": ["a"],
-        "qt_keys": [Qt.Key_A],
+    "connect_nodes_with_divisions": {
+        "napari_keys": ["c"],
+        "qt_keys": [Qt.Key_C],
         "targets": ["tracks_viewer"],
     },
-    "delete_edge": {
-        "napari_keys": ["b"],
-        "qt_keys": [Qt.Key_B],
+    "connect_nodes_linearly": {
+        "napari_keys": ["Shift-C"],
+        "qt_keys": [Qt.Key_C],
+        "qt_modifiers": Qt.ShiftModifier,
         "targets": ["tracks_viewer"],
     },
     "swap_nodes": {
@@ -140,19 +143,30 @@ KEYMAP = {
     if config["napari_keys"] and "tracks_viewer" in config["targets"]
 }
 
-# Qt General Key Actions: Qt key constants -> tracks_viewer method names
+# Qt General Key Actions: (Qt key constant, shift held) -> tracks_viewer method names
 GENERAL_KEY_ACTIONS = {}
 for action, config in KEYBINDINGS.items():
     if "tracks_viewer" in config["targets"] and config["qt_keys"]:
+        shift = bool(config.get("qt_modifiers", Qt.NoModifier) & Qt.ShiftModifier)
         for key in config["qt_keys"]:
-            GENERAL_KEY_ACTIONS[key] = action
+            GENERAL_KEY_ACTIONS[key, shift] = action
 
-# Qt Tree-Widget Specific Actions: Qt key constants -> tree_widget method names
+# Qt Tree-Widget Specific Actions: (key, shift held) -> tree_widget method names
 TREE_WIDGET_SPECIFIC_ACTIONS = {}
 for action, config in KEYBINDINGS.items():
     if "tree_widget" in config["targets"] and config["qt_keys"]:
+        shift = bool(config.get("qt_modifiers", Qt.NoModifier) & Qt.ShiftModifier)
         for key in config["qt_keys"]:
-            TREE_WIDGET_SPECIFIC_ACTIONS[key] = action
+            TREE_WIDGET_SPECIFIC_ACTIONS[key, shift] = action
+
+
+def resolve_key_action(actions: dict, event: QKeyEvent) -> str | None:
+    """Look up the action name bound to a Qt key event in `actions`, which is keyed by
+    (Qt key constant, whether shift is held)."""
+
+    shift = bool(event.modifiers() & Qt.ShiftModifier)
+    return actions.get((event.key(), shift))
+
 
 # Qt Modifier Actions: for mouse zoom constraints
 TREE_WIDGET_MODIFIER_ACTIONS = SPECIAL_KEYBINDS["qt_modifier_zoom"]

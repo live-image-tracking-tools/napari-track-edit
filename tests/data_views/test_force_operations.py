@@ -389,7 +389,7 @@ def test_invalid_edge_force(
         lambda message: confirm_response,
     )
 
-    tracks_viewer.create_edge()
+    tracks_viewer.connect_nodes()
 
     if expect_force_retry:
         assert solution_tracks_3d_with_division.graph.has_edge(5, 4)
@@ -400,25 +400,23 @@ def test_invalid_edge_force(
     assert tracks_viewer.force == confirm_response[1]
 
 
-def test_create_edge_third_daughter_blocked(
+def test_connect_third_daughter_is_forceable(
     viewer,
     solution_tracks_3d_with_division,
     monkeypatch,
     click_node,
 ):
-    r"""Adding a third daughter to a parent that already has 2 children
-    should pop up a QMessageBox.warning and not call funtracks.
+    r"""Connecting a third daughter to a parent that already has 2 children conflicts
+    with the existing daughter edges, so the force dialog is shown. Forcing removes
+    both existing daughter edges.
 
     TP
-    0      1                       1
-           |                       |
-    1      2          ->           2          (5 painted at t=2 as new track)
-          / \                     / \
-    2    3   4                   3   4    5
+    0      1                       1                     1
+           |                       |                     |
+    1      2          ->           2          -force->    2   3   4
+          / \                     / \                     \
+    2    3   4                   3   4    5                 5
 
-    Selecting 2 (parent, out_degree=2) and 5 and pressing "Add edge" should
-    show a popup and leave the graph unchanged — funtracks is never called,
-    so the merge-then-fail partial-mutation path is unreachable.
     """
     tracks_viewer = TracksViewer.get_instance(viewer)
     tracks_viewer.update_tracks(tracks=solution_tracks_3d_with_division, name="test")
@@ -441,18 +439,65 @@ def test_create_edge_third_daughter_blocked(
     tracks_viewer.selected_nodes.reset()
     click_node(tracks_viewer, 2)
     click_node(tracks_viewer, 5, append=True)
+    tracks_viewer.force = False
+
+    # 1) Declining the force dialog leaves the graph untouched
+    monkeypatch.setattr(
+        "motile_tracker.data_views.views_coordinator.tracks_viewer."
+        "confirm_force_operation",
+        lambda message: (False, False),
+    )
+    num_edges_before = tracks_viewer.tracks.graph.num_edges()
+    tracks_viewer.connect_nodes()
+
+    assert tracks_viewer.tracks.graph.num_edges() == num_edges_before
+    assert not tracks_viewer.tracks.graph.has_edge(2, 5)
+    assert tracks_viewer.tracks.graph.has_edge(2, 3)
+    assert tracks_viewer.tracks.graph.has_edge(2, 4)
+
+    # 2) Accepting it breaks both conflicting daughter edges and adds the new one
+    monkeypatch.setattr(
+        "motile_tracker.data_views.views_coordinator.tracks_viewer."
+        "confirm_force_operation",
+        lambda message: (True, False),
+    )
+    tracks_viewer.connect_nodes()
+
+    assert tracks_viewer.tracks.graph.has_edge(2, 5)
+    assert not tracks_viewer.tracks.graph.has_edge(2, 3)
+    assert not tracks_viewer.tracks.graph.has_edge(2, 4)
+
+
+def test_connect_horizontal_nodes_blocked(
+    viewer,
+    solution_tracks_3d_with_division,
+    monkeypatch,
+    click_node,
+):
+    """Connecting two nodes in the same time point can never be forced, so a plain
+    warning is shown and the graph is left unchanged."""
+
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_3d_with_division, name="test")
+
+    # Nodes 3 and 4 are the two daughters of node 2, both at t=2
+    tracks_viewer.selected_nodes.reset()
+    click_node(tracks_viewer, 3)
+    click_node(tracks_viewer, 4, append=True)
 
     warning_mock = MagicMock(return_value=QMessageBox.Ok)
     monkeypatch.setattr(QMessageBox, "warning", warning_mock)
+    confirm_mock = MagicMock()
+    monkeypatch.setattr(
+        "motile_tracker.data_views.views_coordinator.tracks_viewer."
+        "confirm_force_operation",
+        confirm_mock,
+    )
 
     num_edges_before = tracks_viewer.tracks.graph.num_edges()
-
-    tracks_viewer.create_edge()
+    tracks_viewer.connect_nodes()
 
     warning_mock.assert_called_once()
-    assert "Cannot add edge" in warning_mock.call_args.args[1]
+    assert "Cannot connect nodes" in warning_mock.call_args.args[1]
+    confirm_mock.assert_not_called()  # never offered as a forceable action
     assert tracks_viewer.tracks.graph.num_edges() == num_edges_before
-    assert not tracks_viewer.tracks.graph.has_edge(2, 5)
-    # Existing daughter edges are still intact
-    assert tracks_viewer.tracks.graph.has_edge(2, 3)
-    assert tracks_viewer.tracks.graph.has_edge(2, 4)
