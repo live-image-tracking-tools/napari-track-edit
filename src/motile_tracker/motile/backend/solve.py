@@ -75,9 +75,9 @@ def solve(
             cand_graph = build_candidate_graph(input_data, solver_params, scale)
 
         if solver_params.window_size is not None:
-            result = _solve_chunked(cand_graph, solver_params, on_solver_update)
+            result = _solve_chunked(cand_graph, solver_params, on_solver_update, scale)
         else:
-            result = _solve_full(cand_graph, solver_params, on_solver_update)
+            result = _solve_full(cand_graph, solver_params, on_solver_update, scale)
 
     if input_data.ndim != 2:
         result._update_metadata(shape=input_data.shape)
@@ -112,9 +112,10 @@ def _solve_full(
     cand_graph: td.graph.GraphView,
     solver_params: SolverParams,
     on_solver_update: Callable | None = None,
+    scale: list | None = None,
 ) -> td.graph.GraphView:
     """Solve the tracking problem on the full candidate graph at once."""
-    solver = construct_solver(cand_graph, solver_params)
+    solver = construct_solver(cand_graph, solver_params, scale)
     start_time = time.time()
     solution = solver.solve(verbose=False, on_event=on_solver_update)
     logger.info("Solution took %.2f seconds", time.time() - start_time)
@@ -134,6 +135,7 @@ def _solve_window(
     window_subgraph: td.graph.GraphView,
     solver_params: SolverParams,
     on_solver_update: Callable | None = None,
+    scale: list | None = None,
 ) -> td.graph.GraphView | None:
     """Solve a single window subgraph.
 
@@ -145,6 +147,7 @@ def _solve_window(
             have the PIN_ATTR attribute set, a Pin constraint will be used.
         solver_params: The solver parameters.
         on_solver_update: Callback for solver progress updates.
+        scale: The scale of the data in each dimension.
 
     Returns:
         The solution graph for this window, or None if the window has no nodes.
@@ -160,7 +163,7 @@ def _solve_window(
         )
         return window_subgraph
 
-    solver = construct_solver(window_subgraph, solver_params)
+    solver = construct_solver(window_subgraph, solver_params, scale)
     start_time = time.time()
     solution = solver.solve(verbose=False, on_event=on_solver_update)
     logger.info("Window solved in %.2f seconds", time.time() - start_time)
@@ -230,7 +233,7 @@ def _solve_single_window(
     )
 
     start_time = time.time()
-    solution = _solve_window(cand_graph, solver_params, on_solver_update)
+    solution = _solve_window(cand_graph, solver_params, on_solver_update, scale)
     logger.info("Single window solution took %.2f seconds", time.time() - start_time)
 
     if solution is None:
@@ -249,6 +252,7 @@ def _solve_chunked(
     cand_graph: td.graph.GraphView,
     solver_params: SolverParams,
     on_solver_update: Callable | None = None,
+    scale: list | None = None,
 ) -> td.graph.GraphView:
     """Solve the tracking problem in chunks using a sliding window approach.
 
@@ -261,6 +265,7 @@ def _solve_chunked(
         cand_graph: The full candidate graph with all nodes and edges.
         solver_params: The solver parameters including window_size and overlap_size.
         on_solver_update: Callback for solver progress updates.
+        scale: The scale of the data in each dimension.
 
     Returns:
         The combined solution graph from all windows.
@@ -327,7 +332,7 @@ def _solve_chunked(
 
         # Solve this window
         window_solution = _solve_window(
-            window_subgraph, solver_params, on_solver_update
+            window_subgraph, solver_params, on_solver_update, scale
         )
 
         if window_solution is None:
@@ -448,7 +453,9 @@ _SKIP_ATTRS = {td.DEFAULT_ATTR_KEYS.MASK, td.DEFAULT_ATTR_KEYS.BBOX}
 
 
 def construct_solver(
-    cand_graph: td.graph.GraphView, solver_params: SolverParams
+    cand_graph: td.graph.GraphView,
+    solver_params: SolverParams,
+    scale: list | None = None,
 ) -> Solver:
     """Construct a motile solver with the parameters specified in the solver
     params object.
@@ -457,6 +464,10 @@ def construct_solver(
         cand_graph (td.graph.GraphView): The candidate graph to use in the solver
         solver_params (SolverParams): The costs and constraints to use in
             the solver
+        scale (list | None): The scale of the data in each dimension (including
+            time). Node positions on the candidate graph are in pixel coordinates,
+            so they are converted to world units before being handed to the
+            solver, keeping the distance costs comparable across anisotropic axes.
 
     Returns:
         Solver: A motile solver with the specified graph, costs, and
@@ -469,9 +480,14 @@ def construct_solver(
     skip_cols = [c for c in node_df.columns if c in _SKIP_ATTRS]
     if skip_cols:
         node_df = node_df.drop(skip_cols)
+    spatial_scale = None
+    if scale is not None and not all(float(s) == 1.0 for s in scale[1:]):
+        spatial_scale = np.asarray(scale[1:], dtype=float)
     node_id_col = td.DEFAULT_ATTR_KEYS.NODE_ID
     for row in node_df.rows(named=True):
         node_id = row.pop(node_id_col)
+        if spatial_scale is not None and "pos" in row:
+            row["pos"] = (np.asarray(row["pos"], dtype=float) * spatial_scale).tolist()
         tg.add_node(node_id, row)
 
     # Bulk-fetch edge attributes (one polars scan instead of N individual scans)

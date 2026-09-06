@@ -83,6 +83,7 @@ class TrackPoints(ZOnlyPoints):
         super().__init__(
             data=points,
             name=name,
+            scale=tracks_viewer.tracks.scale,
             symbol=symbols,
             face_color=colors,
             size=self.default_size,

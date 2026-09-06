@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 from funtracks.annotators._regionprops_annotator import DEFAULT_POS_KEY
 
-from motile_tracker.application_menus.feature_widget import FeatureWidget
+from motile_tracker.application_menus.feature_widget import (
+    FeatureScaleWidget,
+    FeatureWidget,
+)
 from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
@@ -162,3 +166,90 @@ def test_update_checkboxes_recreates_widgets(
     ]
 
     assert len(widget_items) == first_count
+
+
+@pytest.fixture
+def scale_widget(make_napari_viewer, solution_tracks_2d):
+    """A ConfirmableScaleWidget on a viewer showing 2D tracks with an area feature."""
+    viewer = make_napari_viewer()
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(solution_tracks_2d, name="test")
+    tracks_viewer.tracks.enable_features(["area"])
+    # the dataframe behind the tree and table views is only kept up to date when one
+    # of those views is present
+    tracks_viewer.tree_widget_present = True
+    tracks_viewer.update_track_df(initialization=False, refresh_view=True)
+
+    # hold on to the combined widget: dropping it deletes its Qt children
+    combined = FeatureScaleWidget(viewer)
+    yield combined.scale_widget, tracks_viewer
+
+
+def _areas(tracks) -> list[float]:
+    return [tracks.get_node_attr(node, "area") for node in tracks.graph_full.node_ids()]
+
+
+def test_scale_widget_prefills_from_tracks(scale_widget):
+    widget, tracks_viewer = scale_widget
+
+    # tracks without a scale are unscaled, and the widget says so rather than hiding
+    assert tracks_viewer.tracks.scale is None
+    assert widget.isVisibleTo(widget.parentWidget())
+    assert widget.get_scale() == [1, 1.0, 1.0]
+    assert not widget.z_spin_box.isVisibleTo(widget)
+
+
+def test_confirm_scale_updates_tracks_layers_and_dataframe(scale_widget):
+    widget, tracks_viewer = scale_widget
+    tracks = tracks_viewer.tracks
+
+    areas_before = _areas(tracks)
+    df_before = tracks_viewer.track_df.copy()
+
+    widget.y_spin_box.setValue(2.0)
+    widget.x_spin_box.setValue(3.0)
+    widget.confirm_scale_btn.click()
+
+    assert tracks.scale == [1.0, 2.0, 3.0]
+
+    # areas are in world units, so they follow the new voxel size
+    for before, after in zip(areas_before, _areas(tracks), strict=True):
+        assert after == pytest.approx(before * 6.0)
+
+    # every napari layer is rescaled
+    layers = tracks_viewer.tracking_layers
+    for layer in (layers.points_layer, layers.tracks_layer, layers.seg_layer):
+        assert layer is not None
+        np.testing.assert_array_equal(layer.scale, [1.0, 2.0, 3.0])
+
+    # and the dataframe behind the tree and table views shows world coordinates
+    df_after = tracks_viewer.track_df
+    np.testing.assert_allclose(df_after["y"], df_before["y"] * 2.0)
+    np.testing.assert_allclose(df_after["x"], df_before["x"] * 3.0)
+    np.testing.assert_allclose(df_after["Area"], df_before["Area"] * 6.0)
+
+    # the spin boxes are rebuilt from the tracks, so they still agree
+    assert widget.get_scale() == [1, 2.0, 3.0]
+
+
+def test_confirm_scale_reports_failure_and_leaves_tracks_alone(
+    scale_widget, monkeypatch
+):
+    """skimage cannot measure a perimeter under anisotropic spacing."""
+    widget, tracks_viewer = scale_widget
+    tracks = tracks_viewer.tracks
+    tracks.enable_features(["perimeter"])
+
+    warned = MagicMock()
+    monkeypatch.setattr(
+        "motile_tracker.application_menus.feature_widget.QMessageBox.warning", warned
+    )
+
+    widget.y_spin_box.setValue(2.0)
+    widget.x_spin_box.setValue(3.0)
+    widget.confirm_scale_btn.click()
+
+    warned.assert_called_once()
+    assert tracks.scale is None
+    # the rejected values are replaced by the scale the tracks actually have
+    assert widget.get_scale() == [1, 1.0, 1.0]

@@ -11,11 +11,93 @@ from qtpy.QtWidgets import (
     QCheckBox,
     QGroupBox,
     QLabel,
+    QMessageBox,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
 from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from motile_tracker.import_export.menus.scale_widget import ScaleWidget
+
+
+class ConfirmableScaleWidget(ScaleWidget):
+    """Scale widget with a button to confirm and apply a new scale to the tracks."""
+
+    def __init__(self, viewer: napari.Viewer):
+        super().__init__()
+
+        self.viewer = viewer
+        self.tracks_viewer = TracksViewer.get_instance(viewer)
+        self.tracks_viewer.tracks_updated.connect(self.update_scale_from_tracks)
+
+        self.label = QLabel(
+            "*Changing the scale factors will recompute the activated features and adjust the scaling of the napari layers.*"
+        )
+        self.label.setWordWrap(True)
+        self.label.setTextFormat(Qt.MarkdownText)
+
+        self.confirm_scale_btn = QPushButton("Confirm")
+        self.confirm_scale_btn.setToolTip(
+            "Apply this scale to the tracks: rescales the layers and recomputes the "
+            "measurements that are expressed in world units."
+        )
+        self.confirm_scale_btn.clicked.connect(self.update_scale_on_tracks)
+        self.layout().insertWidget(0, self.label)
+        self.layout().addWidget(self.confirm_scale_btn)
+
+        # load the scaling from tracks, if available
+        self.update_scale_from_tracks()
+
+    def _tracks_scale(self) -> list[float] | None:
+        """The scale of the currently displayed tracks, as a list of floats.
+
+        Tracks without a scale are unscaled, which is a scale of 1 per dimension.
+        Returns None if there are no tracks to read a scale from.
+        """
+
+        tracks = self.tracks_viewer.tracks
+        if tracks is None:
+            return None
+        if tracks.scale is None:
+            return [1.0] * tracks.ndim
+        return [float(s) for s in tracks.scale]
+
+    def update_scale_from_tracks(self, _refresh_view: bool | None = None) -> None:
+        """Prefill the spin boxes with the scale of the currently displayed tracks."""
+
+        scale = self._tracks_scale()
+        if scale is None:
+            self.setVisible(False)
+            return
+
+        if scale == self.scale:
+            return
+
+        self.update(incl_z=len(scale) > 3, scale=scale)
+
+    def update_scale_on_tracks(self) -> None:
+        """Apply the scale in the spin boxes to the tracks."""
+
+        tracks = self.tracks_viewer.tracks
+        scale = self.get_scale()
+        if tracks is None or scale is None:
+            return
+
+        try:
+            tracks.update_scale(scale)
+        except Exception as error:  # noqa: BLE001 - reported to the user below
+            QMessageBox.warning(
+                self,
+                "Cannot apply this scale",
+                f"The scale was not applied and the tracks are unchanged:\n\n{error}"
+                "\n\nNote that perimeter, and the circularity derived from it, can "
+                "only be measured when y and x are scaled equally. Disable those "
+                "features to use an anisotropic scale.",
+            )
+            # the spin boxes still show the rejected values, put the real scale back
+            self.scale = None
+            self.update_scale_from_tracks()
 
 
 class FeatureWidget(QWidget):
@@ -126,3 +208,20 @@ class FeatureWidget(QWidget):
             self.tracks_viewer.tracks_updated.emit(False)
         finally:
             self._toggling = False
+
+
+class FeatureScaleWidget(QWidget):
+    """The feature selection and the scale widget, combined into one menu."""
+
+    def __init__(self, viewer: napari.Viewer):
+        super().__init__()
+
+        self.feature_widget = FeatureWidget(viewer)
+        self.scale_widget = ConfirmableScaleWidget(viewer)
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.feature_widget)
+        layout.addWidget(self.scale_widget)
+        layout.addStretch()
+
+        self.setLayout(layout)

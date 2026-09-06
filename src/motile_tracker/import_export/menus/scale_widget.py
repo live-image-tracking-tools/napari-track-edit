@@ -37,7 +37,12 @@ class ScaleWidget(QWidget):
         )
         self.setVisible(False)
 
-    def update(self, metadata: dict | None = None, incl_z: bool = False) -> None:
+    def update(
+        self,
+        metadata: dict | None = None,
+        incl_z: bool = False,
+        scale: list[float] | None = None,
+    ) -> None:
         """
         Add widgets to the layout, prefilled from available information if possible
 
@@ -46,11 +51,19 @@ class ScaleWidget(QWidget):
                 information.
             incl_z (bool): whether to include 'z' (provide this if metadata is not
                 available)
+            scale (list[float] | None): an already-resolved scale ([t, (z), y, x]) to
+                prefill with, e.g. read from the scale columns of a CSV. Takes
+                precedence over the geff metadata.
         """
 
         axes = metadata.get("axes") if metadata is not None else None
 
-        if axes:
+        # A scale whose dimensionality disagrees with the one the user picked is
+        # not usable here, so fall through to the other sources.
+        if scale is not None and len(scale) == (4 if incl_z else 3):
+            self.scale = [float(s) for s in scale]
+
+        elif axes:
             lookup = {a["name"].lower(): a.get("scale", 1) or 1 for a in axes}
             self.scale = [1.0] * len(axes)  # time + spatial dims
             self.scale[-1], self.scale[-2] = lookup.get("x", 1), lookup.get("y", 1)
@@ -83,10 +96,11 @@ class ScaleWidget(QWidget):
         """Return a QDoubleSpinBox for scaling values"""
 
         spin_box = QDoubleSpinBox()
-        spin_box.setValue(value)
-        spin_box.setSingleStep(0.1)
+        spin_box.setDecimals(4)
         spin_box.setMinimum(0)
-        spin_box.setDecimals(3)
+        spin_box.setMaximum(1e6)
+        spin_box.setSingleStep(0.1)
+        spin_box.setValue(value)
         return spin_box
 
     def get_scale(self) -> list[float] | None:

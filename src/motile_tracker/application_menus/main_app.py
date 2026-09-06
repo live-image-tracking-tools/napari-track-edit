@@ -9,7 +9,7 @@ from qtpy.QtWidgets import (
 from motile_tracker.application_menus.editing_selection_menu import (
     EditingSelectionWidget,
 )
-from motile_tracker.application_menus.feature_widget import FeatureWidget
+from motile_tracker.application_menus.feature_widget import FeatureScaleWidget
 from motile_tracker.application_menus.group_widget import GroupWidget
 from motile_tracker.application_menus.menu_manager import MenuManager
 from motile_tracker.application_menus.track_list_widget import TrackListWidget
@@ -30,7 +30,7 @@ MENU_WIDGETS = {
     "Tracks List": {"widget": TrackListWidget, "location": "right"},
     "Editing && Selection": {"widget": EditingSelectionWidget, "location": "right"},
     "Visualization": {"widget": VisualizationWidget, "location": "right"},
-    "Features": {"widget": FeatureWidget, "location": "right"},
+    "Features": {"widget": FeatureScaleWidget, "location": "right"},
     "Groups": {"widget": GroupWidget, "location": "right"},
     "Table": {"widget": ColoredTableWidget, "location": "right"},
     "Lineage View": {"widget": TreeWidget, "location": "bottom"},
