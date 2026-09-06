@@ -67,7 +67,10 @@ class TrackPoints(ZOnlyPoints):
         self.nodes = tracks_viewer.tracks.graph.node_ids()
         self.node_index_dict = {node: idx for idx, node in enumerate(self.nodes)}
 
-        points = self.tracks_viewer.tracks.get_positions(self.nodes, incl_time=True)
+        if len(self.nodes) > 0:
+            points = self.tracks_viewer.tracks.get_positions(self.nodes, incl_time=True)
+        else:
+            points = np.empty((0, self.tracks_viewer.tracks.ndim))
 
         track_ids = self.tracks_viewer.tracks.get_track_ids(self.nodes)
         colors = self._map_track_colors(track_ids)
@@ -247,13 +250,14 @@ class TrackPoints(ZOnlyPoints):
                 new_point = event.value[-1]
                 attributes = self._create_node_attrs(new_point)
                 try:
-                    new_node_id = self.tracks_viewer.tracks._get_new_node_ids(1)[0]
-                    UserAddNode(
-                        self.tracks_viewer.tracks,
-                        node=new_node_id,
-                        attributes=attributes,
-                        force=self.tracks_viewer.force,
-                    )
+                    with self.tracks_viewer.center_node.blocked():
+                        new_node_id = self.tracks_viewer.tracks._get_new_node_ids(1)[0]
+                        UserAddNode(
+                            self.tracks_viewer.tracks,
+                            node=new_node_id,
+                            attributes=attributes,
+                            force=self.tracks_viewer.force,
+                        )
 
                 except InvalidActionError as e:
                     if e.forceable:
@@ -323,9 +327,14 @@ class TrackPoints(ZOnlyPoints):
         colormap.map has a large fixed per-call overhead (cache lookup, dtype, reshape),
         so mapping the whole array at once is ~290x faster than calling it per node (or
         even once per unique track id): for ~37k nodes / 142 unique ids, ~1ms vs ~300ms.
+
+        With no nodes (an empty tracks graph, e.g. when tracking from scratch) a single
+        white color is returned instead of a (0, 4) array: napari's ColorManager treats
+        the color argument as *the* current color when the layer holds no data, and
+        feeding it an empty array raises in `transform_color`.
         """
         if len(track_ids) == 0:
-            return np.empty((0, 4))
+            return np.ones((1, 4))
         return self.tracks_viewer.colormap.map(np.asarray(track_ids))
 
     def get_symbols(self, tracks: Tracks, symbolmap: dict[NodeType, str]) -> list[str]:
