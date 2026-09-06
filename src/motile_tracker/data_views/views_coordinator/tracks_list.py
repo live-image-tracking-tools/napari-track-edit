@@ -69,12 +69,16 @@ def _as_solution_tracks(tracks: Tracks) -> SolutionTracks:
     """
     if isinstance(tracks, SolutionTracks):
         return tracks
+    graph = tracks.graph_full
+    if tracks.segmentation is not None and graph.metadata.get("shape") is None:
+        # the new object needs to build its own segmentation view, assigning one via
+        # _segmentation binds the old one, and then the user cannot update it via painting
+        graph._update_metadata(shape=tuple(tracks.segmentation.shape))
     solution_tracks = SolutionTracks(
-        tracks.graph,
+        graph,
         scale=tracks.scale,
         ndim=tracks.ndim,
         features=tracks.features,
-        _segmentation=tracks.segmentation,
     )
     # Only needed on funtracks < 2.1, where passing a FeatureDict makes
     # __init__ activate the declared features without computing the missing

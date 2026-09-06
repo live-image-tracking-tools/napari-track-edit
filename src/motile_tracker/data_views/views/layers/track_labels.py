@@ -422,6 +422,15 @@ class TrackLabels(ContourLabels):
            can be used to update the existing node in a paint event. No action is needed.
         """
 
+        # The background label is never a valid label to paint a node with (painting
+        # with it erases), so it should never get a track id or a color. napari binds
+        # "X" on Labels layers to swap_selected_and_background_labels, which sets
+        # selected_label to the background value: without this guard, that would give
+        # the background an opaque color and make the whole segmentation background
+        # render in the track color (see issue #493).
+        if self.selected_label == self.colormap.background_value:
+            return
+
         update_colormap = False
         if self.tracks_viewer.tracks is not None:
             current_timepoint = self.viewer.dims.current_step[0]

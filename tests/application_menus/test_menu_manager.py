@@ -1,11 +1,22 @@
 """Tests for MenuManager: initialization, tab management, and widget visibility."""
 
+import sys
 from unittest.mock import MagicMock
 
+import pytest
 from qtpy.QtWidgets import QDockWidget, QScrollArea, QTabBar, QWidget
 
 from motile_tracker.application_menus.main_app import MENU_WIDGETS, StartupWidget
 from motile_tracker.application_menus.menu_manager import MenuManager
+
+# Some MenuManager tests build the full app (StartupWidget/initialize_menu), which
+# constructs the fastplotlib/wgpu tree view. On headless Linux CI wgpu aborts
+# (SIGABRT) building the Qt canvas figure, killing the whole pytest process.
+# Covered on macOS (Metal) and Windows (DX12); skip on Linux.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "linux",
+    reason="fastplotlib/wgpu can't build a Qt canvas on headless Linux CI",
+)
 
 
 class DummyWidget(QWidget):

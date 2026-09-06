@@ -229,6 +229,32 @@ def test_ensure_valid_label(viewer, solution_tracks_3d_with_division):
     assert tracks_viewer.selected_track == 4  # new track id (still unused)
 
 
+def test_background_label_does_not_get_a_color(
+    viewer, solution_tracks_3d_with_division
+):
+    """Regression (#493): selecting the background label must not color the background.
+
+    napari binds "X" on Labels layers to swap_selected_and_background_labels, which
+    sets selected_label to 0. When no node was selected, _ensure_valid_label used to
+    allocate a new track id for label 0 and write its color into the colormap, making
+    the whole segmentation background render in that (pink) track color.
+    """
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_3d_with_division, name="test")
+    seg_layer = tracks_viewer.tracking_layers.seg_layer
+
+    # Nothing selected: this is the situation in which the bug bites
+    tracks_viewer.selected_nodes.reset()
+    tracks_viewer.selected_track = None
+
+    seg_layer.selected_label = 0  # what pressing "X" does
+
+    assert seg_layer.selected_label == 0
+    assert tracks_viewer.selected_track is None  # no track id was allocated
+    # the background stays transparent
+    assert np.all(seg_layer.colormap.map(np.array([0])) == 0)
+
+
 def test_data_setitem_empty_indices_does_not_raise(
     viewer, solution_tracks_3d_with_division
 ):

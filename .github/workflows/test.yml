@@ -27,6 +27,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+      # The Ubuntu runner image ships broken Microsoft apt repos whose signature
+      # is periodically invalid ("Clearsigned file isn't valid, got 'NOSPLIT'"),
+      # which fails the apt-get update inside setup-qt-libs. We don't need them.
+      - name: Remove broken Microsoft apt sources (ubuntu runner image)
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list \
+                     /etc/apt/sources.list.d/azure-cli.list \
+                     /etc/apt/sources.list.d/azure-cli.sources
       - uses: tlambert03/setup-qt-libs@v1
 
       - name: Set up Python ${{ matrix.python-version }}
