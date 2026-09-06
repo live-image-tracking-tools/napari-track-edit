@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788536916799,
+  "lastUpdate": 1788700581538,
   "repoUrl": "https://github.com/live-image-tracking-tools/napari-track-edit",
   "entries": {
     "motile_tracker benchmarks (pytest-benchmark)": [
@@ -3048,6 +3048,37 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.4605909441161579",
             "extra": "mean: 3.0889115710000206 sec\nrounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "malinmayorc@janelia.hhmi.org",
+            "name": "Caroline Malin-Mayor",
+            "username": "cmalinmayor"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b628b4af19c1ad818ad3ba98ac3b9b371ad66a14",
+          "message": "Merge pull request #453 from live-image-tracking-tools/fastplotlib-treeview\n\nFastplotlib TreePlot",
+          "timestamp": "2026-09-06T09:15:21-04:00",
+          "tree_id": "2e6a0ba1c1b25b4c5ff66c57cb382aee5767bddc",
+          "url": "https://github.com/live-image-tracking-tools/napari-track-edit/commit/b628b4af19c1ad818ad3ba98ac3b9b371ad66a14"
+        },
+        "date": 1788700580588,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/benchmarks/bench_data_model.py::test_extract_sorted_tracks[large]",
+            "value": 2.8933781360978865,
+            "unit": "iter/sec",
+            "range": "stddev: 0.13201687803136258",
+            "extra": "mean: 345.6167679999946 msec\nrounds: 3"
           }
         ]
       }
