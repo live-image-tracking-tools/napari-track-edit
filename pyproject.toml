@@ -44,9 +44,22 @@ dependencies =[
     "dask[array]>=2021.10.0",
     "fonticon-fontawesome6>=6,<7",
     "pyqtgraph>=0.13,<1",
+    "fastplotlib>=0.6.1,<0.7",
+    "pygfx==0.15.3",
+    "wgpu>=0.29, <0.30",
     "napari-orthogonal-views>=0.4.0",
     "lxml_html_clean>=0.4,<1",
     "zarr>=2.18.7,<4",
+    # Not used directly (it arrives via tracksdata), pinned to keep it co-installable
+    # with pygfx's uharfbuzz. Both are Cython 3.3.0 limited-API builds that share the
+    # runtime module _cython_3_3_0limitednofinalize, but at different Py_LIMITED_API
+    # levels (blosc2 >= 4.12 is cp311-abi3, uharfbuzz is cp310-abi3), where
+    # cython_function_or_method has a different struct size. Whichever imports second
+    # dies with "Shared Cython type cython_function_or_method has the wrong size".
+    # motile_tracker is the only place these two meet, so the pin belongs here.
+    # Drop it once Cython encodes the limited-API level in that module name, or once
+    # the two agree on a level.
+    "blosc2>=4.11,<4.12",
 ]
 
 [project.optional-dependencies]
@@ -91,6 +104,15 @@ dev = [
     {include-group = "docs"},
 ]
 # For gurobi, install separately: uv pip install "gurobipy>=12,<13"
+
+[tool.uv.sources]
+# Unreleased funtracks, for tracksdata >= 0.1.0rc9: that release swapped spatial-graph
+# for rstar-python. spatial-graph's prebuilt rtree is a Cython limited-API build that
+# collides with pygfx's uharfbuzz over the shared _cython_3_3_0limitednofinalize module
+# ("Shared Cython type cython_function_or_method has the wrong size"), which broke GEFF
+# import in the tree view. rstar-python is Rust, so there is nothing to collide with.
+# Drop this source once a funtracks release includes the commit.
+funtracks = { git = "https://github.com/funkelab/funtracks.git", rev = "d9d83ea23c273e880b5b82cdc8343235d8e9e9eb" }
 
 [tool.uv]
 # gurobi12 and gurobi13 conflict with each other (mutually exclusive version pins)
