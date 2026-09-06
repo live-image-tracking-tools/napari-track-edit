@@ -49,12 +49,15 @@ Tree view key and mouse functions
      - Center view on this node (does not change selection)
    * - Scroll
      - Zoom in or out
-   * - Scroll + X / Right mouse click + drag horizontally
+   * - Scroll + X
      - Restrict zoom to the x-axis of the tree view
-   * - Scroll + Y / Right mouse click + drag vertically
+   * - Scroll + Y
      - Restrict zoom to the y-axis of the tree view
    * - Mouse drag
      - Pan
+   * - Right mouse drag
+     - | Squeeze/zoom the axes: drag horizontally to scale the
+       | x-axis, vertically to scale the y-axis
    * - SHIFT + Mouse drag
      - Rectangular selection of nodes
    * - ESC

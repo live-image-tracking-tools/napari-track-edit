@@ -72,7 +72,7 @@ def extract_sorted_tracks(
     prev_axis_order: list[int] | None = None,
 ) -> pd.DataFrame | None:
     """
-    Extract the information of individual tracks required for constructing the pyqtgraph
+    Extract the information of individual tracks required for constructing the tree
     plot. Follows the same logic as the relabel_segmentation function from the Motile
     toolbox.
 
@@ -85,7 +85,7 @@ def extract_sorted_tracks(
 
     Returns:
         pd.DataFrame | None: data frame with all the information needed to
-        construct the pyqtgraph plot. Columns are: 't', 'node_id', 'track_id',
+        construct the tree plot. Columns are: 't', 'node_id', 'track_id',
         'color', 'x', 'y', ('z'), 'index', 'parent_id', 'parent_track_id',
         'state', 'symbol', and 'x_axis_pos'
     """
