@@ -105,15 +105,6 @@ dev = [
 ]
 # For gurobi, install separately: uv pip install "gurobipy>=12,<13"
 
-[tool.uv.sources]
-# Unreleased funtracks, for tracksdata >= 0.1.0rc9: that release swapped spatial-graph
-# for rstar-python. spatial-graph's prebuilt rtree is a Cython limited-API build that
-# collides with pygfx's uharfbuzz over the shared _cython_3_3_0limitednofinalize module
-# ("Shared Cython type cython_function_or_method has the wrong size"), which broke GEFF
-# import in the tree view. rstar-python is Rust, so there is nothing to collide with.
-# Drop this source once a funtracks release includes the commit.
-funtracks = { git = "https://github.com/funkelab/funtracks.git", rev = "d9d83ea23c273e880b5b82cdc8343235d8e9e9eb" }
-
 [tool.uv]
 # gurobi12 and gurobi13 conflict with each other (mutually exclusive version pins)
 conflicts = [
