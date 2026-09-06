@@ -42,6 +42,15 @@ jobs:
                      /etc/apt/sources.list.d/azure-cli.sources
       - uses: tlambert03/setup-qt-libs@v1
 
+      # wgpu (via pygfx/fastplotlib, used by the tree view) needs a real Vulkan/GL
+      # adapter; Xvfb (below) only provides X11/GLX, not Vulkan. lavapipe/llvmpipe
+      # give it a software one, matching how pygfx/wgpu-py run their own Linux CI.
+      - name: Install llvmpipe and lavapipe for offscreen wgpu rendering
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -y -qq
+          sudo apt-get install -y libegl1-mesa-dev libgl1-mesa-dri libxcb-xfixes0-dev mesa-vulkan-drivers
+
       - name: Set up Python
         uses: astral-sh/setup-uv@v7
         with:
