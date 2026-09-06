@@ -168,7 +168,7 @@ class EditingMenu(QWidget):
         box_layout.addLayout(track_layout)
 
         node_box = QGroupBox("Edit Node(s)")
-        node_box.setMaximumHeight(120)
+        node_box.setMaximumHeight(160)
         node_box_layout = QVBoxLayout()
 
         self.delete_node_btn = QPushButton("Delete [D]")
@@ -177,9 +177,17 @@ class EditingMenu(QWidget):
         self.swap_nodes_btn = QPushButton("Swap [S]")
         self.swap_nodes_btn.clicked.connect(self.tracks_viewer.swap_nodes)
         self.swap_nodes_btn.setEnabled(False)
+        self.merge_nodes_btn = QPushButton("Merge [H]")
+        self.merge_nodes_btn.setToolTip(
+            "Merge each set of selected nodes that shares a time point into a "
+            "single node."
+        )
+        self.merge_nodes_btn.clicked.connect(self.tracks_viewer.merge_horizontally)
+        self.merge_nodes_btn.setEnabled(False)
 
         node_box_layout.addWidget(self.delete_node_btn)
         node_box_layout.addWidget(self.swap_nodes_btn)
+        node_box_layout.addWidget(self.merge_nodes_btn)
 
         node_box.setLayout(node_box_layout)
 
@@ -215,7 +223,7 @@ class EditingMenu(QWidget):
         main_layout = QVBoxLayout()
         main_layout.addWidget(box)
         self.setLayout(main_layout)
-        self.setMaximumHeight(450)
+        self.setMaximumHeight(490)
 
     def update_track_id_color(self):
         """Display track ID value and color"""
@@ -241,17 +249,23 @@ class EditingMenu(QWidget):
             self.delete_edge_btn.setEnabled(False)
             self.create_edge_btn.setEnabled(False)
             self.swap_nodes_btn.setEnabled(False)
+            self.merge_nodes_btn.setEnabled(False)
 
         elif n_selected == 2:
             self.delete_node_btn.setEnabled(True)
             self.delete_edge_btn.setEnabled(True)
             self.create_edge_btn.setEnabled(True)
             self.swap_nodes_btn.setEnabled(True)
+            self.merge_nodes_btn.setEnabled(True)
 
         else:
             self.delete_node_btn.setEnabled(True)
             self.delete_edge_btn.setEnabled(False)
             self.create_edge_btn.setEnabled(False)
+            self.swap_nodes_btn.setEnabled(False)
+            # whether the selection actually holds a mergeable set is only checked
+            # when the merge is requested, since that needs a graph query
+            self.merge_nodes_btn.setEnabled(n_selected > 2)
 
 
 class EditingSelectionWidget(QWidget):
