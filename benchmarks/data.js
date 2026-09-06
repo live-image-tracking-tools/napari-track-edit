@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788700581538,
+  "lastUpdate": 1788701099749,
   "repoUrl": "https://github.com/live-image-tracking-tools/napari-track-edit",
   "entries": {
     "motile_tracker benchmarks (pytest-benchmark)": [
@@ -3079,6 +3079,37 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.13201687803136258",
             "extra": "mean: 345.6167679999946 msec\nrounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "malinmayorc@janelia.hhmi.org",
+            "name": "Caroline Malin-Mayor",
+            "username": "cmalinmayor"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7b7939c0c423fded945969a89f218d9c901b6f42",
+          "message": "Merge pull request #458 from live-image-tracking-tools/track_from_scratch\n\nTracking from scratch",
+          "timestamp": "2026-09-06T09:23:51-04:00",
+          "tree_id": "a36c6e90cd9ff3936b486bf8d7248bfec0555e99",
+          "url": "https://github.com/live-image-tracking-tools/napari-track-edit/commit/7b7939c0c423fded945969a89f218d9c901b6f42"
+        },
+        "date": 1788701098971,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/benchmarks/bench_data_model.py::test_extract_sorted_tracks[large]",
+            "value": 2.7087656498855814,
+            "unit": "iter/sec",
+            "range": "stddev: 0.12645361329277743",
+            "extra": "mean: 369.17184033334155 msec\nrounds: 3"
           }
         ]
       }
