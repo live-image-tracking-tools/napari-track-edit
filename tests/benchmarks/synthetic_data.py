@@ -230,7 +230,7 @@ def build_graph(params: SyntheticParams = LARGE) -> td.graph.GraphView:
 
     graph.bulk_add_nodes(nodes=nodes, indices=indices)
     graph.bulk_add_edges(edges)
-    graph._update_metadata(segmentation_shape=(params.n_frames, *params.frame_shape))
+    graph._update_metadata(shape=(params.n_frames, *params.frame_shape))
     return graph
 
 

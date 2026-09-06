@@ -80,7 +80,7 @@ def solve(
             result = _solve_full(cand_graph, solver_params, on_solver_update)
 
     if input_data.ndim != 2:
-        result._update_metadata(segmentation_shape=input_data.shape)
+        result._update_metadata(shape=input_data.shape)
 
     return result
 

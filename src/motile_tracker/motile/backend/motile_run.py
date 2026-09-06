@@ -227,9 +227,11 @@ class MotileRun(SolutionTracks):
         else:
             tracks = import_from_geff(run_dir / "tracks")
         if attrs is not None:
-            seg_shape = attrs.get("segmentation_shape")
+            # New runs use the "shape" key; fall back to the legacy
+            # "segmentation_shape" key for runs saved by older versions.
+            seg_shape = attrs.get("shape", attrs.get("segmentation_shape"))
             if seg_shape is not None:
-                tracks.graph._update_metadata(segmentation_shape=tuple(seg_shape))
+                tracks.graph._update_metadata(shape=tuple(seg_shape))
             scale = attrs.get("scale") or tracks.scale
             time_attr = attrs.get("time_attr") or tracks.features.time_key
         else:
@@ -237,7 +239,7 @@ class MotileRun(SolutionTracks):
             time_attr = tracks.features.time_key
         gaps = cls._load_list(run_dir=run_dir, filename=GAPS_FILENAME, required=False)
         return cls(
-            graph=tracks.graph,
+            graph=tracks.graph_full,
             run_name=run_name,
             solver_params=params,
             input_points=input_points,
@@ -248,7 +250,6 @@ class MotileRun(SolutionTracks):
             scale=scale,
             ndim=tracks.ndim,
             _features=tracks.features,
-            _segmentation=tracks.segmentation,
         )
 
     def _save_params(self, run_dir: Path):
@@ -330,8 +331,8 @@ class MotileRun(SolutionTracks):
             return None
 
     def _save_attrs(self, directory: Path):
-        """Save the run name, run time, time_attr, pos_attr, scale, and
-        segmentation_shape in a json file.
+        """Save the run name, run time, time_attr, scale, and
+        shape in a json file.
 
         The run name and time are stored here rather than being recoverable
         from the directory name alone (see _make_id), so that a run can be
@@ -344,14 +345,14 @@ class MotileRun(SolutionTracks):
             directory (Path):  The directory in which to save the attributes
         """
         out_path = directory / ATTRS_FILENAME
-        seg_shape = self.graph.metadata.get("segmentation_shape")
+        seg_shape = self.graph.metadata.get("shape")
         scale = (
             self.scale
             if not isinstance(self.scale, np.ndarray)
             else self.scale.tolist()
         )
         attrs_dict = {
-            "segmentation_shape": list(seg_shape) if seg_shape is not None else None,
+            "shape": list(seg_shape) if seg_shape is not None else None,
             "scale": scale,
             "time_attr": self.features.time_key,
             "run_name": self.run_name,

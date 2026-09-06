@@ -156,7 +156,7 @@ class MotileWidget(QWidget):
             ndim=run.ndim,
         )
         if "mask" in run.graph.node_attr_keys():
-            seg_shape = run.graph.metadata.get("segmentation_shape")
+            seg_shape = run.graph.metadata.get("shape")
             if seg_shape is not None:
                 run.segmentation = GraphArrayView(
                     graph=run.graph, shape=seg_shape, attr_key="node_id", offset=0

@@ -1,16 +1,12 @@
 # do not put the from __future__ import annotations as it breaks the injection
 
 import contextlib
-from typing import Any
 
 import napari
 import numpy as np
 import pandas as pd
-import pyqtgraph as pg
-from psygnal import Signal
-from pyqtgraph.Qt import QtCore
-from qtpy.QtCore import Qt
-from qtpy.QtGui import QColor, QKeyEvent, QMouseEvent
+from qtpy.QtCore import QEvent, QObject, Qt
+from qtpy.QtGui import QKeyEvent
 from qtpy.QtWidgets import (
     QHBoxLayout,
     QVBoxLayout,
@@ -24,16 +20,17 @@ from motile_tracker.data_views.keybindings_config import (
     TREE_WIDGET_NAVIGATION_KEYS,
     TREE_WIDGET_SPECIFIC_ACTIONS,
 )
-from motile_tracker.data_views.views.layers.click_utils import (
-    detect_side_button,
-)
 from motile_tracker.data_views.views.tree_view.flip_axes_widget import FlipTreeWidget
 from motile_tracker.data_views.views.tree_view.navigation_widget import NavigationWidget
+from motile_tracker.data_views.views.tree_view.tree_plot_fpl import TreePlot
 from motile_tracker.data_views.views.tree_view.tree_view_feature_widget import (
     TreeViewFeatureWidget,
 )
 from motile_tracker.data_views.views.tree_view.tree_view_mode_widget import (
     TreeViewModeWidget,
+)
+from motile_tracker.data_views.views.tree_view.tree_view_options_widget import (
+    TreeViewOptionsWidget,
 )
 from motile_tracker.data_views.views.tree_view.tree_widget_utils import (
     extract_lineage_tree,
@@ -42,438 +39,8 @@ from motile_tracker.data_views.views.tree_view.tree_widget_utils import (
 from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
-class CustomViewBox(pg.ViewBox):
-    selected_rect = Signal(Any)
-
-    def __init__(self, *args, **kwds):
-        kwds["enableMenu"] = False
-        pg.ViewBox.__init__(self, *args, **kwds)
-        # self.setMouseMode(self.RectMode)
-        self.mouse_start_pos = None  # Initialize to prevent AttributeError
-
-    ## reimplement right-click to zoom out
-    def mouseClickEvent(self, ev):
-        if ev.button() == QtCore.Qt.MouseButton.RightButton:
-            self.autoRange()
-
-    def showAxRect(self, ax, **kwargs):
-        """Set the visible range to the given rectangle
-        Emits sigRangeChangedManually without changing the range.
-        """
-        # Emit the signal without setting the range
-        self.sigRangeChangedManually.emit(self.state["mouseEnabled"])
-
-    def mouseDragEvent(self, ev, axis=None):
-        """Modified mouseDragEvent function to check which mouse mode to use
-        and to submit rectangle coordinates for selecting multiple nodes if necessary"""
-
-        # check if SHIFT is pressed
-        shift_down = ev.modifiers() == QtCore.Qt.ShiftModifier
-
-        if shift_down:
-            # if starting a shift-drag, record the scene position
-            if ev.isStart():
-                self.mouse_start_pos = self.mapSceneToView(ev.scenePos())
-
-            # Put the ViewBox in RectMode so it draws its usual yellow rectangle
-            self.setMouseMode(self.RectMode)
-            super().mouseDragEvent(ev, axis)
-
-            # Once the drag finishes, emit the rectangle
-            if ev.isFinish():
-                if self.mouse_start_pos is not None:
-                    rect_end_pos = self.mapSceneToView(ev.scenePos())
-                    rect = QtCore.QRectF(
-                        self.mouse_start_pos, rect_end_pos
-                    ).normalized()
-                    self.selected_rect.emit(rect)  # emit the rectangle
-                ev.accept()
-
-                if hasattr(self, "rbScaleBox") and self.rbScaleBox:
-                    self.rbScaleBox.hide()
-
-        else:
-            # SHIFT not pressed - use PanMode normally
-            self.setMouseMode(self.PanMode)
-            super().mouseDragEvent(ev, axis)
-
-            # hide the leftover box if any
-            if hasattr(self, "rbScaleBox") and self.rbScaleBox:
-                self.rbScaleBox.hide()
-
-
-class TreePlot(pg.PlotWidget):
-    node_clicked = Signal(Any, bool)  # node_id, append
-    jump_to_node = Signal(int)  # node to jump to
-    nodes_selected = Signal(list, bool)
-    update_selection = Signal(bool)  # forward or backward in selection history
-
-    def __init__(self) -> pg.PlotWidget:
-        """Construct the pyqtgraph treewidget. This is the actual canvas
-        on which the tree view is drawn.
-        """
-        super().__init__(viewBox=CustomViewBox())
-
-        self.setFocusPolicy(Qt.StrongFocus)
-
-        self._pos = []
-        self.adj = []
-        self.symbolBrush = []
-        self.symbols = []
-        self.pen = []
-        self.outline_pen = []
-        self.node_ids = []
-        self.sizes = []
-
-        self.view_direction = None
-        self.feature = None
-        self.g = pg.GraphItem()
-        self.g.scatter.sigClicked.connect(self._on_click)
-        self.scene().sigMouseClicked.connect(self._on_scene_click)
-        self.addItem(self.g)
-        self.set_view("vertical", plot_type="tree")
-        self.getViewBox().selected_rect.connect(self.select_points_in_rect)
-
-    def select_points_in_rect(self, rect: QtCore.QRectF):
-        """Select all nodes in given rectangle"""
-
-        scatter_data = self.g.scatter.data
-        x = scatter_data["x"]
-        y = scatter_data["y"]
-        data = scatter_data["data"]
-
-        # Filter points that are within the rectangle
-        points_within_rect = [
-            (x[i], y[i], data[i]) for i in range(len(x)) if rect.contains(x[i], y[i])
-        ]
-        selected_nodes = [point[2] for point in points_within_rect]
-        self.nodes_selected.emit(selected_nodes, True)
-
-    def update(
-        self,
-        track_df: pd.DataFrame,
-        view_direction: str,
-        plot_type: str,
-        feature: str,
-        selected_nodes: list[Any],
-        reset_view: bool | None = False,
-        allow_flip: bool | None = True,
-    ):
-        """Update the entire view, including the data, view direction, and
-        selected nodes
-
-        Args:
-            track_df (pd.DataFrame): The dataframe containing the graph data
-            view_direction (str): The view direction
-            plot_type (str): The plot_type ('tree' or 'feature')f
-            feature (str): The feature to be plotted if plot_type == 'feature'
-            selected_nodes (list[Any]): The currently selected nodes to be highlighted
-        """
-        if plot_type == "feature" and (
-            feature is None or feature == ""
-        ):  # feature is not available
-            plot_type = "tree"
-        self.set_data(track_df, plot_type, feature)
-        self._update_viewed_data(view_direction)  # this can be expensive
-        self.set_view(view_direction, plot_type, reset_view, allow_flip)
-        self.set_selection(selected_nodes, plot_type)
-
-    def set_view(
-        self,
-        view_direction: str,
-        plot_type: str,
-        reset_view: bool | None = False,
-        allow_flip: bool | None = True,
-    ):
-        """Set the view direction, saving the new value as an attribute and
-        changing the axes labels. Shortcuts if the view direction is already
-        correct. Does not actually update the rendered graph (need to call
-        _update_viewed_data).
-
-        Args:
-            view_direction (str): "horizontal" or "vertical"
-            plot_type (str): the plot type being displayed, it can be 'tree' or 'feature'
-        """
-
-        # if view_direction == self.view_direction and plot_type == self.plot_type:
-        #     if reset_view:
-        #         self.autoRange()
-        #     return
-
-        axis_titles = {
-            "time": "Time Point",
-            "feature": f"Object {self.feature} in calibrated units",
-            "tree": "",
-        }
-        if allow_flip:
-            if view_direction == "vertical":
-                time_axis = "left"  # time is on y axis
-                feature_axis = "bottom"
-                self.invertY(True)  # to show tracks from top to bottom
-            else:
-                time_axis = "bottom"  # time is on y axis
-                feature_axis = "left"
-                self.invertY(False)
-            self.setLabel(time_axis, text=axis_titles["time"])
-            self.getAxis(time_axis).setStyle(showValues=True)
-
-            self.setLabel(feature_axis, text=axis_titles[plot_type])
-            if plot_type == "tree":
-                self.getAxis(feature_axis).setStyle(showValues=False)
-            else:
-                self.getAxis(feature_axis).setStyle(showValues=True)
-                self.autoRange()  # not sure if this is necessary or not
-
-        if (
-            self.view_direction != view_direction
-            or self.plot_type != plot_type
-            or reset_view
-        ):
-            self.autoRange()
-        self.view_direction = view_direction
-        self.plot_type = plot_type
-
-    def _on_scene_click(self, event: QMouseEvent):
-        """Intercept mouse clicks on the scene to detect clicks of the back and forward buttons for selection history navigation."""
-
-        side_button = detect_side_button(event)
-        if side_button is not None:
-            self.update_selection.emit(side_button == 4)
-
-    def _on_click(self, _, points: np.ndarray, ev: QMouseEvent) -> None:
-        """Adds the selected point to the selected_nodes list. Called when
-        the user clicks on the TreeWidget to select nodes.
-
-        Args:
-            points (np.ndarray): _description_
-            ev (QMouseEvent): _description_
-        """
-
-        modifiers = ev.modifiers()
-        node_id = points[0].data()
-        append = Qt.ShiftModifier == modifiers
-        jump = Qt.ControlModifier == modifiers
-        if jump:
-            self.jump_to_node.emit(node_id)
-        else:
-            self.node_clicked.emit(node_id, append)
-            self.setFocus()
-
-    def set_data(self, track_df: pd.DataFrame, plot_type: str, feature: str) -> None:
-        """Updates the stored pyqtgraph content based on the given dataframe.
-        Does not render the new information (need to call _update_viewed_data).
-
-        Args:
-            track_df (pd.DataFrame): The tracks df to compute the pyqtgraph
-                content for. Can be all lineages or any subset of them.
-            plot_type (str): The plot_type to be plotted. Can either be 'tree', or 'feature'.
-            feature (str): the header name of the feature to be plotted, if plot_type == "feature"
-        """
-        self.track_df = track_df
-        self._create_pyqtgraph_content(track_df, plot_type, feature)
-
-    def _update_viewed_data(self, view_direction: str):
-        """Set the data according to the view direction.
-
-        Args:
-            view_direction (str): direction to plot the data, either 'horizontal' or
-                'vertical'
-        """
-        # first reset the pen to avoid problems with length mismatch between the
-        # different properties
-        self.g.scatter.setPen(pg.mkPen(QColor(150, 150, 150)))
-        self.g.scatter.setSize(10)
-        if len(self._pos) == 0 or view_direction == "vertical":
-            pos_data = self._pos
-        else:
-            pos_data = np.flip(self._pos, axis=1)
-
-        self.g.setData(
-            pos=pos_data,
-            adj=self.adj,
-            symbol=self.symbols,
-            symbolBrush=self.symbolBrush,
-            pen=self.pen,
-            data=self.node_ids,
-        )
-        self.g.scatter.setPen(self.outline_pen)
-        self.g.scatter.setSize(self.sizes)
-
-    def _create_pyqtgraph_content(
-        self, track_df: pd.DataFrame, plot_type: str, feature: str | None = None
-    ) -> None:
-        """Parse the given track_df into the format that pyqtgraph expects
-        and save the information as attributes.
-
-        Args:
-            track_df (pd.DataFrame): The dataframe containing the graph to be
-                rendered in the tree view. Can be all lineages or a subset.
-            plot_type (str): The plot type to be plotted. Can either be 'tree' or 'feature'.
-            feature (str): The header name of the feature to be plotted, if plot_type == feature.
-        """
-        self._pos = []
-        self.adj = []
-        self.symbols = []
-        self.symbolBrush = []
-        self.pen = []
-        self.sizes = []
-        self.node_ids = []
-        self.feature = feature
-
-        if track_df is not None and not track_df.empty:
-            self.symbols = track_df["symbol"].to_list()
-            self.symbolBrush = track_df["color"].to_numpy()
-            if plot_type == "tree":
-                self._pos = track_df[["x_axis_pos", "t"]].to_numpy()
-            elif plot_type == "feature":
-                self._pos = track_df[[feature, "t"]].to_numpy()
-            self.node_ids = track_df["node_id"].to_list()
-            self.sizes = np.array(
-                [
-                    8,
-                ]
-                * len(self.symbols)
-            )
-
-            valid_edges_df = track_df[track_df["parent_id"] != 0]
-            node_ids_to_index = {
-                node_id: index for index, node_id in enumerate(self.node_ids)
-            }
-            edges_df = valid_edges_df[["node_id", "parent_id"]]
-            self.pen = valid_edges_df["color"].to_numpy()
-            edges_df_mapped = edges_df.map(lambda _id: node_ids_to_index[_id])
-            self.adj = edges_df_mapped.to_numpy()
-
-        self.outline_pen = np.array(
-            [pg.mkPen(QColor(150, 150, 150, 0)) for i in range(len(self._pos))]
-        )
-
-    def set_selection(self, selected_nodes: list[Any], plot_type: str) -> None:
-        """Set the provided list of nodes to be selected. Increases the size
-        and highlights the outline with blue.
-
-        Note: Single-node centering is handled separately via the center_node signal
-        from TracksViewer. Multi-node range centering is handled here.
-
-        Args:
-            selected_nodes (list[Any]): A list of node ids to be selected.
-            plot_type (str): the plot type being displayed, either 'tree' or 'feature'
-        """
-
-        # reset to default size and color to avoid problems with the array lengths
-        self.g.scatter.setPen(pg.mkPen(QColor(150, 150, 150)))
-        self.g.scatter.setSize(10)
-
-        size = (
-            self.sizes.copy()
-        )  # just copy the size here to keep the original self.sizes intact
-
-        outlines = self.outline_pen.copy()
-        axis_label = self.feature if plot_type == "feature" else "x_axis_pos"
-
-        if len(selected_nodes) > 0:
-            x_values = []
-            t_values = []
-            for node_id in selected_nodes:
-                node_df = self.track_df.loc[self.track_df["node_id"] == node_id]
-                if not node_df.empty:
-                    x_axis_value = node_df[axis_label].values[0]
-                    t = node_df["t"].values[0]
-
-                    x_values.append(x_axis_value)
-                    t_values.append(t)
-
-                    # Update size and outline
-                    index = self.node_ids.index(node_id)
-                    size[index] += 5
-                    outlines[index] = pg.mkPen(color="c", width=2)
-
-            # Center range if multiple nodes are selected (single-node centering
-            # is handled by the center_node signal)
-            if len(x_values) > 1:
-                min_x = np.min(x_values)
-                max_x = np.max(x_values)
-                min_t = np.min(t_values)
-                max_t = np.max(t_values)
-                self._center_range(min_x, max_x, min_t, max_t)
-
-        self.g.scatter.setPen(outlines)
-        self.g.scatter.setSize(size)
-
-    def _center_range(self, min_x: int, max_x: int, min_t: int, max_t: int):
-        """Check whether viewbox contains current range and adjust if not"""
-
-        if self.view_direction == "horizontal":
-            min_x, max_x, min_t, max_t = min_t, max_t, min_x, max_x
-
-        view_box = self.plotItem.getViewBox()
-        current_range = view_box.viewRange()
-
-        x_range = current_range[0]
-        y_range = current_range[1]
-
-        # Check if the new range is within the current range
-        if (
-            x_range[0] <= min_x
-            and x_range[1] >= max_x
-            and y_range[0] <= min_t
-            and y_range[1] >= max_t
-        ):
-            return
-        else:
-            self.autoRange()
-
-    def center_on_node(self, node_id: int) -> None:
-        """Center the view on a specific node by ID.
-
-        Args:
-            node_id: The node ID to center on.
-        """
-        if not hasattr(self, "track_df") or self.track_df is None:
-            return
-        node_df = self.track_df.loc[self.track_df["node_id"] == node_id]
-        if node_df.empty:
-            return
-        axis_label = self.feature if self.plot_type == "feature" else "x_axis_pos"
-        x_axis_value = node_df[axis_label].values[0]
-        t = node_df["t"].values[0]
-        self._center_view(x_axis_value, t)
-
-    def _center_view(self, center_x: int, center_y: int):
-        """Center the Viewbox on given coordinates, preserving the current zoom level.
-
-        Only pans if the point is outside the current view.
-        """
-
-        if self.view_direction == "horizontal":
-            center_x, center_y = (
-                center_y,
-                center_x,
-            )  # flip because the axes have changed in horizontal mode
-
-        view_box = self.plotItem.getViewBox()
-        current_range = view_box.viewRange()
-
-        x_range = current_range[0]
-        y_range = current_range[1]
-
-        # Check if the new center is within the current range
-        if (
-            x_range[0] <= center_x <= x_range[1]
-            and y_range[0] <= center_y <= y_range[1]
-        ):
-            return
-
-        # Pan to center the point while preserving current zoom level
-        x_width = x_range[1] - x_range[0]
-        y_width = y_range[1] - y_range[0]
-        new_x_range = (center_x - x_width / 2, center_x + x_width / 2)
-        new_y_range = (center_y - y_width / 2, center_y + y_width / 2)
-        view_box.setRange(xRange=new_x_range, yRange=new_y_range, padding=0)
-
-
 class TreeWidget(QWidget):
-    """pyqtgraph-based widget for lineage tree visualization and navigation"""
+    """fastplotlib-based widget for lineage tree visualization and navigation"""
 
     def __init__(self, viewer: napari.Viewer):
         super().__init__()
@@ -492,7 +59,7 @@ class TreeWidget(QWidget):
         self.tracks_viewer.node_selection_updated.connect(self._update_selected)
         self.tracks_viewer.tracks_updated.connect(self._update_track_data)
 
-        # Construct the tree view pyqtgraph widget
+        # Construct the tree view (fastplotlib) canvas widget
         layout = QVBoxLayout()
 
         self.tree_widget: TreePlot = TreePlot()
@@ -534,18 +101,31 @@ class TreeWidget(QWidget):
         self.flip_widget = FlipTreeWidget()
         self.flip_widget.flip_tree.connect(self.flip_axes)
 
+        # Add checkboxes for the tree view's own annotations
+        self.options_widget = TreeViewOptionsWidget(
+            show_track_ids=self.tree_widget.show_track_ids,
+            show_hover_info=self.tree_widget.show_hover_info,
+        )
+        self.options_widget.show_track_ids_changed.connect(
+            self.tree_widget.set_show_track_ids
+        )
+        self.options_widget.show_hover_info_changed.connect(
+            self.tree_widget.set_show_hover_info
+        )
+
         # Construct a toolbar and set main layout
         panel_layout = QHBoxLayout()
         panel_layout.addWidget(self.mode_widget)
         panel_layout.addWidget(self.plot_type_widget)
         panel_layout.addWidget(self.navigation_widget)
         panel_layout.addWidget(self.flip_widget)
+        panel_layout.addWidget(self.options_widget)
         panel_layout.setSpacing(0)
         panel_layout.setContentsMargins(0, 0, 0, 0)
 
         panel = QWidget()
         panel.setLayout(panel_layout)
-        panel.setMaximumWidth(930)
+        panel.setMaximumWidth(1060)  # 930 + room for the options checkboxes
         panel.setMaximumHeight(82)
 
         # Make a collapsible for TreeView widgets
@@ -562,11 +142,22 @@ class TreeWidget(QWidget):
         tree_widget.setLayout(layout)
 
         self.setLayout(layout)
+
+        # Install eventfilter to watch for the deferred delete event, and call cleanup()
+        # to close the fastplotlib canvas before the Qt widgets are destroyed.
+        qt_main_window = getattr(viewer.window, "_qt_window", None)
+        if qt_main_window is not None:
+            qt_main_window.installEventFilter(self)
+
         self._update_track_data(reset_view=True)
 
     def cleanup(self) -> None:
-        """Called by MenuManager to disconnect from the TracksViewer signals to stop
-        updating the tree.
+        """Tear down the tree view: stop reacting to TracksViewer signals, then close
+        the wgpu canvas while its Qt widgets are still alive. Idempotent.
+
+        Called by MenuManager when the widget is destroyed, and by the event hooks
+        below when napari's main window goes away. Disconnecting comes first, so that
+        nothing tries to redraw a figure that is already closed.
         """
         self.tracks_viewer.tree_widget_present = False
         for signal, slot in (
@@ -576,6 +167,18 @@ class TreeWidget(QWidget):
         ):
             with contextlib.suppress(ValueError, KeyError, RuntimeError):
                 signal.disconnect(slot)
+        self.tree_widget.close_figure()
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        """Trigger clean up when napari's main window is being destroyed"""
+        if event.type() == QEvent.Type.DeferredDelete:
+            with contextlib.suppress(AttributeError, RuntimeError):
+                self.cleanup()
+        return super().eventFilter(obj, event)
+
+    def closeEvent(self, event) -> None:  # noqa: N802 (Qt-style name)
+        self.cleanup()
+        super().closeEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle key press events.
@@ -668,10 +271,12 @@ class TreeWidget(QWidget):
 
         self.navigation_widget.view_direction = self.view_direction
         self.tree_widget._update_viewed_data(self.view_direction)
+        # flipping transposes x<->y, so the previous camera rect no longer matches
+        # the data — reframe to fit (matches the old pyqtgraph autoRange-on-flip).
         self.tree_widget.set_view(
             view_direction=self.view_direction,
             plot_type=self.tree_widget.plot_type,
-            reset_view=False,
+            reset_view=True,
         )
 
     def set_mouse_enabled(self, x: bool, y: bool):
@@ -701,6 +306,12 @@ class TreeWidget(QWidget):
                 self.plot_type,
                 self.plot_type_widget.get_current_feature(),
                 self.selected_nodes,
+                # the plot now holds a different lineage, whose lanes (and, in feature
+                # mode, whose value range) have nothing to do with the camera framing
+                # left over from the previous one, so refit. TracksViewer's center_node
+                # signal cannot cover this: it fires before this rebuild, against data
+                # that is about to be replaced.
+                reset_view=True,
             )
         else:
             self.tree_widget.set_selection(self.selected_nodes, self.plot_type)

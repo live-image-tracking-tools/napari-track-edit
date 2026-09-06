@@ -3,8 +3,8 @@ from pathlib import Path
 
 import numpy as np
 import zarr
+from funtracks.import_export import has_embedded_segmentation
 from funtracks.import_export.magic_imread import magic_imread
-from funtracks.utils import get_store_path
 from psygnal import Signal
 from qtpy.QtWidgets import (
     QButtonGroup,
@@ -24,6 +24,7 @@ from qtpy.QtWidgets import (
 
 from motile_tracker.import_export.menus.geff_import_utils import (
     clear_layout,
+    geff_group_path,
 )
 
 
@@ -274,19 +275,6 @@ def _geff_has_mask_props(root: zarr.Group) -> bool:
         return False
 
 
-def geff_has_embedded_segmentation(root: zarr.Group) -> bool:
-    """Return True if the geff group has embedded segmentation that can be reconstructed.
-
-    Requires both:
-    - 'mask' and 'bbox' node prop arrays in the zarr store
-    - 'segmentation_shape' in zarr attrs (written by funtracks export_to_geff)
-
-    When both conditions are met, funtracks will reconstruct the segmentation
-    automatically as a GraphArrayView — no external segmentation file is needed.
-    """
-    return _geff_has_mask_props(root) and "segmentation_shape" in dict(root.attrs)
-
-
 class GeffSegmentationWidget(QWidget):
     """QWidget to select segmentation data when importing from geff."""
 
@@ -338,10 +326,10 @@ class GeffSegmentationWidget(QWidget):
         self._embedded_info_label.setFont(font)
         self._embedded_info_label.setVisible(False)
 
-        # Warning label shown when masks/bboxes are present but segmentation_shape is
-        # missing (GEFF exported by an older version of funtracks)
+        # Warning label shown when masks/bboxes are present but the shape metadata
+        # is missing (GEFF exported by an older version of funtracks or external tool)
         self._old_geff_warning_label = QLabel(
-            "⚠ This GEFF contains mask/bbox data but no segmentation_shape. "
+            "⚠ This GEFF contains mask/bbox data but no shape metadata. "
             "The segmentation cannot be reconstructed automatically. "
             "Re-export with an updated version of funtracks, or provide an "
             "external segmentation file below."
@@ -383,7 +371,8 @@ class GeffSegmentationWidget(QWidget):
         clear_layout(self.related_objects_layout)
         self.related_object_radio_buttons = {}
         if self.root is not None:
-            if geff_has_embedded_segmentation(self.root):
+            has_embedded_seg = has_embedded_segmentation(geff_group_path(self.root))
+            if has_embedded_seg:
                 # Embedded segmentation: hide radio options, show info label.
                 # segmentation_path=None will be passed to import_from_geff and
                 # funtracks will reconstruct the segmentation as a GraphArrayView.
@@ -394,7 +383,7 @@ class GeffSegmentationWidget(QWidget):
                 self._old_geff_warning_label.setVisible(False)
                 self.none_radio.setChecked(True)
             elif _geff_has_mask_props(self.root):
-                # Old GEFF: masks present but segmentation_shape missing.
+                # Old GEFF: masks present but shape metadata missing.
                 # Show a warning and the normal options so the user can provide
                 # an external segmentation or skip it.
                 self.none_radio.setVisible(True)
@@ -407,7 +396,7 @@ class GeffSegmentationWidget(QWidget):
                 self._embedded_info_label.setVisible(False)
                 self._old_geff_warning_label.setVisible(False)
 
-            if not geff_has_embedded_segmentation(self.root):
+            if not has_embedded_seg:
                 metadata = dict(self.root.attrs)
                 related_objects = metadata.get("geff", {}).get("related_objects", None)
                 if related_objects:
@@ -447,10 +436,7 @@ class GeffSegmentationWidget(QWidget):
 
         for path, radio in self.related_object_radio_buttons.items():
             if radio.isChecked():
-                store_path = get_store_path(self.root.store)  # e.g. /.../geff.zarr
-                group_path = Path(self.root.path)  # e.g. 'tracks'
-                full_group_path = store_path / group_path  # /.../geff.zarr/tracks
-                seg_path = (full_group_path / path).resolve()
+                seg_path = (geff_group_path(self.root) / path).resolve()
                 return seg_path
         if self.external_segmentation_radio.isChecked():
             return self.segmentation_widget.get_segmentation_path()

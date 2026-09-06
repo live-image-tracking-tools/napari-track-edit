@@ -11,6 +11,9 @@ funtracks' code and is covered by funtracks' own benchmark suite.)
 from __future__ import annotations
 
 import napari
+from bench_ui_actions import (
+    ROUNDS,  # shared round count (median-gated; see that module)
+)
 
 from motile_tracker.data_views.views.tree_view.tree_widget_utils import (
     extract_sorted_tracks,
@@ -27,6 +30,6 @@ def test_extract_sorted_tracks(benchmark, shared_tracks):
     cmap = _colormap()
     benchmark.pedantic(
         lambda: extract_sorted_tracks(shared_tracks, cmap),
-        rounds=3,
+        rounds=ROUNDS,
         iterations=1,
     )

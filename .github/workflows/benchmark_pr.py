@@ -63,13 +63,15 @@ def make_report(old_path, new_path, out_file, header=None):
         df = pd.DataFrame(
             {
                 "Benchmark": new_df["Benchmark"],
+                f"Median (s) HEAD {new_commit}": new_df["median"].map("{:.5f}".format),
                 f"Mean ± SD (s) HEAD {new_commit}": [
                     _fmt(m, s)
                     for m, s in zip(new_df["mean"], new_df["stddev"], strict=True)
                 ],
             }
         )
-        report = df.to_markdown(index=False)
+        # disable_numparse: see note on the comparison table below.
+        report = df.to_markdown(index=False, disable_numparse=True)
         note = "_No baseline found; showing HEAD results only (no comparison)._"
         report = f"{note}\n\n{report}"
         if header:
@@ -87,9 +89,15 @@ def make_report(old_path, new_path, out_file, header=None):
         100 * (merged["median_new"] - merged["median_old"]) / merged["median_old"]
     )
 
+    # Median columns first: they drive the gate, so "Median Change" is verifiable
+    # straight from them. Mean ± SD follows as a noise indicator (a wide SD or a mean
+    # far from the median flags a spiky benchmark whose median we're rightly trusting).
     df = pd.DataFrame(
         {
             "Benchmark": merged["Benchmark"],
+            f"Median (s) BASE {old_commit}": merged["median_old"].map("{:.5f}".format),
+            f"Median (s) HEAD {new_commit}": merged["median_new"].map("{:.5f}".format),
+            "Median Change": pct_change.map("{:+.2f}%".format),
             f"Mean ± SD (s) BASE {old_commit}": [
                 _fmt(m, s)
                 for m, s in zip(merged["mean_old"], merged["stddev_old"], strict=True)
@@ -98,11 +106,13 @@ def make_report(old_path, new_path, out_file, header=None):
                 _fmt(m, s)
                 for m, s in zip(merged["mean_new"], merged["stddev_new"], strict=True)
             ],
-            "Median Change": pct_change.map("{:+.2f}%".format),
         }
     )
 
-    report = df.to_markdown(index=False)
+    # disable_numparse: keep our fixed-precision strings exactly (tabulate otherwise
+    # re-parses numeric-looking cells and strips trailing zeros, so medians would show
+    # inconsistent precision next to the mean ± SD column).
+    report = df.to_markdown(index=False, disable_numparse=True)
     if header:
         report = f"## {header}\n\n{report}"
     _write(out_file, report)

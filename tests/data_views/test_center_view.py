@@ -24,7 +24,7 @@ def _make_single_node_graph(
         tmp_path: Pytest tmp_path for the SQLite database.
         pos: Node position in world coordinates [z, y, x].
         seg_bbox: Bounding box [z0, y0, x0, z1, y1, x1] for the node's mask.
-            If provided, mask/bbox node attributes and segmentation_shape metadata
+            If provided, mask/bbox node attributes and shape metadata
             are added so SolutionTracks can reconstruct the segmentation.
         seg_shape: Full segmentation array shape (t, z, y, x). Required when
             seg_bbox is provided.
@@ -51,7 +51,7 @@ def _make_single_node_graph(
     graph.bulk_add_nodes(nodes=[node], indices=[1])
 
     if seg_shape is not None:
-        graph._update_metadata(segmentation_shape=seg_shape)
+        graph._update_metadata(shape=seg_shape)
 
     return graph
 

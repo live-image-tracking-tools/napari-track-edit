@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import zarr
+from geff_spec import GeffMetadata
 
 from motile_tracker.import_export.menus.segmentation_widgets import (
     CSVSegmentationWidget,
@@ -12,6 +13,18 @@ from motile_tracker.import_export.menus.segmentation_widgets import (
     FileFolderDialog,
     GeffSegmentationWidget,
 )
+
+
+def _minimal_geff_attrs(**overrides) -> dict:
+    """Build a minimal but schema-valid 'geff' zarr attrs dict for test fixtures.
+
+    GeffMetadata.read validates the full geff_spec schema, so fixtures need more
+    than just the fields under test (e.g. related_objects) to be readable.
+    """
+    metadata = GeffMetadata(
+        directed=True, node_props_metadata={}, edge_props_metadata={}, **overrides
+    )
+    return metadata.model_dump(mode="json", exclude_none=True)
 
 
 class TestExternalSegmentationWidget:
@@ -400,6 +413,7 @@ class TestGeffSegmentationWidget:
         # Create zarr group
         zarr_path = tmp_path / "test.zarr"
         root = zarr.open_group(str(zarr_path), mode="w")
+        root.attrs["geff"] = _minimal_geff_attrs()
 
         widget.update_root(root)
 
@@ -413,12 +427,12 @@ class TestGeffSegmentationWidget:
         # Create zarr group with related objects metadata
         zarr_path = tmp_path / "test.zarr"
         root = zarr.open_group(str(zarr_path), mode="w")
-        root.attrs["geff"] = {
-            "related_objects": [
+        root.attrs["geff"] = _minimal_geff_attrs(
+            related_objects=[
                 {"type": "labels", "path": "segmentation"},
                 {"type": "labels", "path": "masks"},
             ]
-        }
+        )
 
         widget.update_root(root)
 
@@ -435,14 +449,18 @@ class TestGeffSegmentationWidget:
         # First update with related objects
         zarr_path1 = tmp_path / "test1.zarr"
         root1 = zarr.open_group(str(zarr_path1), mode="w")
-        root1.attrs["geff"] = {"related_objects": [{"type": "labels", "path": "seg1"}]}
+        root1.attrs["geff"] = _minimal_geff_attrs(
+            related_objects=[{"type": "labels", "path": "seg1"}]
+        )
         widget.update_root(root1)
         assert len(widget.related_object_radio_buttons) == 1
 
         # Second update with different related objects
         zarr_path2 = tmp_path / "test2.zarr"
         root2 = zarr.open_group(str(zarr_path2), mode="w")
-        root2.attrs["geff"] = {"related_objects": [{"type": "labels", "path": "seg2"}]}
+        root2.attrs["geff"] = _minimal_geff_attrs(
+            related_objects=[{"type": "labels", "path": "seg2"}]
+        )
         widget.update_root(root2)
 
         # Should have new radio, not old one
@@ -497,9 +515,9 @@ class TestGeffSegmentationWidget:
         # Create zarr group with related object
         zarr_path = tmp_path / "test.zarr"
         root = zarr.open_group(str(zarr_path), mode="w")
-        root.attrs["geff"] = {
-            "related_objects": [{"type": "labels", "path": "segmentation"}]
-        }
+        root.attrs["geff"] = _minimal_geff_attrs(
+            related_objects=[{"type": "labels", "path": "segmentation"}]
+        )
         widget.update_root(root)
 
         # Select the related object radio
@@ -539,9 +557,9 @@ class TestGeffSegmentationWidget:
         zarr_path = tmp_path / "test.zarr"
         # First create root group
         root = zarr.open_group(str(zarr_path / "tracks"), mode="w")
-        root.attrs["geff"] = {
-            "related_objects": [{"type": "labels", "path": "segmentation"}]
-        }
+        root.attrs["geff"] = _minimal_geff_attrs(
+            related_objects=[{"type": "labels", "path": "segmentation"}]
+        )
 
         # Create the expected segmentation path
         seg_path = zarr_path / "tracks" / "segmentation"

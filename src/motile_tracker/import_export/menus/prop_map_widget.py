@@ -7,6 +7,7 @@ from funtracks.annotators._track_annotator import (
     DEFAULT_LINEAGE_KEY,
     DEFAULT_TRACKLET_KEY,
 )
+from funtracks.import_export import has_embedded_segmentation
 from funtracks.import_export._utils import get_default_key_to_feature_mapping
 from psygnal import Signal
 from qtpy.QtCore import Qt
@@ -24,9 +25,7 @@ from qtpy.QtWidgets import (
 
 from motile_tracker.import_export.menus.geff_import_utils import (
     clear_layout,
-)
-from motile_tracker.import_export.menus.segmentation_widgets import (
-    geff_has_embedded_segmentation,
+    geff_group_path,
 )
 
 
@@ -178,8 +177,8 @@ class StandardFieldMapWidget(QWidget):
         self.metadata = dict(root.attrs.get("geff", {}))
 
         # Exclude mask/bbox from optional features when they are embedded segmentation
-        # attributes that will be imported automatically (segmentation_shape present).
-        if geff_has_embedded_segmentation(root):
+        # attributes that will be imported automatically (shape metadata present).
+        if has_embedded_segmentation(geff_group_path(root)):
             self.node_attrs = [a for a in self.node_attrs if a not in ("mask", "bbox")]
 
         # Retrieve attribute types from the zarr group

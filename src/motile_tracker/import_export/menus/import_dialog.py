@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from funtracks.import_export import import_from_geff, tracks_from_df
+import numpy as np
+from funtracks.import_export import (
+    has_embedded_segmentation,
+    import_from_geff,
+    tracks_from_df,
+)
 from funtracks.import_export.magic_imread import magic_imread
 from geff_spec.utils import axes_from_lists
 from qtpy.QtCore import Qt
@@ -22,6 +27,7 @@ from motile_tracker.import_export.menus.csv_dimension_widget import (
 from motile_tracker.import_export.menus.csv_import_widget import (
     ImportCSVWidget,
 )
+from motile_tracker.import_export.menus.geff_import_utils import geff_group_path
 from motile_tracker.import_export.menus.geff_import_widget import (
     ImportGeffWidget,
 )
@@ -30,7 +36,6 @@ from motile_tracker.import_export.menus.scale_widget import ScaleWidget
 from motile_tracker.import_export.menus.segmentation_widgets import (
     CSVSegmentationWidget,
     GeffSegmentationWidget,
-    geff_has_embedded_segmentation,
 )
 
 
@@ -152,7 +157,9 @@ class ImportDialog(QDialog):
                     self.seg,
                     self.incl_z,
                     seg_for_features=self.seg
-                    or geff_has_embedded_segmentation(self.import_widget.root),
+                    or has_embedded_segmentation(
+                        geff_group_path(self.import_widget.root)
+                    ),
                 )
 
             else:
@@ -330,6 +337,62 @@ class ImportDialog(QDialog):
             recompute = "area" not in self.tracks.graph.node_attr_keys()
             self.tracks.enable_features(["area"], recompute=recompute)
 
+    def _maybe_convert_legacy_masks(self, geff_dir: Path) -> bool:
+        """Offer to convert masks stored in an older, memory-heavy dtype.
+
+        Geff files written by older versions of tracksdata store segmentation
+        masks as integers (e.g. ``uint64``) rather than ``bool``, using ~8x more
+        memory when read, which can run out of memory on large datasets. If such
+        masks are detected, warn the user and offer a lossless, in-place
+        conversion of the mask buffer (the rest of the geff is untouched).
+
+        Returns:
+            bool: True to continue the import, False if the user cancelled or the
+            conversion failed.
+        """
+        # TODO: the geff dtype helpers are only on tracksdata main
+        # (royerlab/tracksdata#319). Once released, add a tracksdata floor to
+        # pyproject.toml and import these at module level.
+        try:
+            from tracksdata.constants import DEFAULT_ATTR_KEYS
+            from tracksdata.io import convert_geff_prop_dtype, geff_prop_dtype
+        except ImportError:
+            return True  # older tracksdata without the utility; import as before
+
+        mask_key = DEFAULT_ATTR_KEYS.MASK
+        try:
+            dtype = geff_prop_dtype(geff_dir, mask_key)
+        except Exception:  # noqa: BLE001
+            return True  # detection failed; don't block the import
+
+        if dtype is None or dtype == np.bool_:
+            return True
+
+        answer = QMessageBox.question(
+            self,
+            "Old mask format detected",
+            f"This geff stores segmentation masks as '{dtype}', an older format that "
+            "uses about 8x more memory when loaded.\n\n"
+            "Convert them to boolean now? The conversion is lossless, but it edits "
+            f"{geff_dir.name} in place.",
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Yes,
+        )
+        if answer == QMessageBox.Cancel:
+            return False
+        if answer == QMessageBox.No:
+            return True  # load as-is
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            convert_geff_prop_dtype(geff_dir, mask_key, np.bool_)
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.critical(self, "Error", f"Failed to convert masks: {e}")
+            return False
+        finally:
+            QApplication.restoreOverrideCursor()
+        return True
+
     def _finish(self) -> None:
         """Tries to read the csv/geff file and optional segmentation image and apply the
         attribute to column mapping to construct a Tracks object"""
@@ -339,6 +402,9 @@ class ImportDialog(QDialog):
                 store_path = self.import_widget.store_path
                 group_path = Path(self.import_widget.root.path)  # e.g. 'tracks'
                 geff_dir = store_path / group_path
+
+                if not self._maybe_convert_legacy_masks(geff_dir):
+                    return
 
                 self.name = self.import_widget.dir_name
                 scale = self.scale_widget.get_scale() if self.seg else None
@@ -353,9 +419,7 @@ class ImportDialog(QDialog):
                 # external segmentation file is provided, ensure those attributes are
                 # loaded so funtracks can reconstruct the segmentation as a
                 # GraphArrayView.
-                if segmentation_path is None and geff_has_embedded_segmentation(
-                    self.import_widget.root
-                ):
+                if segmentation_path is None and has_embedded_segmentation(geff_dir):
                     name_map.setdefault("mask", "mask")
                     name_map.setdefault("bbox", "bbox")
 
