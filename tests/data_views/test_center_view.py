@@ -393,3 +393,57 @@ class TestCenterViewWithScale:
         )
 
         ortho_manager.cleanup()
+
+
+def test_center_view_with_extra_viewer_dimensions(viewer, tmp_path):
+    """A multi-channel source layer adds a leading dimension to the viewer.
+
+    The tracks layers still occupy the trailing dimensions, so centering must fill
+    those and leave the extra leading dimension on the step the user selected, rather
+    than assert that the node position covers every viewer dimension.
+    """
+
+    graph = _make_single_node_graph(
+        tmp_path,
+        pos=[10, 30, 40],
+        seg_bbox=[9, 29, 39, 11, 31, 41],
+        seg_shape=(2, 20, 60, 60),
+    )
+    tracks = SolutionTracks(graph=graph, ndim=4, time_attr="t")
+
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=tracks, name="test")
+
+    # a source layer holding two alternative segmentations of the same objects
+    viewer.add_labels(np.zeros((2, 2, 20, 60, 60), dtype=np.uint16), name="src")
+    assert viewer.dims.ndim == 5
+
+    # put the channel slider on the second option
+    viewer.dims.set_current_step(0, 1)
+
+    tracks_viewer.tracking_layers.center_view(node=1)
+
+    point = viewer.dims.point
+    assert len(point) == 5
+    assert point[0] == 1  # the channel the user selected is left alone
+    assert list(point[1:]) == [0, 10, 30, 40]  # t, z, y, x of the node
+
+
+def test_center_on_node_does_not_raise_with_extra_dimensions(viewer, tmp_path):
+    """The reported crash: centering asserted the node position matched the viewer."""
+
+    graph = _make_single_node_graph(
+        tmp_path,
+        pos=[10, 30, 40],
+        seg_bbox=[9, 29, 39, 11, 31, 41],
+        seg_shape=(2, 20, 60, 60),
+    )
+    tracks = SolutionTracks(graph=graph, ndim=4, time_attr="t")
+
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=tracks, name="test")
+    viewer.add_labels(np.zeros((3, 2, 20, 60, 60), dtype=np.uint16), name="src")
+
+    tracks_viewer.center_on_node(1)  # emits center_node; used to raise EmitLoopError
+
+    assert list(viewer.dims.point[-4:]) == [0, 10, 30, 40]

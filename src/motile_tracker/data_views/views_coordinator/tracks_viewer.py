@@ -149,9 +149,14 @@ class TracksViewer:
     def set_keybinds(self):
         bind_keymap(self.viewer, KEYMAP, self)
 
-    def request_new_track(self) -> None:
-        """Request a new track id (with new segmentation label if a seg layer is present)"""
+    def request_new_track(self, event=None) -> None:
+        """Request a new track id (with new segmentation label if a seg layer is present)
 
+        Takes an (unused) event argument so it can be bound as a napari keybinding.
+        """
+
+        if self.tracks is None:
+            return
         if self.tracking_layers.seg_layer is not None:
             new_label(self.tracking_layers.seg_layer)
         else:
@@ -517,12 +522,15 @@ class TracksViewer:
     def undo(self, event=None):
         if self.tracks is None:
             return
-        self.tracks.undo()
+        # prevent jumping to the selected node, so that the view stays stable.
+        with self.center_node.blocked():
+            self.tracks.undo()
 
     def redo(self, event=None):
         if self.tracks is None:
             return
-        self.tracks.redo()
+        with self.center_node.blocked():
+            self.tracks.redo()
 
     def hide_panels(self, event=None):
         """Show/hide menu and tree view panels without destroying"""

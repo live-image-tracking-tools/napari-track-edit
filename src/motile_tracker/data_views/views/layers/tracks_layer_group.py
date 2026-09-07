@@ -142,14 +142,19 @@ class TracksLayerGroup:
 
         if self.seg_layer is None or self.seg_layer.mode == "pan_zoom":
             location = self.tracks.get_position(node, incl_time=True)
-            assert len(location) == self.viewer.dims.ndim, (
-                f"Location {location} does not match viewer number of dims "
-                f"{self.viewer.dims.ndim}"
+            assert len(location) <= self.viewer.dims.ndim, (
+                f"Location {location} has more dimensions than the viewer "
+                f"({self.viewer.dims.ndim})"
             )
+
+            # The viewer can have more dimensions than the tracks, for instance when a
+            # source layer with an extra channel axis is loaded next to them.
+            point = list(self.viewer.dims.point)
+            point[self.viewer.dims.ndim - len(location) :] = location
 
             # Set dims.point directly with world coordinates - napari will
             # automatically convert to the correct step indices
-            self.viewer.dims.point = location
+            self.viewer.dims.point = point
 
             # check whether the new coordinates are inside or outside the field of view,
             # then adjust the camera if needed
@@ -174,16 +179,21 @@ class TracksLayerGroup:
             x_dim = dims_displayed[-1]
             y_dim = dims_displayed[-2]
 
+            # corner_pixels is indexed by the layer's own axes, while dims_displayed
+            # indexes the viewer's. Napari aligns layers on their trailing dimensions,
+            # so the layer's axes are the last ones of the viewer.
+            offset = self.viewer.dims.ndim - example_layer.ndim
+
             # find corner pixels for the displayed axes
-            _min_x = corner_coordinates[0][x_dim]
-            _max_x = corner_coordinates[1][x_dim]
-            _min_y = corner_coordinates[0][y_dim]
-            _max_y = corner_coordinates[1][y_dim]
+            _min_x = corner_coordinates[0][x_dim - offset]
+            _max_x = corner_coordinates[1][x_dim - offset]
+            _min_y = corner_coordinates[0][y_dim - offset]
+            _max_y = corner_coordinates[1][y_dim - offset]
 
             # check whether the node location falls within the corner spatial range
             if not (
-                (location[x_dim] > _min_x and location[x_dim] < _max_x)
-                and (location[y_dim] > _min_y and location[y_dim] < _max_y)
+                (point[x_dim] > _min_x and point[x_dim] < _max_x)
+                and (point[y_dim] > _min_y and point[y_dim] < _max_y)
             ):
                 camera_center = self.viewer.camera.center
 
@@ -191,8 +201,8 @@ class TracksLayerGroup:
                 # of the currently displayed dimensions
                 self.viewer.camera.center = (
                     camera_center[0],
-                    location[y_dim],
+                    point[y_dim],
                     # camera center is calculated in scaled coordinates, and the optional
                     # labels layer is scaled by the layer.scale attribute
-                    location[x_dim],
+                    point[x_dim],
                 )

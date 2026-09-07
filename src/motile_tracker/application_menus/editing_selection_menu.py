@@ -9,11 +9,15 @@ from qtpy.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 from superqt.fonticon import icon as qticon
 
+from motile_tracker.application_menus.copy_from_source_widget import (
+    CopyFromSourceWidget,
+)
 from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 if TYPE_CHECKING:
@@ -160,7 +164,7 @@ class EditingMenu(QWidget):
         self.label = QLabel(f"Current Track ID: {self.tracks_viewer.selected_track}")
         self.tracks_viewer.update_track_id.connect(self.update_track_id_color)
 
-        self.new_track_btn = QPushButton("Start new")
+        self.new_track_btn = QPushButton("Start new [']")
         self.new_track_btn.clicked.connect(self.tracks_viewer.request_new_track)
         track_layout = QHBoxLayout()
         track_layout.addWidget(self.label)
@@ -255,17 +259,30 @@ class EditingMenu(QWidget):
 
 
 class EditingSelectionWidget(QWidget):
-    """Combined widget for editing and selection controls"""
+    """Combined widget for editing and selection controls, with the controls to copy
+    detections from a source layer on a separate tab."""
 
     def __init__(self, viewer: napari.Viewer):
         super().__init__()
 
         self.tracks_viewer = TracksViewer.get_instance(viewer)
-        editing_widget = EditingMenu(viewer)
-        selection_widget = SelectionWidget(self.tracks_viewer)
-        selection_editing_layout = QVBoxLayout()
-        selection_editing_layout.addWidget(editing_widget)
-        selection_editing_layout.addWidget(selection_widget)
+        self.editing_widget = EditingMenu(viewer)
+        self.selection_widget = SelectionWidget(self.tracks_viewer)
+
+        edit_select_widget = QWidget()
+        selection_editing_layout = QVBoxLayout(edit_select_widget)
+        selection_editing_layout.addWidget(self.editing_widget)
+        selection_editing_layout.addWidget(self.selection_widget)
         selection_editing_layout.setContentsMargins(0, 0, 0, 0)
-        self.setLayout(selection_editing_layout)
+
+        self.copy_from_source_widget = CopyFromSourceWidget(viewer)
+
+        self.tabs = QTabWidget()
+        self.tabs.addTab(edit_select_widget, "Edit && Select")
+        self.tabs.addTab(self.copy_from_source_widget, "Copy from source")
+
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(self.tabs)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(main_layout)
         self.setMaximumHeight(600)
