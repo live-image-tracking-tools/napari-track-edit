@@ -1,12 +1,22 @@
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import napari
 import numpy as np
 import pytest
+from funtracks.data_model import Tracks
+from qtpy.QtWidgets import QLabel
 
 from motile_tracker.import_export.menus.export_dialog import (
+    SQL_EXPORT_TYPE,
     ExportDialog,
     ExportTypeDialog,
+)
+from motile_tracker.import_export.sql_io import (
+    is_sql_backed,
+    sql_database_path,
+    tracks_from_sql,
+    write_tracks_to_sql,
 )
 
 # ---------------------------------------------------------------------------
@@ -442,3 +452,251 @@ def test_export_geff_error(
 
     assert result is False
     mock_warning.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# SQL database export
+# ---------------------------------------------------------------------------
+
+
+def _select_sql(dialog):
+    dialog.export_type_combo.setCurrentText(SQL_EXPORT_TYPE)
+
+
+def _select_sql_and_rebind(dialog):
+    # Switching over is the default, so selecting the format is all it takes.
+    _select_sql(dialog)
+
+
+def _select_sql_and_stay(dialog):
+    _select_sql(dialog)
+    dialog.keep_in_memory_checkbox.setChecked(True)
+
+
+def test_sql_offered_by_default(qtbot):
+    dialog = ExportTypeDialog(has_segmentation=True)
+    qtbot.addWidget(dialog)
+    assert dialog.export_type_combo.findText(SQL_EXPORT_TYPE) != -1
+
+
+def test_sql_hidden_for_group_export(qtbot):
+    """A group export writes a subset; a database is written whole."""
+    dialog = ExportTypeDialog(has_segmentation=True, offer_sql=False)
+    qtbot.addWidget(dialog)
+    assert dialog.export_type_combo.findText(SQL_EXPORT_TYPE) == -1
+
+
+def test_rebind_option_only_shown_for_sql(qtbot):
+    dialog = ExportTypeDialog(has_segmentation=True)
+    qtbot.addWidget(dialog)
+    assert not dialog.keep_in_memory_checkbox.isVisibleTo(dialog)
+
+    _select_sql(dialog)
+    assert dialog.keep_in_memory_checkbox.isVisibleTo(dialog)
+    assert dialog._rebind_label.isVisibleTo(dialog)
+
+
+def test_in_memory_tracks_switch_over_by_default(qtbot):
+    """Exporting from memory leaves you working in the new database."""
+    dialog = ExportTypeDialog(has_segmentation=True)
+    qtbot.addWidget(dialog)
+    _select_sql(dialog)
+
+    assert not dialog.keep_in_memory_checkbox.isChecked()
+    assert dialog.rebind is True
+
+    dialog.keep_in_memory_checkbox.setChecked(True)
+    assert dialog.rebind is False
+
+
+def test_database_backed_tracks_stay_put_by_default(qtbot):
+    """Exporting a copy of a database must not move the session into the copy.
+
+    The default never leaves you in memory, but for tracks already on disk that
+    means staying where they are, not following the copy being handed over.
+    """
+    dialog = ExportTypeDialog(
+        has_segmentation=True, already_on_disk=Path("/data/tracks.db")
+    )
+    qtbot.addWidget(dialog)
+    _select_sql(dialog)
+
+    assert dialog.keep_in_memory_checkbox.isChecked()
+    assert dialog.rebind is False
+
+    dialog.keep_in_memory_checkbox.setChecked(False)
+    assert dialog.rebind is True
+
+
+def test_sql_hides_segmentation_options(qtbot):
+    """A database always holds the segmentation, as part of the graph."""
+    dialog = ExportTypeDialog(has_segmentation=True)
+    qtbot.addWidget(dialog)
+    dialog.seg_checkbox.setChecked(True)
+
+    _select_sql(dialog)
+
+    assert not dialog.seg_checkbox.isVisibleTo(dialog)
+    assert not dialog.save_segmentation
+
+
+def test_export_to_sql_writes_a_readable_database(
+    solution_tracks_2d,
+    fake_parent,
+    tmp_path,
+    colormap,
+    accept_type_dialog,
+    mock_file_dialog,
+):
+    db_path = tmp_path / "tracks.db"
+    accept_type_dialog(_select_sql_and_stay)
+
+    with mock_file_dialog(db_path):
+        result = ExportDialog.show_export_dialog(
+            fake_parent, solution_tracks_2d, name="G", colormap=colormap
+        )
+
+    assert result is True
+    assert db_path.exists()
+    reopened = tracks_from_sql(db_path)
+    assert reopened.graph_full.num_nodes() == (
+        solution_tracks_2d.graph_full.num_nodes()
+    )
+
+
+def test_export_to_sql_without_rebind_leaves_session_in_memory(
+    solution_tracks_2d,
+    fake_parent,
+    tmp_path,
+    colormap,
+    accept_type_dialog,
+    mock_file_dialog,
+):
+    accept_type_dialog(_select_sql_and_stay)
+
+    with mock_file_dialog(tmp_path / "tracks.db"):
+        result = ExportDialog.show_export_dialog(
+            fake_parent, solution_tracks_2d, name="G", colormap=colormap
+        )
+
+    assert result is True  # a plain export, nothing to swap in
+    assert not is_sql_backed(solution_tracks_2d)
+
+
+def test_export_to_sql_with_rebind_returns_database_backed_tracks(
+    solution_tracks_2d,
+    fake_parent,
+    tmp_path,
+    colormap,
+    accept_type_dialog,
+    mock_file_dialog,
+):
+    db_path = tmp_path / "tracks.db"
+    accept_type_dialog(_select_sql_and_rebind)
+
+    with mock_file_dialog(db_path):
+        result = ExportDialog.show_export_dialog(
+            fake_parent, solution_tracks_2d, name="G", colormap=colormap
+        )
+
+    assert isinstance(result, Tracks)
+    assert is_sql_backed(result)
+    assert sql_database_path(result) == db_path
+    # The object handed in is left alone.
+    assert not is_sql_backed(solution_tracks_2d)
+
+
+def test_export_to_sql_overwrites_existing_file(
+    solution_tracks_2d,
+    fake_parent,
+    tmp_path,
+    colormap,
+    accept_type_dialog,
+    mock_file_dialog,
+):
+    """The save dialog already confirmed; clearing the path first is what keeps
+    tracksdata's SQL-level copy eligible."""
+    db_path = tmp_path / "tracks.db"
+    db_path.write_bytes(b"not a database")
+    accept_type_dialog(_select_sql_and_stay)
+
+    with mock_file_dialog(db_path):
+        result = ExportDialog.show_export_dialog(
+            fake_parent, solution_tracks_2d, name="G", colormap=colormap
+        )
+
+    assert result is True
+    assert tracks_from_sql(db_path).graph_full.num_nodes() > 0
+
+
+def test_export_to_sql_refuses_own_database(
+    solution_tracks_2d,
+    fake_parent,
+    tmp_path,
+    colormap,
+    accept_type_dialog,
+    mock_file_dialog,
+):
+    """Exporting a database over itself would destroy it before reading it."""
+    db_path = tmp_path / "tracks.db"
+    write_tracks_to_sql(solution_tracks_2d, db_path)
+    opened = tracks_from_sql(db_path)
+
+    accept_type_dialog(_select_sql)
+    with (
+        mock_file_dialog(db_path),
+        patch(
+            "motile_tracker.import_export.menus.export_dialog.QMessageBox.warning"
+        ) as mock_warning,
+    ):
+        result = ExportDialog.show_export_dialog(
+            fake_parent, opened, name="G", colormap=colormap
+        )
+
+    assert result is False
+    mock_warning.assert_called_once()
+    assert tracks_from_sql(db_path).graph_full.num_nodes() > 0
+
+
+def test_export_to_sql_cancel_writes_nothing(
+    solution_tracks_2d, fake_parent, tmp_path, colormap, accept_type_dialog
+):
+    db_path = tmp_path / "tracks.db"
+    accept_type_dialog(_select_sql)
+
+    fd = MagicMock()
+    fd.exec_.return_value = False
+    with patch(
+        "motile_tracker.import_export.menus.export_dialog.QFileDialog",
+        return_value=fd,
+    ):
+        result = ExportDialog.show_export_dialog(
+            fake_parent, solution_tracks_2d, name="G", colormap=colormap
+        )
+
+    assert result is False
+    assert not db_path.exists()
+
+
+def test_already_on_disk_note_shown_for_database_backed_tracks(
+    solution_tracks_2d,
+    fake_parent,
+    tmp_path,
+    colormap,
+    accept_type_dialog,
+    mock_file_dialog,
+):
+    """Tracks that live in a database are told so, since for them exporting is
+    about sharing rather than about not losing work."""
+    db_path = tmp_path / "tracks.db"
+    write_tracks_to_sql(solution_tracks_2d, db_path)
+    opened = tracks_from_sql(db_path)
+
+    captured = accept_type_dialog(_select_sql)
+    with mock_file_dialog(tmp_path / "copy.db"):
+        ExportDialog.show_export_dialog(
+            fake_parent, opened, name="G", colormap=colormap
+        )
+
+    labels = captured["dialog"].findChildren(QLabel)
+    assert any(str(db_path) in label.text() for label in labels)

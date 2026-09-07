@@ -105,6 +105,16 @@ dev = [
 ]
 # For gurobi, install separately: uv pip install "gurobipy>=12,<13"
 
+# TEMPORARY: pin funtracks to the `sql` branch (funkelab/funtracks#270), which adds
+# SQL-backend support to the tracksdata graph helpers and carries the two edit-path
+# fixes a SQL-backed Tracks needs (time key excluded from revive_attrs, feature
+# attr-key registration on graph_full). That PR in turn pins tracksdata to the
+# `graph-views` branch (royerlab/tracksdata#325), whose root-to-view attribute
+# propagation is required or a SQL-backed segmentation renders stale after every edit.
+# Replace with a released version pin once both land.
+[tool.uv.sources]
+funtracks = { git = "https://github.com/funkelab/funtracks.git", rev = "149b9d71c517f83b799bc2acfc95694973be1b33" }
+
 [tool.uv]
 # gurobi12 and gurobi13 conflict with each other (mutually exclusive version pins)
 conflicts = [
