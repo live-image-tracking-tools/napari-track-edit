@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import napari
 import numpy as np
 from funtracks.data_model import Tracks
 from funtracks.import_export import export_to_csv, export_to_geff
@@ -14,6 +13,8 @@ from qtpy.QtWidgets import (
     QMessageBox,
     QVBoxLayout,
 )
+
+from motile_tracker.data_views.colormap import TrackColormap
 
 
 class ExportTypeDialog(QDialog):
@@ -97,7 +98,7 @@ class ExportDialog:
         parent,
         tracks: Tracks,
         name: str,
-        colormap: napari.utils.Colormap,
+        colormap: TrackColormap,
         nodes_to_keep: set[int] | None = None,
     ):
         """Export tracks to CSV or geff, with the option to export a subset of nodes only.

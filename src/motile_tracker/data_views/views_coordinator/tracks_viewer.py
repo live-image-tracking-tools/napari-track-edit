@@ -16,6 +16,7 @@ from funtracks.user_actions import (
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
+from motile_tracker.data_views.colormap import TrackColormap
 from motile_tracker.data_views.keybindings_config import (
     KEYMAP,
     bind_keymap,
@@ -88,11 +89,7 @@ class TracksViewer:
                 del TracksViewer._instance
 
         viewer.window._qt_window.destroyed.connect(_clear_if_current)
-        self.colormap = napari.utils.colormaps.label_colormap(
-            49,
-            seed=0.5,
-            background_value=0,
-        )
+        self.colormap = TrackColormap()
 
         self.symbolmap: dict[NodeType, str] = {
             NodeType.END: "x",
@@ -241,6 +238,7 @@ class TracksViewer:
         ):
             self.selected_nodes.reset()
 
+        self.colormap.set_tracks(self.tracks)
         self.tracking_layers._refresh()
 
         self.update_track_df(initialization=False, refresh_view=refresh_view)
@@ -284,6 +282,7 @@ class TracksViewer:
         self._disconnect_tracks()
 
         self.tracks = tracks
+        self.colormap.set_tracks(tracks)
         self.selected_nodes.deleted_items.clear()  # Reset deleted nodes when switching tracks
 
         # listen to refresh signals from the tracks
