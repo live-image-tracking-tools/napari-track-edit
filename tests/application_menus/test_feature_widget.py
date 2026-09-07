@@ -2,11 +2,37 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
-from funtracks.annotators._regionprops_annotator import DEFAULT_POS_KEY
+from funtracks.annotators._regionprops_annotator import (
+    DEFAULT_INTENSITY_KEY,
+    DEFAULT_POS_KEY,
+)
 
 from motile_tracker.application_menus.feature_widget import FeatureWidget
 from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+
+SEG_SHAPE_2D = (5, 100, 100)
+
+
+def _frame_index_image() -> np.ndarray:
+    """Image whose value is the time index, so any mask at time t has mean intensity t."""
+    frames = np.arange(SEG_SHAPE_2D[0], dtype=np.float32).reshape(-1, 1, 1)
+    return np.broadcast_to(frames, SEG_SHAPE_2D).copy()
+
+
+@pytest.fixture
+def intensity_widget(make_napari_viewer, solution_tracks_2d):
+    """A FeatureWidget over 2D tracks with one matching image layer named "raw"."""
+    viewer = make_napari_viewer()
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(solution_tracks_2d, name="test")
+
+    widget = FeatureWidget(viewer)
+    viewer.add_image(_frame_index_image(), name="raw")
+    widget._update_checkboxes()
+
+    return widget, viewer, tracks_viewer.tracks
 
 
 @pytest.fixture
@@ -131,6 +157,127 @@ def test_enable_feature_calls_tracks_methods(
         initialization=False,
         refresh_view=False,
     )
+
+
+def test_only_matching_image_layers_are_listed(intensity_widget):
+    """Only image layers shaped like the segmentation get an intensity checkbox."""
+    widget, viewer, _ = intensity_widget
+
+    viewer.add_image(np.zeros((5, 10, 10), dtype=np.float32), name="wrong_shape")
+    viewer.add_labels(np.zeros(SEG_SHAPE_2D, dtype=np.uint16), name="not_an_image")
+    widget._update_checkboxes()
+
+    labels = {cb.text() for cb in widget._intensity_checkboxes.values()}
+    assert labels == {"Mean intensity (raw)"}
+    # intensity is never offered as a plain feature checkbox
+    assert DEFAULT_INTENSITY_KEY not in widget._checkboxes
+
+
+def test_toggling_layer_measures_intensity(intensity_widget):
+    """Checking a layer measures it; unchecking removes the feature again."""
+    widget, viewer, tracks = intensity_widget
+    checkbox = widget._intensity_checkboxes[viewer.layers["raw"]]
+
+    checkbox.setChecked(True)
+
+    assert DEFAULT_INTENSITY_KEY in tracks.features
+    for node_id in tracks.graph_solution.node_ids():
+        assert tracks.get_node_attr(node_id, DEFAULT_INTENSITY_KEY) == pytest.approx(
+            tracks.get_time(node_id)
+        )
+
+    checkbox.setChecked(False)
+
+    assert DEFAULT_INTENSITY_KEY not in tracks.features
+    assert tracks.regionprops_annotator.intensity_images is None
+
+
+def test_two_layers_measured_as_channels(intensity_widget):
+    """Two checked layers become two channels, one column each."""
+    widget, viewer, tracks = intensity_widget
+    viewer.add_image(_frame_index_image() * 10, name="second")
+    widget._update_checkboxes()
+
+    widget._intensity_checkboxes[viewer.layers["raw"]].setChecked(True)
+    widget._intensity_checkboxes[viewer.layers["second"]].setChecked(True)
+
+    feature = tracks.features[DEFAULT_INTENSITY_KEY]
+    assert feature["num_values"] == 2
+    assert list(feature["value_names"]) == [
+        "Mean intensity (raw)",
+        "Mean intensity (second)",
+    ]
+    for node_id in tracks.graph_solution.node_ids():
+        time = tracks.get_time(node_id)
+        value = list(tracks.get_node_attr(node_id, DEFAULT_INTENSITY_KEY))
+        assert value == pytest.approx([time, 10 * time])
+
+
+def test_checkboxes_follow_added_layer(intensity_widget):
+    """A layer added after the widget was built gets its own checkbox."""
+    widget, viewer, _ = intensity_widget
+
+    viewer.add_image(_frame_index_image(), name="later")
+
+    labels = {cb.text() for cb in widget._intensity_checkboxes.values()}
+    assert labels == {"Mean intensity (raw)", "Mean intensity (later)"}
+
+
+def test_removing_measured_layer_stops_measuring_it(intensity_widget):
+    """Removing a measured layer drops it as a channel."""
+    widget, viewer, tracks = intensity_widget
+    viewer.add_image(_frame_index_image() * 10, name="second")
+    widget._update_checkboxes()
+    widget._intensity_checkboxes[viewer.layers["raw"]].setChecked(True)
+    widget._intensity_checkboxes[viewer.layers["second"]].setChecked(True)
+
+    viewer.layers.remove(viewer.layers["second"])
+
+    assert [layer.name for layer in widget._intensity_layers] == ["raw"]
+    assert tracks.features[DEFAULT_INTENSITY_KEY]["num_values"] == 1
+    labels = {cb.text() for cb in widget._intensity_checkboxes.values()}
+    assert labels == {"Mean intensity (raw)"}
+
+    # Removing the last measured layer disables the feature entirely
+    viewer.layers.remove(viewer.layers["raw"])
+    assert DEFAULT_INTENSITY_KEY not in tracks.features
+
+
+def test_rename_updates_checkbox_and_feature(intensity_widget):
+    """Renaming a measured layer renames its checkbox and its feature column."""
+    widget, viewer, tracks = intensity_widget
+    widget._intensity_checkboxes[viewer.layers["raw"]].setChecked(True)
+
+    viewer.layers["raw"].name = "renamed"
+
+    labels = {cb.text() for cb in widget._intensity_checkboxes.values()}
+    assert labels == {"Mean intensity (renamed)"}
+    assert (
+        tracks.features[DEFAULT_INTENSITY_KEY]["display_name"]
+        == "Mean intensity (renamed)"
+    )
+    # the checkbox for the renamed layer is still checked
+    assert widget._intensity_checkboxes[viewer.layers["renamed"]].isChecked()
+
+
+def test_intensity_selection_resets_for_new_tracks(
+    make_napari_viewer, solution_tracks_2d, solution_tracks_2d_without_segmentation
+):
+    """Loading different tracks clears the measured layers."""
+    viewer = make_napari_viewer()
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(solution_tracks_2d, name="test")
+
+    widget = FeatureWidget(viewer)
+    viewer.add_image(_frame_index_image(), name="raw")
+    widget._update_checkboxes()
+    widget._intensity_checkboxes[viewer.layers["raw"]].setChecked(True)
+    assert widget._intensity_layers
+
+    tracks_viewer.update_tracks(solution_tracks_2d_without_segmentation, name="other")
+
+    assert widget._intensity_layers == []
+    assert widget._intensity_checkboxes == {}
 
 
 def test_update_checkboxes_recreates_widgets(
