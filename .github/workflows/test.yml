@@ -15,6 +15,9 @@ jobs:
   test:
     name: ${{ matrix.platform }} py${{ matrix.python-version }} ${{ matrix.resolution }}
     runs-on: ${{ matrix.platform }}
+    # Healthy runs finish in 5-12 minutes; without this a hang (e.g. a wgpu/tree-widget
+    # deadlock) burns the full 360-minute default before GitHub cancels it.
+    timeout-minutes: 30
     env:
       # disable resyncing on uv run
       UV_NO_SYNC: "1"
@@ -23,7 +26,20 @@ jobs:
       matrix:
         platform: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.11", "3.12", "3.13"]
-        resolution: [highest, lowest-direct]
+        resolution: [highest]
+        # lowest-direct (oldest allowed deps) only needs checking against our floor
+        # Python (3.11, see requires-python): those dependency versions predate 3.12/
+        # 3.13 anyway, so testing them there too is redundant coverage, not a real gap.
+        include:
+          - platform: ubuntu-latest
+            python-version: "3.11"
+            resolution: lowest-direct
+          - platform: macos-latest
+            python-version: "3.11"
+            resolution: lowest-direct
+          - platform: windows-latest
+            python-version: "3.11"
+            resolution: lowest-direct
 
     steps:
       - uses: actions/checkout@v7

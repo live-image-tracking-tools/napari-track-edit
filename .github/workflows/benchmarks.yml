@@ -17,6 +17,9 @@ jobs:
     name: Benchmark (${{ matrix.platform }})
     runs-on: ${{ matrix.platform }}
     if: github.event_name == 'pull_request'
+    # Healthy runs finish in ~10 minutes; without this a hang (e.g. a wgpu/tree-widget
+    # deadlock) burns the full 360-minute default before GitHub cancels it.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
