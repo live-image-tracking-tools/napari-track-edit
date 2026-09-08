@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import platform
 
+from funtracks.user_actions import UserUpdateSegmentation
+from funtracks.utils.tracksdata_utils import td_mask_to_pixels
 from synthetic_data import generate_synthetic_tracks, pick_nodes, tracklet_nodes
 
 # Rounds pytest-benchmark collects per measurement. The report gates on the *median*
@@ -176,6 +178,41 @@ def test_delete_node(benchmark, build_app, fresh_tracks):
     )
 
 
+def test_paint_segmentation(benchmark, build_app, fresh_tracks):
+    """Paint a small patch of an existing node's mask, then undo.
+
+    Simulates a real paint stroke the way TrackLabels._on_paint does: calls
+    UserUpdateSegmentation directly with a sub-mask pixel patch (rather than driving
+    napari's labels-layer paint tool itself, which needs real mouse/canvas events),
+    then relies on the same tracks.refresh signal every other mutating benchmark here
+    exercises. The paint-out is a strict subset of the mask, so the node is never
+    fully erased and the action never falls through to node creation/deletion --
+    only the interactive editing loop (UpdateNodeSeg, regionprops/IoU recompute,
+    TracksViewer/tree-view refresh, undo) is measured.
+    """
+
+    def setup():
+        _, tv, _ = build_app(fresh_tracks)
+        node = pick_nodes(fresh_tracks)["del_node"]
+        mask_pixels = td_mask_to_pixels(
+            tv.tracks.get_mask(node), tv.tracks.get_time(node), ndim=tv.tracks.ndim
+        )
+        n_patch = len(mask_pixels[0]) // 3
+        patch = tuple(dim_pixels[:n_patch] for dim_pixels in mask_pixels)
+        return (tv, node, patch), {}
+
+    def run(tv, node, patch):
+        UserUpdateSegmentation(
+            tracks=tv.tracks,
+            new_value=0,
+            updated_pixels=[(patch, node)],
+            current_track_id=tv.tracks.get_track_id(node),
+        )
+        tv.undo()
+
+    benchmark.pedantic(run, setup=setup, rounds=ROUNDS, iterations=1)
+
+
 def test_delete_nodes_bulk(benchmark, build_app, bench_params):
     """Delete a whole tracklet (many nodes) in a single action.
 
@@ -257,6 +294,24 @@ def test_create_edge(benchmark, build_app, fresh_tracks):
     benchmark.pedantic(
         lambda tv: tv.create_edge(), setup=setup, rounds=ROUNDS, iterations=1
     )
+
+
+def test_undo_delete_edge(benchmark, build_app, fresh_tracks):
+    """Undo a delete_edge -- pairs with test_delete_edge the way test_undo pairs
+    with test_delete_node, since UserDeleteEdge's undo is a distinct restore path
+    (re-add one edge) from UserDeleteNode's (re-add a node plus its edges).
+    """
+
+    def setup():
+        _, tv, _ = build_app(fresh_tracks)
+        u, v = pick_nodes(fresh_tracks)["del_edge"]
+        tv.selected_nodes.reset()
+        tv.selected_nodes.add(u, False)
+        tv.selected_nodes.add(v, True)
+        tv.delete_edge()
+        return (tv,), {}
+
+    benchmark.pedantic(lambda tv: tv.undo(), setup=setup, rounds=ROUNDS, iterations=1)
 
 
 def test_undo(benchmark, build_app, fresh_tracks):
