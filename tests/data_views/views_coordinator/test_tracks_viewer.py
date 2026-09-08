@@ -244,6 +244,27 @@ class TestEdgeOperations:
         assert not tracks.graph.has_edge(2, 5)
         assert not tracks.graph.has_edge(3, 5)
 
+    def test_set_division_without_three_nodes_warns(self, viewer, graph_2d, click_node):
+        """Test set_division warns instead of raising when not exactly 3 nodes are selected.
+
+        Unlike the button, the [Y] keybinding is active whatever the selection is, so
+        set_division must cope with a selection that is not a trio.
+        """
+        tracks = MotileRun(graph=graph_2d, run_name="test", ndim=3, time_attr="t")
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(tracks=tracks, name="test")
+
+        for select in (lambda: None, lambda: click_node(tracks_viewer, 4)):
+            tracks_viewer.selected_nodes.reset()
+            select()
+            with patch(
+                "motile_tracker.data_views.views_coordinator.tracks_viewer.QMessageBox.warning"
+            ) as warning:
+                tracks_viewer.set_division()
+
+            warning.assert_called_once()
+            assert "exactly 3 distinct nodes" in warning.call_args[0][2]
+
 
 class TestDisplayModes:
     """Tests for display mode switching and filtering."""
