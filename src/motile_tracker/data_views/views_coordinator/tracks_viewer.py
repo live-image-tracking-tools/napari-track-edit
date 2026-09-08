@@ -162,7 +162,10 @@ class TracksViewer:
         the track id if the tracks.max_track_id value is used already."""
 
         self.selected_track = self.tracks.max_track_id  # to check if available
-        if self.selected_track in self.tracks.track_id_to_node:
+        if (
+            self.selected_track in self.tracks.track_id_to_node
+            or self.selected_track == 0
+        ):
             self.selected_track = self.tracks.get_next_track_id()
         self.set_track_id_color(self.selected_track)
         self.update_track_id.emit()

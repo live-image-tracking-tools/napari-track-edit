@@ -5,6 +5,7 @@ from typing import Any
 import napari.layers
 import numpy as np
 import pandas as pd
+import polars as pl
 import tracksdata as td
 from funtracks.data_model import Tracks
 from tracksdata.constants import DEFAULT_ATTR_KEYS
@@ -72,7 +73,7 @@ def extract_sorted_tracks(
     prev_axis_order: list[int] | None = None,
 ) -> pd.DataFrame | None:
     """
-    Extract the information of individual tracks required for constructing the pyqtgraph
+    Extract the information of individual tracks required for constructing the tree
     plot. Follows the same logic as the relabel_segmentation function from the Motile
     toolbox.
 
@@ -85,7 +86,7 @@ def extract_sorted_tracks(
 
     Returns:
         pd.DataFrame | None: data frame with all the information needed to
-        construct the pyqtgraph plot. Columns are: 't', 'node_id', 'track_id',
+        construct the tree plot. Columns are: 't', 'node_id', 'track_id',
         'color', 'x', 'y', ('z'), 'index', 'parent_id', 'parent_track_id',
         'state', 'symbol', and 'x_axis_pos'
     """
@@ -107,8 +108,10 @@ def extract_sorted_tracks(
     all_keys = list(
         {DEFAULT_ATTR_KEYS.NODE_ID, time_key, tracklet_key} | set(node_feature_keys)
     )
-    df_attrs = solution_nx_graph.node_attrs(attr_keys=all_keys)
-
+    if len(solution_nx_graph.node_ids()) != 0:
+        df_attrs = solution_nx_graph.node_attrs(attr_keys=all_keys)
+    else:
+        df_attrs = pl.DataFrame(schema=all_keys)
     node_ids_list = df_attrs[DEFAULT_ATTR_KEYS.NODE_ID].to_list()
     node_to_time = dict(zip(node_ids_list, df_attrs[time_key].to_list(), strict=True))
     node_to_track_id = dict(
