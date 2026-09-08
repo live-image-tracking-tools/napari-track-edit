@@ -101,10 +101,13 @@ Key bindings for editing the tracks
      - Action
    * - D
      - Delete selected nodes
-   * - B
-     - Break edge between two selected nodes, if existing
-   * - A
-     - Create edge between two selected nodes, if valid
+   * - C
+     - | Connect the selected nodes into one track, keeping
+       | existing outgoing edges as divisions, or break them
+       | apart again if already connected
+   * - Shift + C
+     - | Same, but break the existing outgoing edges so that
+       | the result is one linear track without divisions
    * - S
      - Swap the incoming edges of two horizontal nodes
    * - Z
