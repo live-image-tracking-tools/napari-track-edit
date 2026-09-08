@@ -25,7 +25,11 @@ def visualization_widget(viewer, solution_tracks_3d, qtbot):
 
     assert tracks_viewer.tracking_layers.seg_layer is not None
 
-    return widget, tracks_viewer
+    yield widget, tracks_viewer
+
+    # the viewer is shared by the whole module, so take this widget back off it the way
+    # MenuManager does when the menu is closed
+    widget.cleanup()
 
 
 @pytest.mark.parametrize("mode", ["lineage", "group", "all"])
@@ -396,3 +400,97 @@ class TestOrthoViewsIntegration:
 
             # Verify checkbox state is synced
             assert not widget.show_ortho_views.isChecked()
+
+
+# Plane slider integration tests
+class TestPlaneSlidersIntegration:
+    """Tests for the plane and clipping plane controls in the visualization menu.
+
+    The plane sliders act on the selected layer and on the layers linked to it, which
+    for the tracking layers is the group TracksLayerGroup links on their clipping
+    planes alone.
+    """
+
+    @pytest.fixture
+    def plane_sliders(self, visualization_widget, viewer):
+        widget, tracks_viewer = visualization_widget
+        viewer.dims.ndisplay = 3
+        # start from an empty selection, so that every test below selects a layer that
+        # was not already the active one and the plane sliders pick it up
+        viewer.layers.selection.clear()
+        return widget, widget.plane_sliders, tracks_viewer.tracking_layers
+
+    def test_selecting_points_finds_the_whole_tracking_group(
+        self, plane_sliders, viewer
+    ):
+        """With the points layer selected, the plane controls act on all three layers"""
+
+        _, sliders, layers = plane_sliders
+        viewer.layers.selection.active = layers.points_layer
+
+        # the points layer has no plane of its own, so it borrows the one of the seg
+        assert sliders._plane_layer() is layers.seg_layer
+        assert set(sliders._target_layers()) == set(layers.track_layers)
+
+    def test_plane_mode_gives_the_points_a_slab_and_leaves_the_seg_unclipped(
+        self, plane_sliders, viewer
+    ):
+        """The points mimic plane mode with a slab, which must not clip the seg layer"""
+
+        _, sliders, layers = plane_sliders
+        viewer.layers.selection.active = layers.points_layer
+        sliders._set_plane_mode()
+        sliders.plane_slider.setValue(4)
+
+        assert layers.seg_layer.depiction == "plane"
+        assert layers.seg_layer.plane.position == (4.0, 0.0, 0.0)
+
+        half_thickness = sliders.slab_thickness_box.value() / 2
+        for layer in (layers.points_layer, layers.tracks_layer):
+            lower, upper = layer.experimental_clipping_planes
+            assert lower.position == (4.0 - half_thickness, 0.0, 0.0)
+            assert upper.position == (4.0 + half_thickness, 0.0, 0.0)
+            assert lower.enabled and upper.enabled
+
+        # the layer that defines the plane is clipped by that plane, not by the slab
+        for clip_plane in layers.seg_layer.experimental_clipping_planes:
+            assert not clip_plane.enabled
+
+    def test_clipping_plane_mode_is_shared_by_all_tracking_layers(
+        self, plane_sliders, viewer
+    ):
+        """Outside plane mode the whole group is clipped the same way"""
+
+        _, sliders, layers = plane_sliders
+        viewer.layers.selection.active = layers.seg_layer
+        sliders._set_clipping_plane_mode()
+        sliders.clipping_plane_slider.setValue((2, 6))
+
+        assert layers.seg_layer.depiction == "volume"
+        for layer in layers.track_layers:
+            lower, upper = layer.experimental_clipping_planes
+            assert lower.position == (2.0, 0.0, 0.0)
+            assert upper.position == (6.0, 0.0, 0.0)
+            assert lower.enabled and upper.enabled
+
+    def test_cleanup_takes_the_plane_sliders_off_the_viewer(
+        self, plane_sliders, viewer
+    ):
+        """Closing the menu must not leave callbacks behind pointing at dead widgets"""
+
+        widget, sliders, layers = plane_sliders
+        viewer.layers.selection.active = layers.points_layer
+
+        assert sliders._snap_cursor_to_plane in viewer.mouse_move_callbacks
+
+        widget.cleanup()
+
+        for callbacks in (
+            viewer.mouse_move_callbacks,
+            viewer.mouse_drag_callbacks,
+            viewer.mouse_double_click_callbacks,
+        ):
+            assert sliders._snap_cursor_to_plane not in callbacks
+
+        # idempotent
+        widget.cleanup()

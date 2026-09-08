@@ -1,7 +1,10 @@
 import contextlib
 
 import napari
+from napari.layers import Points
+from napari.layers.points._points_mouse_bindings import add as napari_add_point
 from napari_orthogonal_views.ortho_view_manager import _VIEWER_MANAGERS
+from napari_plane_sliders import PlaneSliderWidget
 from psygnal import Signal
 from qtpy.QtCore import QSignalBlocker
 from qtpy.QtWidgets import (
@@ -182,9 +185,68 @@ class VisualizationWidget(QWidget):
         self.show_ortho_views.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         main_layout.addWidget(self.show_ortho_views)
+
+        # Plane and clipping plane controls. They act on the layer that is selected in
+        # the viewer and on the layers it is linked to, which for the tracking layers
+        # means the group linked on their clipping planes by TracksLayerGroup.
+        self.plane_sliders = PlaneSliderWidget(self.viewer)
+        plane_box = QGroupBox("Plane views")
+        plane_box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        plane_box_layout = QVBoxLayout(plane_box)
+        plane_box_layout.setContentsMargins(8, 6, 8, 6)
+        plane_box_layout.setSpacing(6)
+        plane_box_layout.addWidget(self.plane_sliders)
+        main_layout.addWidget(plane_box)
+
         main_layout.addStretch(1)
 
-        self.setMaximumHeight(360)
+        self.setMaximumHeight(620)
+
+    def cleanup(self) -> None:
+        """Detach from the viewer before this widget is destroyed. Idempotent.
+
+        Called by MenuManager when the menu is closed. The plane sliders install
+        callbacks and event connections on the viewer itself, which would outlive this
+        widget and raise when they touch its deleted Qt children.
+        """
+
+        self._disconnect_ortho_views()
+        self._disconnect_plane_sliders()
+
+    def _disconnect_plane_sliders(self) -> None:
+        """Take the plane sliders back off the viewer and the points layers.
+
+        These reach into `PlaneSliderWidget`, which does not tear itself down; without
+        it a reopened Visualization menu leaves the callbacks of the previous one
+        behind, pointing at deleted widgets.
+        """
+
+        sliders = self.plane_sliders
+        with contextlib.suppress(TypeError, RuntimeError, ValueError):
+            self.viewer.dims.events.ndisplay.disconnect(sliders.on_ndisplay_changed)
+        with contextlib.suppress(TypeError, RuntimeError, ValueError):
+            self.viewer.layers.selection.events.changed.disconnect(
+                sliders._on_selection_changed
+            )
+
+        for callbacks in (
+            self.viewer.mouse_move_callbacks,
+            self.viewer.mouse_drag_callbacks,
+            self.viewer.mouse_double_click_callbacks,
+        ):
+            with contextlib.suppress(ValueError):
+                callbacks.remove(sliders._snap_cursor_to_plane)
+
+        # restore the napari callback on any points layer whose add mode we took over
+        for layer in self.viewer.layers:
+            if not isinstance(layer, Points):
+                continue
+            with contextlib.suppress(TypeError, RuntimeError, ValueError):
+                layer.events.mode.disconnect(sliders._on_point_mode_changed)
+            if sliders._add_point_on_plane in layer.mouse_drag_callbacks:
+                layer.mouse_drag_callbacks.remove(sliders._add_point_on_plane)
+                if str(layer.mode) == "add":
+                    layer.mouse_drag_callbacks.append(napari_add_point)
 
     def initialize_ortho_views(self, checked: bool):
         """Initializes the ortho views."""

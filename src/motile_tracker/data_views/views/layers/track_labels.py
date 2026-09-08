@@ -22,6 +22,9 @@ from motile_tracker.data_views.views.layers.click_utils import (
     detect_side_button,
     get_click_value,
 )
+from motile_tracker.data_views.views.layers.clipping_planes import (
+    EventedClippingPlanes,
+)
 from motile_tracker.data_views.views.layers.contour_labels import ContourLabels
 from motile_tracker.data_views.views_coordinator.user_dialogs import (
     confirm_force_operation,
@@ -67,7 +70,7 @@ def _new_label(layer: TrackLabels, new_track_id=True):
         layer.colormap = DirectLabelColormap(color_dict=layer.colormap.color_dict)
 
 
-class TrackLabels(ContourLabels):
+class TrackLabels(EventedClippingPlanes, ContourLabels):
     """Extended labels layer that holds the track information and emits
     and responds to dynamics visualization signals"""
 
