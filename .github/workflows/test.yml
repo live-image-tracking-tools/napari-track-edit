@@ -15,15 +15,46 @@ jobs:
   test:
     name: ${{ matrix.platform }} py${{ matrix.python-version }} ${{ matrix.resolution }}
     runs-on: ${{ matrix.platform }}
+    # Healthy runs finish in 5-12 minutes; without this a hang (e.g. a wgpu/tree-widget
+    # deadlock) burns the full 360-minute default before GitHub cancels it.
+    timeout-minutes: 30
     env:
       # disable resyncing on uv run
       UV_NO_SYNC: "1"
     strategy:
       fail-fast: false
+      # OS-specific bugs are almost always Qt/GL-driver related and Python-version-
+      # agnostic, while version-specific bugs are language/stdlib related and OS-
+      # agnostic -- the two axes rarely interact, so we don't need their full cross:
+      #   - lowest-direct (oldest allowed deps) on all platforms, but only at our
+      #     floor Python (3.11, see requires-python) -- those dependency versions
+      #     predate 3.12/3.13 anyway, so testing them there too is redundant.
+      #   - highest deps on all platforms, but only at our newest Python (3.13).
+      #   - the remaining Python version (3.12) only on ubuntu (cheapest runner), as
+      #     a spot-check rather than a full platform cross.
       matrix:
-        platform: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.11", "3.12", "3.13"]
-        resolution: [highest, lowest-direct]
+        include:
+          - platform: ubuntu-latest
+            python-version: "3.11"
+            resolution: lowest-direct
+          - platform: macos-latest
+            python-version: "3.11"
+            resolution: lowest-direct
+          - platform: windows-latest
+            python-version: "3.11"
+            resolution: lowest-direct
+          - platform: ubuntu-latest
+            python-version: "3.12"
+            resolution: highest
+          - platform: ubuntu-latest
+            python-version: "3.13"
+            resolution: highest
+          - platform: macos-latest
+            python-version: "3.13"
+            resolution: highest
+          - platform: windows-latest
+            python-version: "3.13"
+            resolution: highest
 
     steps:
       - uses: actions/checkout@v7
