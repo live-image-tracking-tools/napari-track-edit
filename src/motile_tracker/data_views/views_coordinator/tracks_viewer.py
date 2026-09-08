@@ -10,7 +10,9 @@ from funtracks.exceptions import InvalidActionError
 from funtracks.user_actions import (
     UserConnectNodes,
     UserDeleteNodes,
+    UserDisconnectNodes,
     UserSwapPredecessors,
+    is_connected_chain,
 )
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
@@ -459,13 +461,18 @@ class TracksViewer:
         """Connect the currently selected nodes into a single track, or break them
         apart again if they are already connected.
 
+        Which of the two happens depends on the selection: only when there is nothing
+        left to connect - every consecutive pair in time order already has an edge -
+        does this disconnect them. In every other case the nodes are connected as far
+        as they can be, leaving the pairs that are connected already alone.
+
         Args:
             event: Unused, present so this can be used as a keybinding callback.
             linear: If True, existing outgoing edges of the selected nodes are broken
                 so that the result is one linear track. If False, they are kept and
                 divisions are created instead. If None (the default), the user is
                 asked which of the two they want, but only when the choice makes a
-                difference for this selection.
+                difference for this selection. Ignored when disconnecting.
         """
 
         if self.tracks is None:
@@ -474,6 +481,15 @@ class TracksViewer:
             return
 
         nodes = [int(node) for node in self.selected_nodes.as_list]
+
+        if is_connected_chain(self.tracks, nodes):
+            # nothing left to connect, so the button breaks the chain apart instead
+            try:
+                UserDisconnectNodes(self.tracks, nodes)
+            except InvalidActionError as e:
+                QMessageBox.warning(None, "Cannot disconnect nodes", str(e))
+            return
+
         if linear is None:
             if UserConnectNodes.has_division_choice(self.tracks, nodes):
                 linear = ask_connect_mode()

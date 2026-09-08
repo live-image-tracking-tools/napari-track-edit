@@ -234,7 +234,10 @@ def test_disconnect_nodes(benchmark, build_app, fresh_tracks):
         return (tv,), {}
 
     benchmark.pedantic(
-        lambda tv: tv.connect_nodes(), setup=setup, rounds=ROUNDS, iterations=1
+        lambda tv: tv.connect_nodes_with_divisions(),
+        setup=setup,
+        rounds=ROUNDS,
+        iterations=1,
     )
 
 
@@ -248,14 +251,17 @@ def test_connect_nodes(benchmark, build_app, fresh_tracks):
         tv.selected_nodes.reset()
         tv.selected_nodes.add(u, False)
         tv.selected_nodes.add(v, True)
-        tv.connect_nodes()
+        tv.connect_nodes_with_divisions()
         tv.selected_nodes.reset()
         tv.selected_nodes.add(u, False)
         tv.selected_nodes.add(v, True)
         return (tv,), {}
 
     benchmark.pedantic(
-        lambda tv: tv.connect_nodes(), setup=setup, rounds=ROUNDS, iterations=1
+        lambda tv: tv.connect_nodes_with_divisions(),
+        setup=setup,
+        rounds=ROUNDS,
+        iterations=1,
     )
 
 

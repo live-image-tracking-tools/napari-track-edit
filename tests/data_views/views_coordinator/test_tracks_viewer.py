@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import napari
 import pytest
 from funtracks.data_model import SolutionTracks
+from qtpy.QtWidgets import QMessageBox
 
 from motile_tracker.data_views.views.layers.track_graph import TrackGraph
 from motile_tracker.data_views.views.layers.track_labels import TrackLabels
@@ -194,6 +195,82 @@ class TestEdgeOperations:
         assert tracks.graph.has_edge(2, 4)
         # Conflicting edge should have been removed by force
         assert not tracks.graph.has_edge(3, 4)
+
+    def test_partially_connected_selection_connects(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Only a selection with nothing left to connect is disconnected.
+
+        3 -> 4 already exists but 4 -> 6 does not, so the button completes the chain
+        instead of breaking the existing edge.
+        """
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        assert tracks.graph.has_edge(3, 4)
+        click_node(tracks_viewer, 3)  # t1
+        click_node(tracks_viewer, 4, append=True)  # t2
+        click_node(tracks_viewer, 6, append=True)  # t4
+
+        # node 4 already has child 5, so the mode dialog does come up here
+        ask_mock = MagicMock(return_value=False)  # keep it as a division
+        monkeypatch.setattr(
+            "motile_tracker.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            ask_mock,
+        )
+
+        tracks_viewer.connect_nodes()
+
+        ask_mock.assert_called_once()
+        assert tracks.graph.has_edge(4, 6)  # the missing pair was added
+        assert tracks.graph.has_edge(3, 4)  # the connected pair was left alone
+        assert tracks.graph.has_edge(4, 5)  # and so was the edge outside the selection
+
+    def test_fully_connected_selection_disconnects(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """A whole chain is broken apart, every fragment getting its own tracklet."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        ask_mock = MagicMock()
+        monkeypatch.setattr(
+            "motile_tracker.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            ask_mock,
+        )
+
+        # 3 -> 4 -> 5 is a connected chain in graph_2d
+        click_node(tracks_viewer, 3)
+        click_node(tracks_viewer, 4, append=True)
+        click_node(tracks_viewer, 5, append=True)
+
+        tracks_viewer.connect_nodes()
+
+        ask_mock.assert_not_called()  # nothing to connect, so no mode to choose
+        assert not tracks.graph.has_edge(3, 4)
+        assert not tracks.graph.has_edge(4, 5)
+        assert len({int(tracks.get_track_id(n)) for n in (3, 4, 5)}) == 3
+
+    def test_horizontal_selection_reports_the_connect_error(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """A selection that can never be chained falls through to the connect action,
+        which explains why."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        # nodes 2 and 3 are both in t=1
+        click_node(tracks_viewer, 2)
+        click_node(tracks_viewer, 3, append=True)
+
+        warning_mock = MagicMock(return_value=QMessageBox.Ok)
+        monkeypatch.setattr(QMessageBox, "warning", warning_mock)
+
+        num_edges_before = tracks.graph.num_edges()
+        tracks_viewer.connect_nodes()
+
+        warning_mock.assert_called_once()
+        assert "Cannot connect nodes" in warning_mock.call_args.args[1]
+        assert tracks.graph.num_edges() == num_edges_before
 
     def test_connect_mode_dialog_divisions(
         self, tracks_viewer_setup, monkeypatch, click_node
