@@ -17,6 +17,9 @@ jobs:
     name: Benchmark (${{ matrix.platform }})
     runs-on: ${{ matrix.platform }}
     if: github.event_name == 'pull_request'
+    # Healthy runs finish in ~10 minutes; without this a hang (e.g. a wgpu/tree-widget
+    # deadlock) burns the full 360-minute default before GitHub cancels it.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -42,6 +45,15 @@ jobs:
                      /etc/apt/sources.list.d/azure-cli.sources
       - uses: tlambert03/setup-qt-libs@v1
 
+      # wgpu (via pygfx/fastplotlib, used by the tree view) needs a real Vulkan/GL
+      # adapter; Xvfb (below) only provides X11/GLX, not Vulkan. lavapipe/llvmpipe
+      # give it a software one, matching how pygfx/wgpu-py run their own Linux CI.
+      - name: Install llvmpipe and lavapipe for offscreen wgpu rendering
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -y -qq
+          sudo apt-get install -y libegl1-mesa-dev libgl1-mesa-dri libxcb-xfixes0-dev mesa-vulkan-drivers
+
       - name: Set up Python
         uses: astral-sh/setup-uv@v7
         with:
@@ -61,26 +73,34 @@ jobs:
           if (Test-Path -Path "C:\Windows\system32\opengl32.dll" -PathType Leaf) {Exit 0} else {Exit 1}
         shell: powershell
 
+      # Same-runner base-vs-head comparison (running baseline fresh every PR) turned
+      # out not to fix cross-run noise either -- swings as large as the ones it was
+      # meant to prevent still showed up within a single same-runner run. Since running
+      # baseline live buys no real stability, cache it per base-SHA instead: the first
+      # PR against a given base commit produces it, every later PR against that same
+      # base restores it instead of re-running -- half the benchmark cost with no
+      # measurement downside.
+      - name: Retrieve cached baseline if available
+        uses: actions/cache/restore@v5
+        id: cache_baseline
+        with:
+          path: baseline.json
+          key: benchmark-${{ matrix.platform }}-${{ github.event.pull_request.base.sha }}
+
       # The benchmark suite lives under tests/benchmarks, which the default pytest
       # config ignores; `-o addopts=` clears that so it is collected here. The GUI
       # benchmarks need a real GL context, hence aganders3/headless-gui.
       #
-      # Baseline and PR head are benchmarked back-to-back in this same job (no cached
-      # cross-run baseline) so both are measured on the *same* runner instance. This is
-      # essential: CI runners -- especially macOS/Windows -- vary enough machine-to-machine
-      # that comparing against a baseline cached from a different run produced spurious
-      # regressions larger than the real deltas.
-      #
-      # Each side re-syncs its OWN dependencies after checkout (`uv sync` after `git
-      # checkout`). This is what makes dependency-bump PRs (funtracks/tracksdata/...)
-      # measure the real base-vs-head delta: base runs against base's locked deps and
-      # head against head's. Without the per-checkout sync, base code would run against
-      # head's deps -- an apples-to-oranges comparison that reports fictional regressions
-      # whenever a dependency changes a shared contract. `git checkout -f` discards any
-      # uv.lock churn from the previous sync so the next checkout is clean.
+      # Runs its own `uv sync` after checkout so base is measured against its OWN
+      # locked dependencies, not head's. This is what makes dependency-bump PRs
+      # (funtracks/tracksdata/...) measure the real base-vs-head delta: without this,
+      # base code would run against head's deps -- an apples-to-oranges comparison
+      # that reports fictional regressions whenever a dependency changes a shared
+      # contract. `git checkout -f` discards any uv.lock churn from a previous sync.
       # Tolerant on purpose: the base commit may predate the benchmark suite, in which
       # case there is no baseline and the report falls back to HEAD-only numbers.
-      - name: Run baseline benchmark (same runner)
+      - name: Run baseline benchmark if not in cache
+        if: steps.cache_baseline.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: aganders3/headless-gui@v2
         with:
@@ -88,6 +108,13 @@ jobs:
             git checkout -f ${{ github.event.pull_request.base.sha }}
             uv sync --no-dev --group testing
             uv run pytest tests/benchmarks -o addopts= --benchmark-json baseline.json
+
+      - name: Cache baseline results
+        uses: actions/cache/save@v5
+        if: steps.cache_baseline.outputs.cache-hit != 'true' && hashFiles('baseline.json') != ''
+        with:
+          path: baseline.json
+          key: benchmark-${{ matrix.platform }}-${{ github.event.pull_request.base.sha }}
 
       - name: Run benchmark on PR head
         uses: aganders3/headless-gui@v2
