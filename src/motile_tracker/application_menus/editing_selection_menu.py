@@ -193,7 +193,7 @@ class EditingMenu(QWidget):
         self.create_edge_btn = QPushButton("Add [A]")
         self.create_edge_btn.clicked.connect(self.tracks_viewer.create_edge)
         self.create_edge_btn.setEnabled(False)
-        self.set_division_btn = QPushButton("Make/break division [Y]")
+        self.set_division_btn = QPushButton("Set/break division [Y]")
         self.set_division_btn.setToolTip(
             "Select a parent node and its two child nodes to connect them as a "
             "division, or to break an existing division."
