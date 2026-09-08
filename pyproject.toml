@@ -30,7 +30,8 @@ classifiers = [
 ]
 
 dependencies =[
-    "napari>=0.6.2,<0.8.0",
+    # 0.6.6 is the floor of napari-plane-sliders
+    "napari>=0.6.6,<0.8.0",
     "funtracks>=2.1.0-a3,<3",
     "appdirs>=1,<2",
     "numpy>=2,<3",
@@ -48,6 +49,10 @@ dependencies =[
     "pygfx==0.15.3",
     "wgpu>=0.29, <0.30",
     "napari-orthogonal-views>=0.4.0",
+    # Not on PyPI yet, so it has to be pulled straight from git. A direct
+    # reference cannot be uploaded to PyPI, so this has to become a normal
+    # version specifier before the next release.
+    "napari-plane-sliders @ git+https://github.com/AnniekStok/napari-plane-sliders.git",
     "lxml_html_clean>=0.4,<1",
     "zarr>=2.18.7,<4",
     # Not used directly (it arrives via tracksdata), pinned to keep it co-installable

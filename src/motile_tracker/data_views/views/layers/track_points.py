@@ -24,6 +24,9 @@ from motile_tracker.data_views.views.layers.click_utils import (
     detect_side_button,
     get_click_value,
 )
+from motile_tracker.data_views.views.layers.clipping_planes import (
+    EventedClippingPlanes,
+)
 from motile_tracker.data_views.views_coordinator.user_dialogs import (
     confirm_force_operation,
 )
@@ -44,7 +47,7 @@ def custom_select(layer: napari.layers.Points, event: Event):
         yield from select(layer, event)
 
 
-class TrackPoints(ZOnlyPoints):
+class TrackPoints(EventedClippingPlanes, ZOnlyPoints):
     """Extended points layer that holds the track information and emits and
     responds to dynamics visualization signals
     """

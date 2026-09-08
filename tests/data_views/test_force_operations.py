@@ -169,7 +169,9 @@ def test_on_paint_invalid_action_upstream_division1_forceable(
     )
 
     # Mock undo and refresh (keeping these mocks as they test UI behavior, not UserActions)
-    parent_class = seg_layer.__class__.__mro__[1]
+    parent_class = next(
+        cls for cls in seg_layer.__class__.__mro__[1:] if "undo" in cls.__dict__
+    )  # the undo TrackLabels.undo delegates to
     undo_mock = MagicMock(name="undo")
     monkeypatch.setattr(parent_class, "undo", undo_mock)
     seg_layer._refresh = MagicMock()
@@ -275,7 +277,9 @@ def test_on_paint_invalid_action_upstream_division2_forceable(
     )
 
     # Mock undo and refresh (keeping these mocks as they test UI behavior, not UserActions)
-    parent_class = seg_layer.__class__.__mro__[1]
+    parent_class = next(
+        cls for cls in seg_layer.__class__.__mro__[1:] if "undo" in cls.__dict__
+    )  # the undo TrackLabels.undo delegates to
     undo_mock = MagicMock(name="undo")
     monkeypatch.setattr(parent_class, "undo", undo_mock)
     seg_layer._refresh = MagicMock()
