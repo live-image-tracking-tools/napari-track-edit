@@ -490,19 +490,15 @@ def construct_solver(
     solver.add_constraint(MaxParents(1))
     solver.add_constraint(Pin(PIN_ATTR))
 
-    # Using EdgeDistance instead of EdgeSelection for the constant cost because
-    # the attribute is not optional for EdgeSelection (yet)
     if solver_params.edge_selection_cost is not None:
         solver.add_cost(
-            EdgeDistanceCost(
-                weight=0,
-                position_attribute="pos",
+            EdgeSelectedCost(
                 constant=solver_params.edge_selection_cost,
             ),
             name="edge_const",
         )
     if solver_params.appear_cost is not None:
-        solver.add_cost(NodeAppearCost(solver_params.appear_cost))
+        solver.add_cost(NodeAppearCost(constant=solver_params.appear_cost))
     if solver_params.division_cost is not None:
         solver.add_cost(NodeSplitCost(constant=solver_params.division_cost))
 
