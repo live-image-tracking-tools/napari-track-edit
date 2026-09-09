@@ -44,9 +44,22 @@ dependencies =[
     "dask[array]>=2021.10.0",
     "fonticon-fontawesome6>=6,<7",
     "pyqtgraph>=0.13,<1",
+    "fastplotlib>=0.6.1,<0.7",
+    "pygfx==0.15.3",
+    "wgpu>=0.29, <0.30",
     "napari-orthogonal-views>=0.4.0",
     "lxml_html_clean>=0.4,<1",
     "zarr>=2.18.7,<4",
+    # Not used directly (it arrives via tracksdata), pinned to keep it co-installable
+    # with pygfx's uharfbuzz. Both are Cython 3.3.0 limited-API builds that share the
+    # runtime module _cython_3_3_0limitednofinalize, but at different Py_LIMITED_API
+    # levels (blosc2 >= 4.12 is cp311-abi3, uharfbuzz is cp310-abi3), where
+    # cython_function_or_method has a different struct size. Whichever imports second
+    # dies with "Shared Cython type cython_function_or_method has the wrong size".
+    # motile_tracker is the only place these two meet, so the pin belongs here.
+    # Drop it once Cython encodes the limited-API level in that module name, or once
+    # the two agree on a level.
+    "blosc2>=4.11,<4.12",
 ]
 
 [project.optional-dependencies]

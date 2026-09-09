@@ -9,4 +9,4 @@ class TestTrackListWidget:
         viewer = make_napari_viewer()
         widget = TrackListWidget(viewer)
         tracks_viewer = TracksViewer.get_instance(viewer)
-        assert widget.layout().itemAt(0).widget() is tracks_viewer.tracks_list
+        assert widget.layout().itemAt(1).widget() is tracks_viewer.tracks_list
