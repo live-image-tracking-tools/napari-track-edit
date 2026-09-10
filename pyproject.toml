@@ -113,7 +113,7 @@ dev = [
 # propagation is required or a SQL-backed segmentation renders stale after every edit.
 # Replace with a released version pin once both land.
 [tool.uv.sources]
-funtracks = { git = "https://github.com/funkelab/funtracks.git", rev = "149b9d71c517f83b799bc2acfc95694973be1b33" }
+funtracks = { git = "https://github.com/funkelab/funtracks.git", rev = "1de541258646c32340178c4e01c211c10762033f" }
 
 [tool.uv]
 # gurobi12 and gurobi13 conflict with each other (mutually exclusive version pins)
