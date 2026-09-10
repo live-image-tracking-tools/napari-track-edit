@@ -63,6 +63,11 @@ KEYBINDINGS = {
         "qt_keys": [Qt.Key_S],
         "targets": ["tracks_viewer"],
     },
+    "merge_horizontally": {
+        "napari_keys": ["h"],
+        "qt_keys": [Qt.Key_H],
+        "targets": ["tracks_viewer"],
+    },
     "undo": {
         "napari_keys": ["z"],
         "qt_keys": [Qt.Key_Z],

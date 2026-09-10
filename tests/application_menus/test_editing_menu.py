@@ -24,6 +24,7 @@ def test_button_states(make_napari_viewer, solution_tracks_2d, click_node):
     assert not editing_menu.swap_nodes_btn.isEnabled()
     assert not editing_menu.delete_edge_btn.isEnabled()
     assert not editing_menu.create_edge_btn.isEnabled()
+    assert not editing_menu.merge_nodes_btn.isEnabled()
 
     # Test 2: Verify update_buttons() disables all buttons when selection is cleared
     # First select nodes to enable buttons
@@ -41,6 +42,7 @@ def test_button_states(make_napari_viewer, solution_tracks_2d, click_node):
     assert not editing_menu.swap_nodes_btn.isEnabled()
     assert not editing_menu.delete_edge_btn.isEnabled()
     assert not editing_menu.create_edge_btn.isEnabled()
+    assert not editing_menu.merge_nodes_btn.isEnabled()
 
     # Test 3: Verify only delete button enabled with single node selection
     click_node(tracks_viewer, 1)
@@ -50,6 +52,7 @@ def test_button_states(make_napari_viewer, solution_tracks_2d, click_node):
     assert editing_menu.delete_node_btn.isEnabled()
     assert not editing_menu.delete_edge_btn.isEnabled()
     assert not editing_menu.create_edge_btn.isEnabled()
+    assert not editing_menu.merge_nodes_btn.isEnabled()
 
     # Test 4: Verify all buttons enabled when two nodes selected
     click_node(tracks_viewer, 1)
@@ -61,15 +64,18 @@ def test_button_states(make_napari_viewer, solution_tracks_2d, click_node):
     assert editing_menu.swap_nodes_btn.isEnabled()
     assert editing_menu.delete_edge_btn.isEnabled()
     assert editing_menu.create_edge_btn.isEnabled()
+    assert editing_menu.merge_nodes_btn.isEnabled()
 
-    # Test 5: Verify only delete button enabled with 3+ nodes selected
+    # Test 5: Verify only delete and merge buttons enabled with 3+ nodes selected
     click_node(tracks_viewer, 1)
     click_node(tracks_viewer, 2, append=True)
     click_node(tracks_viewer, 3, append=True)
     editing_menu.update_buttons()
 
-    # Verify only delete is enabled, others disabled
+    # Verify only delete and merge are enabled, others disabled
     assert editing_menu.delete_node_btn.isEnabled()
+    assert editing_menu.merge_nodes_btn.isEnabled()
+    assert not editing_menu.swap_nodes_btn.isEnabled()
     assert not editing_menu.delete_edge_btn.isEnabled()
     assert not editing_menu.create_edge_btn.isEnabled()
 
@@ -95,6 +101,8 @@ def test_button_interactions(make_napari_viewer, solution_tracks_2d, qtbot, clic
     tracks_viewer.undo = undo_mock
     redo_mock = MagicMock()
     tracks_viewer.redo = redo_mock
+    merge_mock = MagicMock()
+    tracks_viewer.merge_horizontally = merge_mock
 
     editing_menu = EditingMenu(viewer)
 
@@ -130,6 +138,10 @@ def test_button_interactions(make_napari_viewer, solution_tracks_2d, qtbot, clic
     # Test 7: Redo button calls tracks_viewer.redo()
     qtbot.mouseClick(editing_menu.redo_btn, Qt.MouseButton.LeftButton)
     redo_mock.assert_called_once()
+
+    # Test 8: Merge button calls tracks_viewer.merge_horizontally()
+    qtbot.mouseClick(editing_menu.merge_nodes_btn, Qt.MouseButton.LeftButton)
+    merge_mock.assert_called_once()
 
 
 def test_track_id_display(make_napari_viewer, solution_tracks_2d, click_node):
