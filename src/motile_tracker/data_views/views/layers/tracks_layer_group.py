@@ -47,11 +47,7 @@ class TracksLayerGroup:
         else:
             self.seg_layer = None
 
-        if (
-            self.tracks is not None
-            and self.tracks.graph is not None
-            and self.tracks.graph.num_nodes() != 0
-        ):
+        if self.tracks is not None and self.tracks.graph is not None:
             self.tracks_layer = TrackGraph(
                 name=self.name + "_tracks",
                 tracks_viewer=self.tracks_viewer,
