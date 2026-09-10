@@ -31,7 +31,7 @@ classifiers = [
 
 dependencies =[
     "napari>=0.6.2,<0.8.0",
-    "funtracks>=2.1.0-a3,<3",
+    "funtracks @ git+https://github.com/funkelab/funtracks.git@refs/pull/262/head",
     "appdirs>=1,<2",
     "numpy>=2,<3",
     "magicgui>=0.10.1",

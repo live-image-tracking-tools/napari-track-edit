@@ -127,3 +127,35 @@ def test_solve_single_window_invalid_start(segmentation_3d):
 
     with pytest.raises(ValueError, match="beyond last frame"):
         solve(params, segmentation_3d)
+
+
+def test_solve_points_uses_world_distances():
+    """Positions stay in pixels; the scale governs the distance-based decisions.
+
+    The points move 6 pixels along y and 0 along x per frame. With an isotropic
+    scale that is well inside max_edge_distance, but stretching y by 5 puts every
+    link 30 world units apart, beyond the candidate-edge budget, so nothing links
+    up. Either way the solved graph carries the original pixel coordinates.
+    """
+    points = np.array(
+        [
+            [0, 50.0, 50.0],
+            [1, 56.0, 50.0],
+            [2, 62.0, 50.0],
+        ]
+    )
+    params = SolverParams()
+    params.appear_cost = None
+    params.iou_cost = None  # points graphs have no iou edge attribute
+    params.max_edge_distance = 10
+
+    solution = solve(params, points)
+    assert solution.num_edges() == 2
+
+    scaled = solve(params, points, scale=[1.0, 5.0, 1.0])
+    assert scaled.num_edges() == 0
+
+    for graph in (solution, scaled):
+        positions = {node: list(graph.nodes[node]["pos"]) for node in graph.node_ids()}
+        for node, pos in positions.items():
+            np.testing.assert_allclose(pos, points[node][1:])

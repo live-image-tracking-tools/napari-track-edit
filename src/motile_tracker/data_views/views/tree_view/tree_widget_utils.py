@@ -118,6 +118,34 @@ def extract_sorted_tracks(
         zip(node_ids_list, df_attrs[tracklet_key].to_list(), strict=True)
     )
     feat_cols = {key: df_attrs[key].to_list() for key in node_feature_keys}
+
+    # Positions are stored in pixel coordinates but displayed in world units, so
+    # scale that one column up front rather than at every use site downstream.
+    # tracks.scale is [t, (z), y, x]; only the spatial part applies to a position.
+    scale = getattr(tracks, "scale", None)
+    spatial_scale = None if scale is None else [float(s) for s in scale[1:]]
+    if spatial_scale is not None and all(s == 1.0 for s in spatial_scale):
+        spatial_scale = None  # nothing to convert
+
+    if spatial_scale is not None:
+        position_key = tracks.features.position_key
+        pos_keys = (
+            [position_key]
+            if isinstance(position_key, str)
+            else list(position_key or [])
+        )
+        for i, key in enumerate(pos_keys):
+            if key not in feat_cols:
+                continue
+            if len(pos_keys) == 1:
+                # single column holding the full coordinate array per node
+                feat_cols[key] = [
+                    (np.asarray(val) * spatial_scale).tolist() for val in feat_cols[key]
+                ]
+            else:
+                # one column per axis, in the same order as the scale
+                feat_cols[key] = [val * spatial_scale[i] for val in feat_cols[key]]
+
     node_to_feat = {
         node: {key: feat_cols[key][i] for key in node_feature_keys}
         for i, node in enumerate(node_ids_list)

@@ -56,6 +56,7 @@ def copy_layer(layer: Layer, name: str = ""):
         res_layer = ZOnlyPoints(
             data=layer.data,
             name=layer.name,
+            scale=layer.scale,  # the point data is in pixel coordinates
             size=layer.size,  # these are not synced, so copy these properties here to set
             shown=layer.shown,  # the initial size and shown properties correctly.
         )

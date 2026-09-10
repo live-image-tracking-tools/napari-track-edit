@@ -119,6 +119,7 @@ class TrackGraph(napari.layers.Tracks):
             data=track_data,
             graph=track_edges,
             name=name,
+            scale=self.tracks_viewer.tracks.scale,
             tail_length=3,
             color_by="track_id",
         )

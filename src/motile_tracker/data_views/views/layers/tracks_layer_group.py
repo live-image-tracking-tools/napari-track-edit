@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import napari
+import numpy as np
 from funtracks.data_model import Tracks
 from napari.experimental import link_layers, unlink_layers
 
@@ -113,12 +114,26 @@ class TracksLayerGroup:
 
     def _refresh(self) -> None:
         """Refresh the tracking layers with new tracks info"""
+        self._sync_scale()
         if self.tracks_layer is not None:
             self.tracks_layer._refresh()
         if self.seg_layer is not None:
             self.seg_layer._refresh()
         if self.points_layer is not None:
             self.points_layer._refresh()
+
+    def _sync_scale(self) -> None:
+        """Sync the layer scales in case tracks.scale was updated."""
+
+        if self.tracks is None or self.tracks.scale is None:
+            return
+
+        scale = np.asarray(self.tracks.scale, dtype=float)
+        for layer in (self.tracks_layer, self.points_layer, self.seg_layer):
+            if layer is None:
+                continue
+            if not np.array_equal(np.asarray(layer.scale, dtype=float), scale):
+                layer.scale = scale
 
     def update_visible(self, visible_nodes: list[int] | str):
         if self.seg_layer is not None:
@@ -136,6 +151,37 @@ class TracksLayerGroup:
                 )
             self.tracks_layer.update_track_visibility(visible_tracks)
 
+    def _to_world(self, location: list[float]) -> list[float]:
+        """Convert a pixel-coordinate location (including time) to world units.
+
+        funtracks keeps node positions in pixel coordinates and carries the voxel
+        size in ``tracks.scale``; napari's viewer state (dims.point, camera center,
+        corner pixels) is all in world coordinates.
+        """
+        scale = getattr(self.tracks, "scale", None)
+        if scale is None:
+            return list(location)
+        return [float(c) * float(s) for c, s in zip(location, scale, strict=True)]
+
+    def _visible_world_range(self) -> tuple[float, float, float, float]:
+        """World bounds (min_y, max_y, min_x, max_x) of what the canvas is showing.
+
+        Derived from the camera, the same way the orthogonal views decide
+        whether a coordinate is in view. camera.center is in display order, so its
+        last two entries are the displayed y and x axes.
+        """
+        viewbox = self.viewer._get_viewbox_size()
+        zoom = self.viewer.camera.zoom
+        center = self.viewer.camera.center
+        half_height = viewbox[0] / zoom / 2
+        half_width = viewbox[1] / zoom / 2
+        return (
+            center[-2] - half_height,
+            center[-2] + half_height,
+            center[-1] - half_width,
+            center[-1] + half_width,
+        )
+
     def center_view(self, node):
         """Adjust the current_step and camera center of the viewer to jump to the node
         location, if the node is not already in the field of view"""
@@ -147,18 +193,17 @@ class TracksLayerGroup:
                 f"{self.viewer.dims.ndim}"
             )
 
+            # The graph stores pixel coordinates; everything below (dims.point,
+            # camera.center, visible range) works in world coordinates.
+            location = self._to_world(location)
+
             # Set dims.point directly with world coordinates - napari will
             # automatically convert to the correct step indices
             self.viewer.dims.point = location
 
             # check whether the new coordinates are inside or outside the field of view,
             # then adjust the camera if needed
-            example_layer = (
-                self.points_layer
-            )  # the points layer is always in world units,
-            # because it directly reads the scaled coordinates. Therefore, no rescaling
-            # is necessary to compute the camera center
-            corner_coordinates = example_layer.corner_pixels
+            _min_y, _max_y, _min_x, _max_x = self._visible_world_range()
 
             # check which dimensions are shown, the first dimension is displayed on the
             # x axis, and the second on the y_axis
@@ -174,13 +219,7 @@ class TracksLayerGroup:
             x_dim = dims_displayed[-1]
             y_dim = dims_displayed[-2]
 
-            # find corner pixels for the displayed axes
-            _min_x = corner_coordinates[0][x_dim]
-            _max_x = corner_coordinates[1][x_dim]
-            _min_y = corner_coordinates[0][y_dim]
-            _max_y = corner_coordinates[1][y_dim]
-
-            # check whether the node location falls within the corner spatial range
+            # check whether the node location falls within the visible spatial range
             if not (
                 (location[x_dim] > _min_x and location[x_dim] < _max_x)
                 and (location[y_dim] > _min_y and location[y_dim] < _max_y)
