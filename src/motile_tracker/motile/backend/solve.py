@@ -7,6 +7,7 @@ from collections.abc import Callable
 import ilpy
 import numpy as np
 import tracksdata as td
+from tracksdata.constants import DEFAULT_ATTR_KEYS
 from funtracks.candidate_graph import (
     compute_graph_from_points_list,
     compute_graph_from_seg,
@@ -26,6 +27,53 @@ from .solver_params import SolverParams
 logger = logging.getLogger(__name__)
 
 PIN_ATTR = "pinned"
+
+_SKIP_ATTRS = {DEFAULT_ATTR_KEYS.MASK, DEFAULT_ATTR_KEYS.BBOX}
+
+
+def graphview_to_motile_dicts(
+    cand_graph: td.graph.GraphView,
+) -> tuple[dict[int, dict], dict[tuple[int, int], dict]]:
+    """Unpack a tracksdata ``GraphView`` into plain node/edge dicts for ``motile.TrackGraph``.
+
+    ``GraphView`` is always backed by an in-memory ``rustworkx.PyDiGraph`` (regardless
+    of the root graph's backend), so this walks that graph directly instead of going
+    through tracksdata's polars-based ``node_attrs()``/``edge_attrs()``, which is
+    dramatically slower for large candidate graphs.
+
+    Args:
+        cand_graph: The candidate graph to unpack. Node and edge attribute dicts are
+            reused by reference (not copied), matching how ``GraphView`` itself shares
+            attribute storage with an in-memory root.
+
+    Returns:
+        A tuple ``(nodes, edges)`` matching the shape expected by
+        ``motile.TrackGraph.add_node``/``add_edge``:
+
+        - ``nodes``: mapping from node id to its attribute dict.
+        - ``edges``: mapping from ``(source_id, target_id)`` to its attribute dict.
+    """
+    rx_graph = cand_graph.rx_graph
+    node_ids = cand_graph.node_ids()
+
+    nodes: dict[int, dict] = {}
+    for local_idx, node_id in zip(rx_graph.node_indices(), node_ids, strict=True):
+        attrs = rx_graph[local_idx]
+        nodes[node_id] = {k: v for k, v in attrs.items() if k not in _SKIP_ATTRS}
+
+    local_to_external = dict(zip(rx_graph.node_indices(), node_ids, strict=True))
+
+    edges: dict[tuple[int, int], dict] = {}
+    for src_local, tgt_local, attrs in rx_graph.edge_index_map().values():
+        edge_id = (local_to_external[src_local], local_to_external[tgt_local])
+        edges[edge_id] = {
+            k: v
+            for k, v in attrs.items()
+            if k not in (DEFAULT_ATTR_KEYS.EDGE_ID, DEFAULT_ATTR_KEYS.EDGE_SOURCE, DEFAULT_ATTR_KEYS.EDGE_TARGET)
+        }
+
+    return nodes, edges
+
 
 
 def solve(
@@ -53,7 +101,7 @@ def solve(
             a dictionary of event data, and can be used to track progress of
             the solver. Defaults to None.
         scale (list, optional): The scale of the data in each dimension.
-        cand_graph (td.graph.GraphView, optional): A pre-built candidate graph. If
+        cand_graph (td.graph.BaseGraph, optional): A pre-built candidate graph. If
             provided, skips candidate graph construction (except for
             single-window mode which always builds its own). Defaults to None.
 
@@ -90,7 +138,7 @@ def build_candidate_graph(
     solver_params: SolverParams,
     scale: list | None = None,
     time_offset: int = 0,
-) -> td.graph.GraphView:
+) -> td.graph.BaseGraph:
     """Build the candidate graph from input data."""
     if input_data.ndim == 2:
         cand_graph = compute_graph_from_points_list(
@@ -109,12 +157,14 @@ def build_candidate_graph(
 
 
 def _solve_full(
-    cand_graph: td.graph.GraphView,
+    cand_graph: td.graph.BaseGraph,
     solver_params: SolverParams,
     on_solver_update: Callable | None = None,
 ) -> td.graph.GraphView:
     """Solve the tracking problem on the full candidate graph at once."""
-    solver = construct_solver(cand_graph, solver_params)
+    cand_graph_view = cand_graph.filter().subgraph()
+    solver = construct_solver(cand_graph_view, solver_params)
+    print("Done setting up solver, starting solving")
     start_time = time.time()
     solution = solver.solve(verbose=False, on_event=on_solver_update)
     logger.info("Solution took %.2f seconds", time.time() - start_time)
@@ -444,9 +494,6 @@ def _set_pinning_on_graph(
         )
 
 
-_SKIP_ATTRS = {td.DEFAULT_ATTR_KEYS.MASK, td.DEFAULT_ATTR_KEYS.BBOX}
-
-
 def construct_solver(
     cand_graph: td.graph.GraphView, solver_params: SolverParams
 ) -> Solver:
@@ -464,26 +511,13 @@ def construct_solver(
     """
     tg = TrackGraph(frame_attribute="t")
 
-    # Bulk-fetch node attributes (one polars scan instead of N individual scans)
-    node_df = cand_graph.node_attrs()
-    skip_cols = [c for c in node_df.columns if c in _SKIP_ATTRS]
-    if skip_cols:
-        node_df = node_df.drop(skip_cols)
-    node_id_col = td.DEFAULT_ATTR_KEYS.NODE_ID
-    for row in node_df.rows(named=True):
-        node_id = row.pop(node_id_col)
-        tg.add_node(node_id, row)
-
-    # Bulk-fetch edge attributes (one polars scan instead of N individual scans)
-    edge_df = cand_graph.edge_attrs()
-    src_col = td.DEFAULT_ATTR_KEYS.EDGE_SOURCE
-    tgt_col = td.DEFAULT_ATTR_KEYS.EDGE_TARGET
-    eid_col = td.DEFAULT_ATTR_KEYS.EDGE_ID
-    for row in edge_df.rows(named=True):
-        src = row.pop(src_col)
-        tgt = row.pop(tgt_col)
-        row.pop(eid_col)
-        tg.add_edge((src, tgt), row)
+    # Unpack directly from the GraphView's underlying in-memory rustworkx graph,
+    # avoiding the overhead of tracksdata's polars-based bulk attribute fetch.
+    nodes, edges = graphview_to_motile_dicts(cand_graph)
+    logging.info("Done creating motile track graph)")
+    tg.nodes = nodes
+    for edge_id, attrs in edges.items():
+        tg.add_edge(edge_id, attrs)
 
     solver = Solver(tg)
     solver.add_constraint(MaxChildren(solver_params.max_children))
