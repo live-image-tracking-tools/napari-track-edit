@@ -4,9 +4,11 @@ No Qt here: sql_io deliberately holds no widgets, so the format itself can be
 tested without a running application.
 """
 
+import warnings
 from pathlib import Path
 
 import numpy as np
+import polars as pl
 import pytest
 import tracksdata as td
 from funtracks.data_model import Tracks
@@ -179,12 +181,21 @@ class TestForeignDatabase:
         assert reopened.features.position_key == "pos"
         assert reopened.graph_full.num_nodes() == tracks_2d.graph_full.num_nodes()
 
+    def test_scale_comes_back_from_the_graph_metadata(self, foreign_db, tracks_2d):
+        """A database with no description still knows its own scale.
+
+        funtracks backs Tracks.scale with graph_full.metadata["scale"], which
+        SQLGraph.from_other copies, so this needs nothing from sql_io. The test
+        pins that down because sql_io must not "helpfully" pass a scale of its
+        own - the metadata is spatial-only and funtracks adds the time entry, so
+        passing the raw value through would double it up.
+        """
+        assert tracks_from_sql(foreign_db).scale == tracks_2d.scale
+
     def test_opens_without_a_scale(self, foreign_db):
         """No scale recorded anywhere means no scale, same as loading a geff.
 
-        funtracks backs Tracks.scale with graph_full.metadata["scale"], which
-        SQLGraph.from_other copies, so a database written from scaled tracks
-        arrives with a scale of its own. Clear it to get the unscaled case.
+        ndim still resolves, from the segmentation shape metadata.
         """
         graph = td.graph.SQLGraph(drivername="sqlite", database=str(foreign_db))
         del graph.metadata["scale"]
@@ -199,6 +210,188 @@ class TestForeignDatabase:
             3.0,
             3.0,
         ]
+
+    def test_scale_including_time_is_normalised(self, foreign_db):
+        """Ultrack records one scale entry per axis, time included.
+
+        funtracks reads that key as spatial-only and adds the time entry itself,
+        so left alone it ends up with one entry too many and refuses to open the
+        database at all.
+        """
+        graph = td.graph.SQLGraph(drivername="sqlite", database=str(foreign_db))
+        graph.metadata["scale"] = [1.0, 2.0, 4.0]  # t, y, x - shape is (5, 100, 100)
+        close_database(graph)
+
+        with pytest.warns(UserWarning, match="includes the time axis"):
+            reopened = tracks_from_sql(foreign_db)
+
+        assert reopened.scale == [1.0, 2.0, 4.0]
+        # Rewritten into the funtracks convention, so it is a one-time repair.
+        assert reopened.graph_full.metadata["scale"] == [2.0, 4.0]
+
+    def test_supplied_scale_beats_the_recorded_one(self, foreign_db):
+        graph = td.graph.SQLGraph(drivername="sqlite", database=str(foreign_db))
+        graph.metadata["scale"] = [1.0, 2.0, 4.0]
+        close_database(graph)
+
+        assert tracks_from_sql(foreign_db, scale=[1.0, 9.0, 9.0]).scale == [
+            1.0,
+            9.0,
+            9.0,
+        ]
+
+
+class TestUltrackShapedDatabase:
+    """The shape an Ultrack database arrives in.
+
+    Three things are wrong with it in ways that raise nothing: the scale sits at
+    the top level of the metadata, the "pos" column exists but was never filled
+    in while the real coordinates live in per-axis columns, and the lineage
+    column holds nothing but the uncomputed sentinel next to perfectly good
+    tracklet ids.
+    """
+
+    @pytest.fixture
+    def ultrack_db(self, tracks_2d, tmp_path):
+        """A database with Ultrack's attribute layout, built from tracks_2d.
+
+        Deliberately assembled by mutating a database rather than by writing a
+        fixture graph: the point is to reproduce what arrives on disk.
+        """
+        path = tmp_path / "ultrack.db"
+        graph = td.graph.SQLGraph.from_other(
+            tracks_2d.graph_full, drivername="sqlite", database=str(path)
+        )
+        node_ids = graph.node_ids()
+        positions = graph.filter(node_ids=node_ids).node_attrs(attr_keys=["pos"])["pos"]
+
+        for axis in ("y", "x"):
+            graph.add_node_attr_key(axis, dtype=pl.Float64, default_value=-1.0)
+        graph.update_node_attrs(
+            attrs={
+                "y": [float(pos[0]) for pos in positions],
+                "x": [float(pos[1]) for pos in positions],
+                # The column Ultrack leaves behind: present, allocated, zero.
+                "pos": [np.zeros(2, dtype=float) for _ in node_ids],
+                "lineage_id": [sql_io.UNCOMPUTED_ID] * len(node_ids),
+            },
+            node_ids=node_ids,
+        )
+        # Ultrack's spelling: one entry per axis, time included.
+        graph.metadata["scale"] = [1.0, 0.5, 0.25]
+        close_database(graph)
+        return path
+
+    def test_axis_columns_win_over_an_unfilled_pos(self, ultrack_db, tracks_2d):
+        """Positions must come from y/x, not from the zeroed "pos" column.
+
+        Preferring "pos" because it exists is what puts every node at the
+        origin, and nothing about that failure is visible until the points are
+        on screen in the wrong place.
+        """
+        reopened = tracks_from_sql(ultrack_db)
+
+        assert reopened.features.position_key == ["y", "x"]
+        positions = reopened.get_positions(reopened.graph_solution.node_ids())
+        np.testing.assert_allclose(
+            np.sort(positions, axis=0),
+            np.sort(
+                tracks_2d.get_positions(tracks_2d.graph_solution.node_ids()), axis=0
+            ),
+        )
+
+    def test_scale_is_recovered(self, ultrack_db):
+        assert tracks_from_sql(ultrack_db).scale == [1.0, 0.5, 0.25]
+
+    def test_uncomputed_lineage_ids_are_replaced(self, ultrack_db):
+        """An all-sentinel lineage column must not be served as real lineages.
+
+        funtracks sentinel-checks the tracklet key but not the lineage key, so
+        without the repair every node reports lineage -1 and lineage mode and
+        groups are wrong while looking fine.
+        """
+        with pytest.warns(UserWarning, match="never computed"):
+            reopened = tracks_from_sql(ultrack_db)
+
+        lineage_key = reopened.features.lineage_key
+        values = reopened.graph_solution.node_attrs(attr_keys=[lineage_key])[
+            lineage_key
+        ]
+        assert sql_io.UNCOMPUTED_ID not in values.to_list()
+        # graph_2d is one lineage plus one unconnected node.
+        assert len(set(values.to_list())) == 2
+
+    def test_repaired_lineage_ids_reach_the_database(self, ultrack_db):
+        """The repair is a real edit, so reopening must not need it again."""
+        with pytest.warns(UserWarning, match="never computed"):
+            reopened = tracks_from_sql(ultrack_db)
+        close_database(reopened)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            tracks_from_sql(ultrack_db)
+
+    def test_good_tracklet_ids_are_kept(self, ultrack_db, tracks_2d):
+        """Repairing lineages must not discard the tracklet ids that were fine.
+
+        Ultrack's tracklets are the one part of its output worth keeping, and
+        the recompute path funtracks takes for a bad tracklet column would
+        renumber them.
+        """
+        with pytest.warns(UserWarning, match="never computed"):
+            reopened = tracks_from_sql(ultrack_db)
+
+        node_ids = sorted(reopened.graph_solution.node_ids())
+        assert list(reopened.get_track_ids(node_ids)) == list(
+            tracks_2d.get_track_ids(node_ids)
+        )
+
+
+class TestPositionSniffing:
+    """Choosing between a "pos" array and per-axis columns."""
+
+    def test_pos_is_preferred_when_it_is_populated(self, tracks_2d, tmp_path):
+        """Both columns filled in: keep the funtracks convention."""
+        path = tmp_path / "both.db"
+        graph = td.graph.SQLGraph.from_other(
+            tracks_2d.graph_full, drivername="sqlite", database=str(path)
+        )
+        node_ids = graph.node_ids()
+        positions = graph.filter(node_ids=node_ids).node_attrs(attr_keys=["pos"])["pos"]
+        for axis in ("y", "x"):
+            graph.add_node_attr_key(axis, dtype=pl.Float64, default_value=-1.0)
+        graph.update_node_attrs(
+            attrs={
+                "y": [float(pos[0]) for pos in positions],
+                "x": [float(pos[1]) for pos in positions],
+            },
+            node_ids=node_ids,
+        )
+        close_database(graph)
+
+        assert tracks_from_sql(path).features.position_key == "pos"
+
+    def test_pos_wins_over_axis_columns_that_disagree(self, tracks_2d, tmp_path):
+        """A populated "pos" is trusted; the axis columns are not cross-checked.
+
+        Deliberately not adjudicated: only the zeroed-"pos" case is a shape a
+        real database arrives in, and comparing every position against every
+        axis column to catch a hypothetical stale one is not worth the read.
+        """
+        path = tmp_path / "conflict.db"
+        graph = td.graph.SQLGraph.from_other(
+            tracks_2d.graph_full, drivername="sqlite", database=str(path)
+        )
+        node_ids = graph.node_ids()
+        for axis in ("y", "x"):
+            graph.add_node_attr_key(axis, dtype=pl.Float64, default_value=-1.0)
+        graph.update_node_attrs(
+            attrs={"y": [7.0] * len(node_ids), "x": [9.0] * len(node_ids)},
+            node_ids=node_ids,
+        )
+        close_database(graph)
+
+        assert tracks_from_sql(path).features.position_key == "pos"
 
 
 class TestOverwrite:

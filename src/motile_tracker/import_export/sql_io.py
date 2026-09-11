@@ -10,6 +10,11 @@ Import never converts: CSV and geff always build in-memory graphs. The only way
 into the SQL backend is to open a database that already exists, or to export one
 and optionally carry on editing in it.
 
+A database written elsewhere - say Ultrack - can be opened too, and the
+``_sniff_*`` helpers below exist for that case: they recover from the graph and
+its metadata what a database nTE wrote would have stated outright. Note that
+opening such a database writes to it; see :func:`tracks_from_sql`.
+
 Note that SQL does not make the *solution* out-of-core. ``Tracks`` builds
 ``graph_solution`` as a ``GraphView``, which subclasses ``RustWorkXGraph``, so
 for a SQL root it is materialised in memory. What lives on disk is the full
@@ -25,13 +30,25 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any
+from warnings import warn
 
+import numpy as np
 import tracksdata as td
 from funtracks.data_model import Tracks
 
 SQL_SUFFIX = ".db"
 
 DRIVERNAME = "sqlite"
+
+# The value a tracksdata id column holds before anything has computed it. Shared
+# by tracklet, lineage and track id columns, and what funtracks checks for when
+# deciding whether existing ids can be trusted.
+UNCOMPUTED_ID = -1
+
+# How many nodes to read when cross-checking two position attributes against
+# each other. The question is whether a column means anything at all, which a
+# spread of a few hundred rows answers as well as all of them would.
+_POS_SAMPLE_SIZE = 512
 
 # Graph metadata key holding what a database cannot otherwise say about itself.
 #
@@ -200,6 +217,13 @@ def tracks_from_sql(path: Path, scale: list[float] | None = None) -> Tracks:
     straight to this file. ``SQLGraph`` reflects the existing schema back when
     ``overwrite`` is false, which is the default.
 
+    Opening is **not** read-only. ``Tracks`` adds the ``solution`` node and edge
+    attribute keys if the graph has none, which is an ``ALTER TABLE``, and it
+    computes and writes back any track ids the graph only pretends to have (see
+    :func:`_repair_uncomputed_lineage_ids`). A database written by nTE already
+    has everything, so nothing happens; a foreign database is written to by
+    being opened. Copy the file first if that matters.
+
     A database that records no scale opens without one. Tracks with no scale are
     an ordinary state throughout the application - loading a geff produces them
     too - so there is nothing to ask the user about here.
@@ -216,9 +240,9 @@ def tracks_from_sql(path: Path, scale: list[float] | None = None) -> Tracks:
     described = graph.metadata.get(META_KEY) or {}
 
     if scale is None:
-        scale = described.get("scale")
+        scale = described.get("scale") or _sniff_scale(graph)
 
-    return Tracks(
+    tracks = Tracks(
         graph,
         time_attr=described.get("time_attr") or _sniff_time_attr(graph),
         pos_attr=described.get("pos_attr") or _sniff_pos_attr(graph),
@@ -227,6 +251,8 @@ def tracks_from_sql(path: Path, scale: list[float] | None = None) -> Tracks:
         scale=scale,
         ndim=described.get("ndim"),
     )
+    _repair_uncomputed_lineage_ids(tracks)
+    return tracks
 
 
 def rebind_tracks_to_graph(tracks: Tracks, graph: td.graph.BaseGraph) -> Tracks:
@@ -308,14 +334,120 @@ def _sniff_time_attr(graph: td.graph.BaseGraph) -> str:
     return "t"
 
 
+def _sniff_scale(graph: td.graph.BaseGraph) -> list[float] | None:
+    """The scale of a database that spells the scale metadata differently.
+
+    Nothing is needed here for a database that follows the tracksdata
+    convention: funtracks already backs ``Tracks.scale`` with
+    ``graph_full.metadata["scale"]``, treats it as **spatial-only** and adds the
+    dummy time entry itself.
+
+    Ultrack writes the same key with the time scale included - one entry per
+    axis of the segmentation, e.g. ``[1, 1.97, 0.485, 0.485]`` for t/z/y/x.
+    Handing that to funtracks unchanged makes it prepend a further entry and
+    then refuse to open the database at all ("Dimensions from segmentation 4,
+    scale 5, and ndim 4 must match"), so the clash has to be resolved here.
+
+    Detected by length: as long as it equals the number of axes in the
+    segmentation shape, the leading entry is a time scale. Passing the value
+    through as the time-first scale ``Tracks`` accepts also rewrites the
+    metadata into the spatial-only form, so a database only needs this once.
+
+    Returns None when the metadata already follows the funtracks convention, or
+    when there is no scale to read; in both cases funtracks does the right thing
+    unaided.
+    """
+    scale = graph.metadata.get("scale")
+    shape = graph.metadata.get("shape") or graph.metadata.get("segmentation_shape")
+    if scale is None or shape is None or len(scale) != len(shape):
+        return None
+    warn(
+        f"Scale {list(scale)} in this database includes the time axis, which is "
+        f"not the convention funtracks reads it by. Treating the first entry as "
+        f"the time scale and rewriting the metadata without it.",
+        stacklevel=2,
+    )
+    return [float(value) for value in scale]
+
+
 def _sniff_pos_attr(graph: td.graph.BaseGraph) -> str | list[str]:
     """Guess the position attribute(s) of a database written by something else.
 
     A single "pos" array is the funtracks convention; one column per axis is the
-    other shape funtracks accepts, so fall back to whichever axis columns exist.
+    other shape funtracks accepts. With only one of the two present the answer is
+    obvious. With both, "pos" wins - unless it was never filled in, which is what
+    an Ultrack database looks like: a zeroed "pos" column next to real z/y/x
+    columns. Reading positions from that one puts every node at the origin, and
+    nothing says so until the points are on screen in the wrong place.
     """
     keys = graph.node_attr_keys()
-    if "pos" in keys:
-        return "pos"
     axes = [axis for axis in ("z", "y", "x") if axis in keys]
-    return axes if axes else "pos"
+    if not axes:
+        return "pos"
+    if "pos" in keys and _pos_is_populated(graph):
+        return "pos"
+    return axes
+
+
+def _pos_is_populated(graph: td.graph.BaseGraph) -> bool:
+    """True if the "pos" column holds anything other than zeros.
+
+    Only a sample is read: "pos" holds a pickled array per node, so reading the
+    whole column would pull hundreds of megabytes off disk to answer a question
+    a few hundred rows already answer. The sample is spread over the id range
+    rather than taken from the front, so a database that merely starts with
+    unpopulated rows is not misjudged.
+    """
+    node_ids = graph.node_ids()
+    if not node_ids:
+        return True
+    step = max(1, len(node_ids) // _POS_SAMPLE_SIZE)
+    sample = node_ids[::step][:_POS_SAMPLE_SIZE]
+
+    values = graph.filter(node_ids=sample).node_attrs(attr_keys=["pos"])["pos"]
+    return any(np.asarray(value).any() for value in values)
+
+
+def _repair_uncomputed_lineage_ids(tracks: Tracks) -> None:
+    """Recompute lineage ids that the graph only pretends to have.
+
+    TODO: this is a workaround for a funtracks bug and belongs there, not here.
+    ``Tracks._ensure_track_features`` sentinel-checks only the *tracklet* key
+    (via ``_has_uncomputed_track_ids``), so a graph whose tracklet ids are real
+    but whose lineage column was never filled in takes the "activate, do not
+    compute" branch, and the -1 default is then served as a genuine lineage id.
+    Every node reports lineage -1, which silently breaks lineage display mode
+    and groups. An Ultrack database is exactly this shape: valid tracklet_id,
+    untouched lineage_id. funtracks should apply the same sentinel check to the
+    lineage key that it already applies to the tracklet key. Once it does,
+    delete this function, its call in :func:`tracks_from_sql`, the
+    ``UNCOMPUTED_ID`` constant and the lineage tests in
+    ``TestUltrackShapedDatabase``.
+
+    The check runs on ``graph_solution``, which is already in memory by the time
+    ``Tracks`` returns, so it costs no extra database read - the same read
+    funtracks does for the tracklet key. The recompute, if needed, does write
+    the repaired ids back to the database.
+
+    Args:
+        tracks (Tracks): Freshly constructed tracks to check and, if needed, fix.
+    """
+    lineage_key = tracks.features.lineage_key
+    solution = tracks.graph_solution
+    if (
+        lineage_key is None
+        or solution.num_nodes() == 0
+        or lineage_key not in solution.node_attr_keys()
+    ):
+        return
+
+    values = solution.node_attrs(attr_keys=[lineage_key])[lineage_key]
+    if not bool((values == UNCOMPUTED_ID).any()):
+        return
+
+    warn(
+        f'Lineage ids ("{lineage_key}") in this database were never computed. '
+        f"Computing them from the graph and writing them back.",
+        stacklevel=2,
+    )
+    tracks.enable_features([lineage_key])
