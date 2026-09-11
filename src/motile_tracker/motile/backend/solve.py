@@ -368,6 +368,14 @@ def _solve_chunked(
     all_selected_edges: set[tuple] = set()
     window_start = min_time
     window_num = 0
+    # The first frame no window has decided yet (exclusive upper bound of what is
+    # already decided). Windows overlap, so each one re-solves a few frames the
+    # previous one already decided; those are dropped below to avoid duplicates.
+    # We track the last decided frame rather than counting windows, because a
+    # window with no nodes is skipped and decides nothing - counting windows
+    # would make the next one drop frames nobody had decided, losing those nodes.
+    # None means nothing is decided yet, so keep everything.
+    committed_through: int | None = None
     start_time = time.time()
 
     while window_start <= max_time:
@@ -409,7 +417,7 @@ def _solve_chunked(
         # Collect selected nodes and edges from this window, excluding the pinned
         # overlap region that was already committed from the previous window.
         overlap_start = window_start + window_size - overlap_size
-        from_frame = None if window_num == 1 else window_start + overlap_size
+        from_frame = committed_through
         for nid in window_solution.node_ids():
             if from_frame is None or window_solution.nodes[nid]["t"] >= from_frame:
                 all_selected_nodes.add(nid)
@@ -426,6 +434,7 @@ def _solve_chunked(
             _set_pinning_on_graph(
                 cand_graph, window_solution, overlap_start, window_end
             )
+            committed_through = window_end
 
         # Move window
         window_start += window_size - overlap_size
