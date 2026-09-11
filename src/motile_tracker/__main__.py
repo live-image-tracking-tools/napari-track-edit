@@ -1,10 +1,31 @@
 import argparse
+import logging
 import sys
 
 import napari
-import logging
 
 from motile_tracker.application_menus.main_app import StartupWidget
+
+LOG_FORMAT = "%(asctime)s [%(filename)s:%(lineno)d] %(levelname)-8s %(message)s"
+
+
+def _configure_logging() -> None:
+    """Send motile_tracker's log records to the console.
+
+    Configures our own package logger rather than the root logger, so napari,
+    vispy and the rest of the dependency tree keep their own levels.
+
+    Called from main(), not from an ``if __name__ == "__main__"`` block: the
+    installed ``motile_tracker`` command imports this module and calls main(),
+    so such a block only runs for ``python -m motile_tracker``.
+    """
+    logger = logging.getLogger("motile_tracker")
+    if logger.handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
 
 
 def _activate_on_macos(viewer: napari.Viewer) -> None:
@@ -23,6 +44,8 @@ def _activate_on_macos(viewer: napari.Viewer) -> None:
 
 
 def main():
+    _configure_logging()
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--mode",
@@ -40,10 +63,4 @@ def main():
 
 
 if __name__ == "__main__":
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(filename)s:%(lineno)d] %(levelname)-8s %(message)s",
-    )
-    logging.getLogger("motile_tracker").setLevel(logging.DEBUG)
     sys.exit(main())
