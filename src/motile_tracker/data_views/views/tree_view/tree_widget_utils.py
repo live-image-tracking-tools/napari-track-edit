@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import napari.layers
 import numpy as np
 import pandas as pd
 import polars as pl
@@ -10,6 +9,7 @@ import tracksdata as td
 from funtracks.data_model import Tracks
 from tracksdata.constants import DEFAULT_ATTR_KEYS
 
+from motile_tracker.data_views.colormap import TrackColormap
 from motile_tracker.data_views.node_type import NodeType
 
 
@@ -69,7 +69,7 @@ def get_tracklets(
 
 def extract_sorted_tracks(
     tracks: Tracks,
-    colormap: napari.utils.CyclicLabelColormap,
+    colormap: TrackColormap,
     prev_axis_order: list[int] | None = None,
 ) -> pd.DataFrame | None:
     """
@@ -80,8 +80,10 @@ def extract_sorted_tracks(
     Args:
         tracks (funtracks.data_model.Tracks): A tracks object containing a graph
             to be converted into a dataframe.
-        colormap (napari.utils.CyclicLabelColormap): The colormap to use to
-            extract the color of each node from the track ID
+        colormap (TrackColormap): Colors tree-view nodes by track id via
+            colormap.map(track_ids) - independent of colormap.feature_key, so
+            this always colors by track id even if the segmentation view is
+            currently coloring by a different feature.
         prev_axis_order (list[int], Optional). The previous axis order.
 
     Returns:

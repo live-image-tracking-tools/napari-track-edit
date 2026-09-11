@@ -285,33 +285,22 @@ def needs_own_colormap(orig_layer: TrackLabels, copied_layer: Labels) -> bool:
 def make_own_colormap(orig_layer: TrackLabels, copied_layer: Labels) -> None:
     """Give the copied layer a color dict of its own, holding the original's colors.
 
-    The colors are copied into the existing dict when the copy already has one for the
-    same labels, because building a new DirectLabelColormap validates every color again.
-    A new one is only constructed when the labels changed, or when the copy is still
-    sharing the original's colormap.
+    Uses `DirectLabelColormap.model_construct` to skip pydantic's per-color
+    validation, since every color here is already a properly-shaped (4,)
+    float array copied from `orig_layer`'s colormap.
 
     Args:
         orig_layer (TrackLabels): TrackLabels layer from which the copy is derived.
         copied_layer (ContourLabels): ContourLabels equivalent of the TrackLabels layer.
     """
 
-    source_colors = orig_layer.colormap.color_dict
-    target_colors = copied_layer.colormap.color_dict
-
-    if (
-        copied_layer.colormap is orig_layer.colormap
-        or target_colors.keys() != source_colors.keys()
-    ):
-        copied_layer.colormap = DirectLabelColormap(
-            color_dict={
-                label: np.array(color, copy=True)
-                for label, color in source_colors.items()
-            }
-        )
-        return
-
-    for label, color in source_colors.items():
-        target_colors[label][:] = color
+    copied_layer.colormap = DirectLabelColormap.model_construct(
+        color_dict={
+            label: np.array(color, copy=True)
+            for label, color in orig_layer.colormap.color_dict.items()
+        },
+        colors=np.zeros(3),
+    )
 
 
 def colormap_hook(

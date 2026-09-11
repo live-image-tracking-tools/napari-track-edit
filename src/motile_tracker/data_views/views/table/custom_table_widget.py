@@ -3,14 +3,12 @@ import contextlib
 import napari
 import numpy as np
 import pandas as pd
-from napari.utils import DirectLabelColormap
 from qtpy.QtCore import (
     QAbstractTableModel,
     QItemSelection,
     QItemSelectionModel,
     QModelIndex,
     Qt,
-    QTimer,
 )
 from qtpy.QtGui import QColor, QKeyEvent, QMouseEvent, QPen
 from qtpy.QtWidgets import (
@@ -24,6 +22,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from motile_tracker.data_views.colormap import TrackColormap
 from motile_tracker.data_views.keybindings_config import GENERAL_KEY_ACTIONS
 from motile_tracker.data_views.views.layers.click_utils import (
     detect_side_button,
@@ -54,7 +53,7 @@ class TrackTableModel(QAbstractTableModel):
         self._bg: list[QColor] = []
         self._fg: list[QColor] = []
 
-    def set_table(self, table: dict[str, np.ndarray], colormap) -> None:
+    def set_table(self, table: dict[str, np.ndarray], colormap: TrackColormap) -> None:
         """Replace the table contents and precompute per-row colors."""
         self.beginResetModel()
         self._table = table
@@ -67,10 +66,10 @@ class TrackTableModel(QAbstractTableModel):
         self._fg = []
         ids = table.get("ID")
         if ids is not None and len(ids) > 0 and colormap is not None:
-            # Single vectorized colormap.map call over all row labels: colormap.map
-            # has a large fixed per-call overhead, so mapping row-by-row is O(rows)
-            # slow. Map once, then build the per-row QColors.
-            mapped = colormap.map(np.asarray(ids))
+            # Single vectorized get_colors call over all row node ids:
+            # per-node lookups have a large fixed overhead, so mapping
+            # row-by-row is O(rows) slow. Map once, then build per-row QColors.
+            mapped = colormap.get_colors(np.asarray(ids))
             for rgba in mapped:
                 if rgba[3] == 0:
                     rgba = [0, 0, 0, 0]
@@ -449,8 +448,6 @@ class ColoredTableWidget(QWidget):
         finally:
             self._syncing = False
 
-        QTimer.singleShot(0, self._update_label_colormap)
-
     def center_node(self, index: int) -> None:
         """Call TracksViewer to center Viewer on the node of current index
 
@@ -551,7 +548,6 @@ class ColoredTableWidget(QWidget):
         table: dict[str, np.ndarray] = {col: df[col].to_numpy() for col in df.columns}
 
         self._table = table
-        self.colormap = self._get_colormap()
 
         # Fast id -> row lookup for selection syncing / scrolling.
         if "ID" in table:
@@ -560,59 +556,9 @@ class ColoredTableWidget(QWidget):
             self._id_to_row = {}
 
         # Hand the data to the lazy model (no per-cell widgets are created).
-        self._model.set_table(table, self.colormap)
-
-    def _get_colormap(self) -> DirectLabelColormap:
-        """Get a DirectLabelColormap that maps node ids to their track ids, and then
-        uses the tracks_viewer.colormap to map from track_id to color.
-
-        Returns:
-            DirectLabelColormap: A map from node ids to colors based on track id
-        """
-        tracks = self.tracks_viewer.tracks
-        if tracks is not None:
-            nodes = tracks.graph.node_ids()
-            track_ids = tracks.get_track_ids(nodes)
-            # Single vectorized colormap.map call: ~290x faster than per-node
-            # calls because colormap.map has a large fixed per-call overhead.
-            # Copy per node (distinct rows) so each color is an independent array.
-            if len(track_ids) > 0:
-                mapped = self.tracks_viewer.colormap.map(np.asarray(track_ids))
-                colors = [color.copy() for color in mapped]
-            else:
-                colors = []
-        else:
-            nodes = []
-            colors = []
-
-        return DirectLabelColormap(
-            color_dict={
-                **dict(zip(nodes, colors, strict=True)),
-                None: [0, 0, 0, 0],
-            }
-        )
-
-    def _update_label_colormap(self) -> None:
-        """
-        Highlight the labels of selected rows. Assumes the layer already has a
-        DirectLabelColormap.
-        """
-
-        # find selected rows, and set highlight matching labels
-        selected_rows = sorted(
-            {index.row() for index in self._table_widget.selectedIndexes()}
-        )
-        if not selected_rows:
-            self._reset_layer_colormap()
-            return
-
-        selected_labels = [self._table["ID"][row] for row in selected_rows]
-        for key, color in self.colormap.color_dict.items():
-            if key is not None and key != 0:
-                color[-1] = 0.6
-        for key in selected_labels:
-            if key in self.colormap.color_dict:
-                self.colormap.color_dict[key][-1] = 1
+        # tracks_viewer.colormap is kept in sync (set_tracks) by TracksViewer
+        # itself on every tracks update/refresh.
+        self._model.set_table(table, self.tracks_viewer.colormap)
 
     def _sort_table(self, column_index: int) -> None:
         """Sorts the table in ascending or descending order
