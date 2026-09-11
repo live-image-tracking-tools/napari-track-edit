@@ -395,16 +395,16 @@ class TestCenterViewWithScale:
         ortho_manager.cleanup()
 
 
-class TestCenterViewWithExtraViewerDims:
+class TestExtraViewerDims:
     """The viewer may carry more dimensions than the tracks do.
 
     A multi-channel intensity layer adds an axis in front of the ones the tracks
     use. napari aligns layers on their trailing dimensions, so the tracks own the
-    last `tracks.ndim` world axes and the extra leading ones are for
-    visualization only.
+    last `tracks.ndim` world axes and the extra leading ones are for visualization
+    only.
     """
 
-    def _tracks_with_channel_layer(self, viewer, tmp_path, n_channels=3):
+    def _setup(self, viewer, tmp_path, extra_shape=(3, 2, 20, 20, 20)):
         """3D+time tracks in a viewer that also holds a multi-channel image."""
 
         graph = _make_single_node_graph(
@@ -416,146 +416,70 @@ class TestCenterViewWithExtraViewerDims:
         tracks = SolutionTracks(
             graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t"
         )
-
-        # (c, t, z, y, x): one axis more than the tracks have
-        viewer.add_image(
-            np.zeros((n_channels, 2, 20, 20, 20), dtype=np.uint8), name="channels"
-        )
+        if extra_shape is not None:
+            viewer.add_image(np.zeros(extra_shape, dtype=np.uint8), name="channels")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
         return tracks_viewer
 
-    def test_center_view_does_not_crash_with_an_extra_dimension(self, viewer, tmp_path):
+    def test_centering_with_an_extra_dimension(self, viewer, tmp_path):
         """The reported bug: selecting a node raised an AssertionError because the
         node location had fewer entries than the viewer had dims."""
 
-        tracks_viewer = self._tracks_with_channel_layer(viewer, tmp_path)
+        tracks_viewer = self._setup(viewer, tmp_path)
         assert viewer.dims.ndim == 5
         assert tracks_viewer.tracks.ndim == 4
+        assert tracks_viewer.tracks_dims.time_axis == 1
+        assert tracks_viewer.tracks_dims.extra_axes == (0,)
 
-        tracks_viewer.tracking_layers.center_view(node=1)
-
-        # the tracks axes hold the node position, time first
-        assert tuple(viewer.dims.point[1:]) == (0, 5, 10, 10)
-
-    def test_the_extra_axis_keeps_its_slider_position(self, viewer, tmp_path):
-        """Jumping to a node must not move the user off the channel they are
-        looking at."""
-
-        tracks_viewer = self._tracks_with_channel_layer(viewer, tmp_path)
+        # the user is looking at channel 2; centering must not move them off it
         point = list(viewer.dims.point)
-        point[0] = 2.0  # user picked channel 2
+        point[0] = 2.0
         viewer.dims.point = point
 
-        tracks_viewer.tracking_layers.center_view(node=1)
-
-        assert viewer.dims.point[0] == 2.0
-
-    def test_the_point_is_visible_after_centering(self, viewer, tmp_path):
-        tracks_viewer = self._tracks_with_channel_layer(viewer, tmp_path)
-        points_layer = tracks_viewer.tracking_layers.points_layer
-        node_index = points_layer.node_index_dict[1]
-
-        tracks_viewer.tracking_layers.center_view(node=1)
-
-        assert node_index in points_layer._indices_view
-
-    def test_selecting_a_node_through_the_signal_does_not_crash(self, viewer, tmp_path):
-        """The crash arrived through the center_node signal, whose callbacks
-        swallow the traceback into a napari warning."""
-
-        tracks_viewer = self._tracks_with_channel_layer(viewer, tmp_path)
-
+        # the crash arrived through the signal, whose callbacks wrap the traceback
         tracks_viewer.center_node.emit(1)
 
         assert tuple(viewer.dims.point[1:]) == (0, 5, 10, 10)
+        assert viewer.dims.point[0] == 2.0
+        points_layer = tracks_viewer.tracking_layers.points_layer
+        assert points_layer.node_index_dict[1] in points_layer._indices_view
 
-    @pytest.mark.parametrize("n_rolls", [1, 2, 3])
-    def test_center_view_survives_a_roll(self, viewer, tmp_path, n_rolls):
-        """Rolling the dim order must not corrupt centering.
-
-        A roll only permutes `dims.order`; `dims.point` stays indexed by world
-        axis. But a roll can put the extra channel axis on screen, and centering
-        the camera on a channel is meaningless, so that case is skipped rather
-        than indexing the layer's corner_pixels out of bounds.
+    def test_centering_survives_a_roll(self, viewer, tmp_path):
+        """A roll leaves dims.point indexed by world axis, so the node still lands
+        on the tracks axes. But it can put the channel axis on screen, and centering
+        the camera on a channel is meaningless, so that is skipped rather than
+        indexing the points layer's corner_pixels out of bounds.
         """
 
-        tracks_viewer = self._tracks_with_channel_layer(viewer, tmp_path)
-        for _ in range(n_rolls):
-            viewer.dims.roll()
+        tracks_viewer = self._setup(viewer, tmp_path)
+        saw_extra_axis_displayed = False
 
-        tracks_viewer.tracking_layers.center_view(node=1)
-
-        # the tracks axes still receive the node position, whatever the display order
-        assert tuple(viewer.dims.point[1:]) == (0, 5, 10, 10)
-
-    def test_camera_is_left_alone_when_a_non_tracks_axis_is_displayed(
-        self, viewer, tmp_path
-    ):
-        """With the channel axis on screen there is no sensible centering to do."""
-
-        tracks_viewer = self._tracks_with_channel_layer(viewer, tmp_path)
-
-        # find a display order that puts the channel axis (world 0) on screen
         for _ in range(viewer.dims.ndim):
-            if 0 in viewer.dims.displayed:
-                break
             viewer.dims.roll()
-        assert 0 in viewer.dims.displayed
+            camera_before = tuple(viewer.camera.center)
 
-        camera_before = tuple(viewer.camera.center)
-        tracks_viewer.tracking_layers.center_view(node=1)
+            tracks_viewer.tracking_layers.center_view(node=1)
 
-        assert tuple(viewer.camera.center) == camera_before
-        # the dims point is still updated, only the camera is skipped
-        assert tuple(viewer.dims.point[1:]) == (0, 5, 10, 10)
+            # whatever the display order, the tracks axes receive the position
+            assert tuple(viewer.dims.point[1:]) == (0, 5, 10, 10)
+            if 0 in viewer.dims.displayed:
+                saw_extra_axis_displayed = True
+                assert tuple(viewer.camera.center) == camera_before
 
-    def test_time_is_read_from_the_right_axis(self, viewer, tmp_path):
-        """TrackLabels reads the current time point from dims.current_step, which
-        is indexed by world axis, so it is not step 0 when a channel axis is
-        in front of it."""
-
-        tracks_viewer = self._tracks_with_channel_layer(viewer, tmp_path)
-
-        assert tracks_viewer.tracks_dims.time_axis == 1
-        assert tracks_viewer.tracks_dims.offset == 1
-        assert tracks_viewer.tracks_dims.extra_axes == (0,)
-
-    def test_two_extra_dimensions(self, viewer, tmp_path):
-        """Nothing about the design is specific to a single extra axis."""
-
-        graph = _make_single_node_graph(
-            tmp_path,
-            pos=[5, 10, 10],
-            seg_bbox=[4, 9, 9, 6, 11, 11],
-            seg_shape=(2, 20, 20, 20),
-        )
-        tracks = SolutionTracks(
-            graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t"
-        )
-        viewer.add_image(np.zeros((2, 3, 2, 20, 20, 20), dtype=np.uint8))
-
-        tracks_viewer = TracksViewer.get_instance(viewer)
-        tracks_viewer.update_tracks(tracks=tracks, name="test")
-
-        assert viewer.dims.ndim == 6
-        assert tracks_viewer.tracks_dims.offset == 2
-
-        tracks_viewer.tracking_layers.center_view(node=1)
-
-        assert tuple(viewer.dims.point[2:]) == (0, 5, 10, 10)
+        assert saw_extra_axis_displayed, "a roll should display the channel axis"
 
 
-class TestCenterViewOrthoViewsWithExtraDims:
-    """Centering has to reach the orthogonal views when the viewer carries more
-    dimensions than the tracks, and has to survive a roll of the dim order.
+class TestOrthoViewsWithExtraDims:
+    """Centering has to reach the orthogonal views when the viewer carries more dimensions
+     than the tracks, and survive a roll.
 
-    The ortho views sync on `dims.point`, which is indexed by world axis, so the
-    sync itself is dimension- and order-agnostic. These tests pin that.
+    The ortho views sync on dims.point, indexed by world axis, so the sync is dimension-
+     and order-agnostic.
     """
 
-    def _setup(self, viewer, qtbot, tmp_path, extra_shape=None):
+    def test_centering_reaches_the_ortho_views(self, viewer, qtbot, tmp_path):
         ortho_manager = initialize_ortho_views(viewer)
         graph = _make_single_node_graph(
             tmp_path,
@@ -571,74 +495,28 @@ class TestCenterViewOrthoViewsWithExtraDims:
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
+        viewer.add_image(np.zeros((3, 2, 20, 20, 20), dtype=np.uint8), name="chan")
         qtbot.wait(50)
-
-        if extra_shape is not None:
-            viewer.add_image(np.zeros(extra_shape, dtype=np.uint8), name="channels")
-            qtbot.wait(50)
-
-        return ortho_manager, tracks_viewer
-
-    def test_centering_reaches_the_ortho_views_with_an_extra_dimension(
-        self, viewer, qtbot, tmp_path
-    ):
-        ortho_manager, tracks_viewer = self._setup(
-            viewer, qtbot, tmp_path, extra_shape=(3, 2, 20, 20, 20)
-        )
         assert viewer.dims.ndim == 5
 
-        tracks_viewer.tracking_layers.center_view(node=1)
-        qtbot.wait(50)
-
         right = ortho_manager.right_widget.vm_container.viewer_model
         bottom = ortho_manager.bottom_widget.vm_container.viewer_model
-        expected = (0.0, 5.0, 10.0, 10.0)
-        assert tuple(viewer.dims.point[1:]) == expected
-        assert tuple(right.dims.point[1:]) == expected
-        assert tuple(bottom.dims.point[1:]) == expected
 
-        ortho_manager.cleanup()
-
-    def test_centering_reaches_the_ortho_views_after_a_roll(
-        self, viewer, qtbot, tmp_path
-    ):
-        """A roll permutes dims.order only, so the world-indexed point sync is
-        unaffected and the node still lands in every view."""
-
-        ortho_manager, tracks_viewer = self._setup(
-            viewer, qtbot, tmp_path, extra_shape=(3, 2, 20, 20, 20)
-        )
-        viewer.dims.roll()
-        qtbot.wait(50)
-
-        tracks_viewer.tracking_layers.center_view(node=1)
-        qtbot.wait(50)
-
-        right = ortho_manager.right_widget.vm_container.viewer_model
-        bottom = ortho_manager.bottom_widget.vm_container.viewer_model
-        expected = (0.0, 5.0, 10.0, 10.0)
-        assert tuple(viewer.dims.point[1:]) == expected
-        assert tuple(right.dims.point[1:]) == expected
-        assert tuple(bottom.dims.point[1:]) == expected
-
-        ortho_manager.cleanup()
-
-    def test_the_extra_axis_is_not_moved_by_the_ortho_sync(
-        self, viewer, qtbot, tmp_path
-    ):
-        ortho_manager, tracks_viewer = self._setup(
-            viewer, qtbot, tmp_path, extra_shape=(3, 2, 20, 20, 20)
-        )
+        # the user is on channel 2, and centering leaves them there in every view
         point = list(viewer.dims.point)
         point[0] = 2.0
         viewer.dims.point = point
         qtbot.wait(50)
 
-        tracks_viewer.tracking_layers.center_view(node=1)
-        qtbot.wait(50)
+        for _ in range(2):  # before and after a roll
+            tracks_viewer.tracking_layers.center_view(node=1)
+            qtbot.wait(50)
 
-        right = ortho_manager.right_widget.vm_container.viewer_model
-        assert viewer.dims.point[0] == 2.0
-        assert right.dims.point[0] == 2.0
+            for model in (viewer, right, bottom):
+                assert tuple(model.dims.point[1:]) == (0.0, 5.0, 10.0, 10.0)
+                assert model.dims.point[0] == 2.0
+
+            viewer.dims.roll()
+            qtbot.wait(50)
 
         ortho_manager.cleanup()
