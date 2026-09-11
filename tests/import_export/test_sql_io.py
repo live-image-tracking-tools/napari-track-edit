@@ -180,7 +180,16 @@ class TestForeignDatabase:
         assert reopened.graph_full.num_nodes() == tracks_2d.graph_full.num_nodes()
 
     def test_opens_without_a_scale(self, foreign_db):
-        """No scale recorded means no scale, same as loading a geff."""
+        """No scale recorded anywhere means no scale, same as loading a geff.
+
+        funtracks backs Tracks.scale with graph_full.metadata["scale"], which
+        SQLGraph.from_other copies, so a database written from scaled tracks
+        arrives with a scale of its own. Clear it to get the unscaled case.
+        """
+        graph = td.graph.SQLGraph(drivername="sqlite", database=str(foreign_db))
+        del graph.metadata["scale"]
+        close_database(graph)
+
         assert tracks_from_sql(foreign_db).scale is None
 
     def test_scale_can_be_supplied(self, foreign_db):
