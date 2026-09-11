@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 import numpy as np
 import numpy.typing as npt
@@ -120,7 +120,7 @@ if _PointsSlicingState is not None:
             )
 
 
-class ZOnlyPoints(Points):
+class _ZOnlyPoints(Points):
     """Points subclass that overrides the slice request to apply the out-of-slice display logic only along the last non displayed axis.
 
     napari changed where the slice request is built between versions:
@@ -148,3 +148,12 @@ class ZOnlyPoints(Points):
                 out_of_slice_display=self.out_of_slice_display,
                 size=self.size,
             )
+
+
+# napari 0.9 removed size-based out-of-slice display (deprecating
+# out_of_slice_display in favour of projection_mode) and slice margins are per
+# axis, so a thick slice along z alone already gives the z-only behaviour.
+_HAS_SIZE_BASED_OUT_OF_SLICE = "out_of_slice_display" in {
+    f.name for f in fields(_PointSliceRequest)
+}
+ZOnlyPoints = _ZOnlyPoints if _HAS_SIZE_BASED_OUT_OF_SLICE else Points
