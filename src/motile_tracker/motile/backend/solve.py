@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 import ilpy
 import numpy as np
+import polars as pl
 import tracksdata as td
 from tracksdata.constants import DEFAULT_ATTR_KEYS
 from funtracks.candidate_graph import (
@@ -14,19 +15,28 @@ from funtracks.candidate_graph import (
 )
 from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
 from motile import Solver, TrackGraph
-from motile.constraints import MaxChildren, MaxParents, Pin
+from motile.constraints import MaxChildren, MaxParents
+from motile.constraints.constraint import Constraint
 from motile.costs import (
     EdgeDistanceCost,
     EdgeSelectedCost,
     NodeAppearCost,
     NodeSplitCost,
 )
+from motile.variables import EdgeSelected, NodeSelected
 
 from .solver_params import SolverParams
 
 logger = logging.getLogger(__name__)
 
 PIN_ATTR = "pinned"
+# tracksdata attribute storage has no null representation (add_node_attr_key's
+# default_value=None is inferred from dtype, not stored as null -- see
+# infer_default_value_from_dtype), so PIN_ATTR uses an int sentinel instead of
+# a bool: -1 means unconstrained, 0 means pinned-unselected, 1 means pinned-selected.
+PIN_UNSET = -1
+PIN_UNSELECTED = 0
+PIN_SELECTED = 1
 
 _SKIP_ATTRS = {DEFAULT_ATTR_KEYS.MASK, DEFAULT_ATTR_KEYS.BBOX}
 
@@ -399,9 +409,12 @@ def _solve_chunked(
         for nid in window_solution.node_ids():
             if from_frame is None or window_solution.nodes[nid]["t"] >= from_frame:
                 all_selected_nodes.add(nid)
+        # An edge is "owned" by this window if its target is in the newly
+        # decided region. This correctly includes the boundary edge whose
+        # source is the last pinned frame from the previous window.
         for u, v in window_solution.edge_list():
-            u_time = window_solution.nodes[u]["t"]
-            if from_frame is None or u_time >= from_frame:
+            v_time = window_solution.nodes[v]["t"]
+            if from_frame is None or v_time >= from_frame:
                 all_selected_edges.add((u, v))
 
         # Set PIN_ATTR on candidate graph for the overlap region (for next window)
@@ -444,7 +457,8 @@ def _set_pinning_on_graph(
     """Set PIN_ATTR on candidate graph nodes/edges in the overlap region.
 
     For all nodes and edges in the overlap region [overlap_start, overlap_end),
-    sets PIN_ATTR to True if selected in the solution, False if not selected.
+    sets PIN_ATTR to PIN_SELECTED if selected in the solution, PIN_UNSELECTED
+    if not selected. Everything outside the overlap region stays PIN_UNSET.
 
     Args:
         cand_graph: The full candidate graph to modify in place.
@@ -452,16 +466,14 @@ def _set_pinning_on_graph(
         overlap_start: Start frame of overlap region (inclusive).
         overlap_end: End frame of overlap region (exclusive).
     """
-    import polars as pl
-
     solution_nodes = set(solution_graph.node_ids())
     solution_edges = {tuple(e) for e in solution_graph.edge_list()}
 
-    # Ensure PIN_ATTR columns exist in schema (default None = not pinned)
+    # Ensure PIN_ATTR columns exist in schema (default PIN_UNSET = unconstrained)
     if PIN_ATTR not in cand_graph.node_attr_keys():
-        cand_graph.add_node_attr_key(PIN_ATTR, pl.Boolean, default_value=None)
+        cand_graph.add_node_attr_key(PIN_ATTR, pl.Int8, default_value=PIN_UNSET)
     if PIN_ATTR not in cand_graph.edge_attr_keys():
-        cand_graph.add_edge_attr_key(PIN_ATTR, pl.Boolean, default_value=None)
+        cand_graph.add_edge_attr_key(PIN_ATTR, pl.Int8, default_value=PIN_UNSET)
 
     # Pin nodes in the overlap region
     nodes_to_pin = []
@@ -470,7 +482,9 @@ def _set_pinning_on_graph(
         node_time = cand_graph.nodes[node]["t"]
         if overlap_start <= node_time < overlap_end:
             nodes_to_pin.append(node)
-            pin_node_values.append(node in solution_nodes)
+            pin_node_values.append(
+                PIN_SELECTED if node in solution_nodes else PIN_UNSELECTED
+            )
     if nodes_to_pin:
         cand_graph.update_node_attrs(
             node_ids=nodes_to_pin, attrs={PIN_ATTR: pin_node_values}
@@ -487,11 +501,59 @@ def _set_pinning_on_graph(
             and overlap_start <= v_time < overlap_end
         ):
             edges_to_pin.append(cand_graph.edge_id(u, v))
-            pin_edge_values.append((u, v) in solution_edges)
+            pin_edge_values.append(
+                PIN_SELECTED if (u, v) in solution_edges else PIN_UNSELECTED
+            )
     if edges_to_pin:
         cand_graph.update_edge_attrs(
             edge_ids=edges_to_pin, attrs={PIN_ATTR: pin_edge_values}
         )
+
+
+_SKIP_ATTRS = {td.DEFAULT_ATTR_KEYS.MASK, td.DEFAULT_ATTR_KEYS.BBOX}
+
+
+class TernaryPin(Constraint):
+    """Like motile's Pin, but treats PIN_UNSET as unconstrained.
+
+    motile.constraints.Pin evaluates `{attribute} == True` for every node/edge
+    and only skips ones where the attribute is entirely absent (NameError).
+    Since tracksdata can't store nulls, our PIN_ATTR is always present once the
+    schema key exists, so Pin would force-unselect every node/edge that hasn't
+    actually been decided yet. This constraint instead only pins nodes/edges
+    whose attribute value is PIN_SELECTED or PIN_UNSELECTED, leaving PIN_UNSET
+    ones free for the solver to decide.
+    """
+
+    def __init__(self, attribute: str) -> None:
+        self.attribute = attribute
+
+    def instantiate(self, solver: Solver) -> list[ilpy.Constraint]:
+        select = ilpy.Constraint()
+        exclude = ilpy.Constraint()
+        n_selected = 0
+
+        for nodes_or_edges, variable_type in (
+            (solver.graph.nodes, NodeSelected),
+            (solver.graph.edges, EdgeSelected),
+        ):
+            indicator_variables = solver.get_variables(variable_type)
+            for id_, node_or_edge in nodes_or_edges.items():
+                pin_value = node_or_edge.get(self.attribute, PIN_UNSET)
+                if pin_value == PIN_SELECTED:
+                    select.set_coefficient(indicator_variables[id_], 1)
+                    n_selected += 1
+                elif pin_value == PIN_UNSELECTED:
+                    exclude.set_coefficient(indicator_variables[id_], 1)
+                # PIN_UNSET: leave unconstrained
+
+        select.set_relation(ilpy.Relation.Equal)
+        select.set_value(n_selected)
+
+        exclude.set_relation(ilpy.Relation.Equal)
+        exclude.set_value(0)
+
+        return [select, exclude]
 
 
 def construct_solver(
@@ -522,7 +584,7 @@ def construct_solver(
     solver = Solver(tg)
     solver.add_constraint(MaxChildren(solver_params.max_children))
     solver.add_constraint(MaxParents(1))
-    solver.add_constraint(Pin(PIN_ATTR))
+    solver.add_constraint(TernaryPin(PIN_ATTR))
 
     if solver_params.edge_selection_cost is not None:
         solver.add_cost(
