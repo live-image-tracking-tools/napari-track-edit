@@ -8,7 +8,6 @@ import ilpy
 import numpy as np
 import polars as pl
 import tracksdata as td
-from tracksdata.constants import DEFAULT_ATTR_KEYS
 from funtracks.candidate_graph import (
     compute_graph_from_points_list,
     compute_graph_from_seg,
@@ -24,6 +23,7 @@ from motile.costs import (
     NodeSplitCost,
 )
 from motile.variables import EdgeSelected, NodeSelected
+from tracksdata.constants import DEFAULT_ATTR_KEYS
 
 from .solver_params import SolverParams
 
@@ -79,11 +79,15 @@ def graphview_to_motile_dicts(
         edges[edge_id] = {
             k: v
             for k, v in attrs.items()
-            if k not in (DEFAULT_ATTR_KEYS.EDGE_ID, DEFAULT_ATTR_KEYS.EDGE_SOURCE, DEFAULT_ATTR_KEYS.EDGE_TARGET)
+            if k
+            not in (
+                DEFAULT_ATTR_KEYS.EDGE_ID,
+                DEFAULT_ATTR_KEYS.EDGE_SOURCE,
+                DEFAULT_ATTR_KEYS.EDGE_TARGET,
+            )
         }
 
     return nodes, edges
-
 
 
 def solve(
