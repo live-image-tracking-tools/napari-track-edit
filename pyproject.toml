@@ -67,7 +67,11 @@ dependencies =[
     # child transform's `changed` holds a weak ref to the chain, and the ortho views
     # drop a chain from inside a `changed` callback. Drop the pin once psygnal skips
     # dead callbacks again.
-    "psygnal<0.16",
+    # The floor is not incidental: naming psygnal here makes it a *direct*
+    # dependency, so the lowest-direct CI job resolves it to the floor instead of
+    # to the newest release, and 0.14.0 fails ~90 tests with "no signature found
+    # for builtin emit of SignalInstance".
+    "psygnal>=0.15.1,<0.16",
 ]
 
 [project.optional-dependencies]
