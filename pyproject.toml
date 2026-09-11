@@ -60,6 +60,14 @@ dependencies =[
     # Drop it once Cython encodes the limited-API level in that module name, or once
     # the two agree on a level.
     "blosc2>=4.11,<4.12",
+    # Not used directly (it arrives via napari). 0.16.0 iterates a snapshot of the
+    # slot list (`for caller in list(self._slots)`, pyapp-kit/psygnal#413), so a weak
+    # callback whose referent is collected *during* an emit is still called and raises
+    # ReferenceError instead of being skipped. napari's TransformChain hits this: each
+    # child transform's `changed` holds a weak ref to the chain, and the ortho views
+    # drop a chain from inside a `changed` callback. Drop the pin once psygnal skips
+    # dead callbacks again.
+    "psygnal<0.16",
 ]
 
 [project.optional-dependencies]
