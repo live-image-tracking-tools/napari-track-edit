@@ -103,7 +103,13 @@ class TrackPoints(ZOnlyPoints):
             side_button = detect_side_button(event)
             if side_button is not None:
                 self.process_click(event, side_button=side_button)
-            elif event.type == "mouse_press" and self.mode == "pan_zoom":
+            # only the left button selects: the right button is used to copy a detection
+            # from a connected source layer, which selects the copied node itself
+            elif (
+                event.type == "mouse_press"
+                and event.button == 1
+                and self.mode == "pan_zoom"
+            ):
                 was_click = yield from detect_click(event)
                 if was_click:
                     # find the point matching the click location, if any. Warning: the
