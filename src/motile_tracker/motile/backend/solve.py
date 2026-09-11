@@ -95,7 +95,7 @@ def solve(
     input_data: np.ndarray,
     on_solver_update: Callable | None = None,
     scale: list | None = None,
-    cand_graph: td.graph.GraphView | None = None,
+    cand_graph: td.graph.BaseGraph | None = None,
 ) -> td.graph.GraphView:
     """Get a tracking solution for the given segmentation and parameters.
 
@@ -294,7 +294,12 @@ def _solve_single_window(
     )
 
     start_time = time.time()
-    solution = _solve_window(cand_graph, solver_params, on_solver_update)
+    # _solve_window needs a GraphView: construct_solver reads the underlying
+    # rustworkx graph, and only a view guarantees that node_ids() is ordered to
+    # match rx_graph.node_indices(). Same conversion as in _solve_full.
+    solution = _solve_window(
+        cand_graph.filter().subgraph(), solver_params, on_solver_update
+    )
     logger.info("Single window solution took %.2f seconds", time.time() - start_time)
 
     if solution is None:
@@ -310,7 +315,7 @@ def _solve_single_window(
 
 
 def _solve_chunked(
-    cand_graph: td.graph.GraphView,
+    cand_graph: td.graph.BaseGraph,
     solver_params: SolverParams,
     on_solver_update: Callable | None = None,
 ) -> td.graph.GraphView:
@@ -462,7 +467,7 @@ def _solve_chunked(
 
 
 def _set_pinning_on_graph(
-    cand_graph: td.graph.GraphView,
+    cand_graph: td.graph.BaseGraph,
     solution_graph: td.graph.GraphView,
     overlap_start: int,
     overlap_end: int,
