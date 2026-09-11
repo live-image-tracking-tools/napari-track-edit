@@ -16,6 +16,7 @@ from funtracks.user_actions import (
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
+from motile_tracker.data_views.dims_utils import TracksDims
 from motile_tracker.data_views.keybindings_config import (
     KEYMAP,
     bind_keymap,
@@ -122,6 +123,30 @@ class TracksViewer:
         self.set_keybinds()
 
         self.viewer.dims.events.ndisplay.connect(self.update_selection)
+
+    @property
+    def tracks_dims(self) -> TracksDims:
+        """How the tracks' axes sit compared to the viewer's world axes.
+
+        Raises:
+            RuntimeError: If no tracks are loaded.
+        """
+
+        if self.tracks is None:
+            raise RuntimeError("No tracks are loaded, so they have no dimensions")
+        return TracksDims(self.viewer.dims.ndim, self.tracks.ndim)
+
+    def set_axis_labels(self) -> None:
+        """Name the viewer's sliders after the axes the tracks use."""
+
+        if self.tracks is None:
+            return
+
+        dims = self.tracks_dims
+        labels = list(self.viewer.dims.axis_labels)
+        # any 'extra' dims just keep the name they had already
+        labels[dims.offset :] = ["t", *self.tracks.axis_names]
+        self.viewer.dims.axis_labels = labels
 
     def get_collection_widget(self) -> CollectionWidget:
         """Return a reference to the groups widget"""
@@ -302,6 +327,7 @@ class TracksViewer:
 
         self.set_display_mode("all")
         self.tracking_layers.set_tracks(tracks, name)
+        self.set_axis_labels()  # the layers are in, so the viewer's dims have settled
         self.selected_nodes.reset()
 
         # ensure a valid track is selected from the start
