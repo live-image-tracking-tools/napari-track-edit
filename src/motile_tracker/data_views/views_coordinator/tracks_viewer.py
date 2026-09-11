@@ -16,6 +16,7 @@ from funtracks.user_actions import (
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
+from motile_tracker.data_views.dims_utils import TracksDims
 from motile_tracker.data_views.keybindings_config import (
     KEYMAP,
     bind_keymap,
@@ -122,6 +123,18 @@ class TracksViewer:
         self.set_keybinds()
 
         self.viewer.dims.events.ndisplay.connect(self.update_selection)
+
+    @property
+    def tracks_dims(self) -> TracksDims:
+        """How the tracks' axes sit compared to the viewer's world axes.
+
+        Raises:
+            RuntimeError: If no tracks are loaded.
+        """
+
+        if self.tracks is None:
+            raise RuntimeError("No tracks are loaded, so they have no dimensions")
+        return TracksDims(self.viewer.dims.ndim, self.tracks.ndim)
 
     def get_collection_widget(self) -> CollectionWidget:
         """Return a reference to the groups widget"""
