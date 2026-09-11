@@ -14,10 +14,6 @@ from napari.utils.notifications import show_info
 from psygnal import Signal
 from psygnal.containers import Selection
 
-from motile_tracker.data_views.keybindings_config import (
-    KEYMAP,
-    bind_keymap,
-)
 from motile_tracker.data_views.node_type import NodeType
 from motile_tracker.data_views.views.layers.click_utils import (
     detect_click,
@@ -94,8 +90,9 @@ class TrackPoints(ZOnlyPoints):
             blending="translucent",
         )
 
-        # Key bindings (should be specified both on the viewer (in tracks_viewer)
-        bind_keymap(self, KEYMAP, self.tracks_viewer)
+        # PROTOTYPE: tracks_viewer-targeted keybinds are registered once on
+        # napari.Viewer via `register_napari_actions` (see tracks_viewer.py
+        # set_keybinds), so no per-layer bind_keymap call is needed here.
 
         # Connect to click events to select nodes
         @self.mouse_drag_callbacks.append
