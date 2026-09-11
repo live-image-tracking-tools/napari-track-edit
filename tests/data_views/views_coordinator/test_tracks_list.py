@@ -9,15 +9,23 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+import tracksdata as td
 from funtracks.data_model import SolutionTracks, Tracks
 from funtracks.import_export import write_to_geff
 from qtpy.QtWidgets import QDialog
 from tracksdata.nodes import Mask
 
 from motile_tracker.data_views.views_coordinator.tracks_list import (
+    SQL_LOAD_OPTION,
     TracksButton,
     TracksList,
     default_save_dir,
+)
+from motile_tracker.import_export.sql_io import (
+    is_sql_backed,
+    sql_database_path,
+    tracks_from_sql,
+    write_tracks_to_sql,
 )
 from motile_tracker.motile.backend.motile_run import MotileRun, SolverParams
 
@@ -704,3 +712,196 @@ class TestTracksListExport:
             tracks_list.show_export_dialog(item)
 
         assert len(emitted) == 1
+
+
+# ---------------------------------------------------------------------------
+# TracksList — SQL database
+# ---------------------------------------------------------------------------
+
+_GET_OPEN_FILE_NAME = (
+    "motile_tracker.data_views.views_coordinator.tracks_list."
+    "QFileDialog.getOpenFileName"
+)
+
+
+@pytest.fixture
+def tracks_db(graph_2d, tmp_path):
+    """A tracks database on disk, written the way the export dialog writes one.
+
+    Built with an explicit scale, because that is what a database written by
+    motile_tracker records and what keeps the load from having to ask.
+    """
+    path = tmp_path / "saved_tracks.db"
+    write_tracks_to_sql(
+        Tracks(graph_2d, ndim=3, time_attr="t", scale=[1.0, 0.5, 0.25]), path
+    )
+    return path
+
+
+class TestTracksListLoadSql:
+    def test_dropdown_offers_sql(self, tracks_list):
+        assert tracks_list.dropdown_menu.findText(SQL_LOAD_OPTION) != -1
+
+    def test_load_tracks_dispatches_sql(self, tracks_list):
+        tracks_list.dropdown_menu.setCurrentText(SQL_LOAD_OPTION)
+        with patch.object(tracks_list, "load_sql_tracks", return_value=None) as mock:
+            tracks_list.load_tracks()
+            mock.assert_called_once()
+
+    def test_load_adds_database_backed_tracks(self, tracks_list, tracks_db):
+        tracks_list.dropdown_menu.setCurrentText(SQL_LOAD_OPTION)
+        with patch(_GET_OPEN_FILE_NAME, return_value=(str(tracks_db), "")):
+            tracks_list.load_tracks()
+
+        assert tracks_list.tracks_list.count() == 1
+        widget = tracks_list.tracks_list.itemWidget(tracks_list.tracks_list.item(0))
+        assert widget.name.text() == "saved_tracks"
+        assert is_sql_backed(widget.tracks)
+        assert sql_database_path(widget.tracks) == tracks_db
+
+    def test_load_emits_tracks_loaded_with_database_path(self, tracks_list, tracks_db):
+        tracks_list.dropdown_menu.setCurrentText(SQL_LOAD_OPTION)
+        emitted = []
+        tracks_list.tracks_loaded.connect(lambda t, p: emitted.append((t, p)))
+
+        with patch(_GET_OPEN_FILE_NAME, return_value=(str(tracks_db), "")):
+            tracks_list.load_tracks()
+
+        assert len(emitted) == 1
+        assert emitted[0][1] == tracks_db
+
+    def test_load_cancelled_adds_nothing(self, tracks_list):
+        tracks_list.dropdown_menu.setCurrentText(SQL_LOAD_OPTION)
+        with patch(_GET_OPEN_FILE_NAME, return_value=("", "")):
+            tracks_list.load_tracks()
+
+        assert tracks_list.tracks_list.count() == 0
+
+    def test_load_bad_path_warns(self, tracks_list, tmp_path):
+        not_a_database = tmp_path / "nope.db"
+        not_a_database.write_bytes(b"not a database")
+
+        tracks_list.dropdown_menu.setCurrentText(SQL_LOAD_OPTION)
+        with (
+            patch(_GET_OPEN_FILE_NAME, return_value=(str(not_a_database), "")),
+            pytest.warns(UserWarning, match="Could not"),
+        ):
+            tracks_list.load_tracks()
+
+        assert tracks_list.tracks_list.count() == 0
+
+    def test_recorded_scale_is_restored(self, tracks_list, tracks_db):
+        tracks_list.dropdown_menu.setCurrentText(SQL_LOAD_OPTION)
+        with patch(_GET_OPEN_FILE_NAME, return_value=(str(tracks_db), "")):
+            tracks_list.load_tracks()
+
+        widget = tracks_list.tracks_list.itemWidget(tracks_list.tracks_list.item(0))
+        assert widget.tracks.scale == [1.0, 0.5, 0.25]
+
+    def test_loads_without_asking_when_no_scale_is_recorded(
+        self, tracks_list, solution_tracks_2d, tmp_path
+    ):
+        """A database with no scale loads with none, exactly like a geff does.
+
+        Tracks with no scale are an ordinary state throughout the application, so
+        the load must not stop to ask - a modal here would also hang the suite.
+        """
+        foreign = tmp_path / "foreign.db"
+        td.graph.SQLGraph.from_other(
+            solution_tracks_2d.graph_full, drivername="sqlite", database=str(foreign)
+        )
+
+        tracks_list.dropdown_menu.setCurrentText(SQL_LOAD_OPTION)
+        with patch(_GET_OPEN_FILE_NAME, return_value=(str(foreign), "")):
+            tracks_list.load_tracks()
+
+        assert tracks_list.tracks_list.count() == 1
+        widget = tracks_list.tracks_list.itemWidget(tracks_list.tracks_list.item(0))
+        assert widget.tracks.scale is None
+
+
+class TestTracksListOnDiskNote:
+    def test_hidden_for_in_memory_tracks(self, tracks_list, solution_tracks_2d):
+        tracks_list.add_tracks(solution_tracks_2d, "in memory")
+        assert not tracks_list.on_disk_label.isVisibleTo(tracks_list)
+
+    def test_shown_for_database_backed_tracks(self, tracks_list, tracks_db):
+        tracks_list.add_tracks(tracks_from_sql(tracks_db), "on disk")
+        assert tracks_list.on_disk_label.isVisibleTo(tracks_list)
+        assert str(tracks_db) in tracks_list.on_disk_label.text()
+
+    def test_hidden_when_the_last_database_row_is_removed(self, tracks_list, tracks_db):
+        """Removing the row clears the selection, and the note must go with it.
+
+        Left up, it would keep claiming edits are being written to a database
+        that is no longer open anywhere.
+        """
+        tracks_list.add_tracks(tracks_from_sql(tracks_db), "on disk")
+        assert tracks_list.on_disk_label.isVisibleTo(tracks_list)
+
+        tracks_list.remove_tracks(tracks_list.tracks_list.item(0))
+
+        assert not tracks_list.on_disk_label.isVisibleTo(tracks_list)
+
+    def test_hidden_again_when_an_in_memory_row_is_selected(
+        self, tracks_list, tracks_db, solution_tracks_2d
+    ):
+        tracks_list.add_tracks(tracks_from_sql(tracks_db), "on disk")
+        tracks_list.add_tracks(solution_tracks_2d, "in memory")
+        assert not tracks_list.on_disk_label.isVisibleTo(tracks_list)
+
+
+class TestTracksListExportRebind:
+    def test_rebound_tracks_replace_the_row(
+        self, tracks_list, solution_tracks_2d, tracks_db
+    ):
+        """Exporting with 'continue editing' swaps the row over to the database."""
+        tracks_list.add_tracks(solution_tracks_2d, "run")
+        item = tracks_list.tracks_list.item(0)
+        rebound = tracks_from_sql(tracks_db)
+
+        with patch(
+            "motile_tracker.data_views.views_coordinator.tracks_list."
+            "ExportDialog.show_export_dialog",
+            return_value=rebound,
+        ):
+            tracks_list.show_export_dialog(item)
+
+        widget = tracks_list.tracks_list.itemWidget(item)
+        assert widget.tracks is rebound
+        assert tracks_list.on_disk_label.isVisibleTo(tracks_list)
+
+    def test_rebound_tracks_are_redisplayed(
+        self, tracks_list, solution_tracks_2d, tracks_db
+    ):
+        """Re-emitting view_tracks is what makes the layers and tree rebuild."""
+        tracks_list.add_tracks(solution_tracks_2d, "run")
+        item = tracks_list.tracks_list.item(0)
+        rebound = tracks_from_sql(tracks_db)
+
+        emitted = []
+        tracks_list.view_tracks.connect(lambda t, n: emitted.append(t))
+
+        with patch(
+            "motile_tracker.data_views.views_coordinator.tracks_list."
+            "ExportDialog.show_export_dialog",
+            return_value=rebound,
+        ):
+            tracks_list.show_export_dialog(item)
+
+        assert len(emitted) == 1
+        assert is_sql_backed(emitted[0])
+
+    def test_plain_export_leaves_the_row_alone(self, tracks_list, solution_tracks_2d):
+        tracks_list.add_tracks(solution_tracks_2d, "run")
+        item = tracks_list.tracks_list.item(0)
+
+        with patch(
+            "motile_tracker.data_views.views_coordinator.tracks_list."
+            "ExportDialog.show_export_dialog",
+            return_value=True,
+        ):
+            tracks_list.show_export_dialog(item)
+
+        widget = tracks_list.tracks_list.itemWidget(item)
+        assert widget.tracks is solution_tracks_2d

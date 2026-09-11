@@ -60,6 +60,18 @@ dependencies =[
     # Drop it once Cython encodes the limited-API level in that module name, or once
     # the two agree on a level.
     "blosc2>=4.11,<4.12",
+    # Not used directly (it arrives via napari). 0.16.0 iterates a snapshot of the
+    # slot list (`for caller in list(self._slots)`, pyapp-kit/psygnal#413), so a weak
+    # callback whose referent is collected *during* an emit is still called and raises
+    # ReferenceError instead of being skipped. napari's TransformChain hits this: each
+    # child transform's `changed` holds a weak ref to the chain, and the ortho views
+    # drop a chain from inside a `changed` callback. Drop the pin once psygnal skips
+    # dead callbacks again.
+    # The floor is not incidental: naming psygnal here makes it a *direct*
+    # dependency, so the lowest-direct CI job resolves it to the floor instead of
+    # to the newest release, and 0.14.0 fails ~90 tests with "no signature found
+    # for builtin emit of SignalInstance".
+    "psygnal>=0.15.1,<0.16",
 ]
 
 [project.optional-dependencies]
@@ -104,6 +116,16 @@ dev = [
     {include-group = "docs"},
 ]
 # For gurobi, install separately: uv pip install "gurobipy>=12,<13"
+
+# TEMPORARY: pin funtracks to the `sql` branch (funkelab/funtracks#270), which adds
+# SQL-backend support to the tracksdata graph helpers and carries the two edit-path
+# fixes a SQL-backed Tracks needs (time key excluded from revive_attrs, feature
+# attr-key registration on graph_full). That PR in turn pins tracksdata to the
+# `graph-views` branch (royerlab/tracksdata#325), whose root-to-view attribute
+# propagation is required or a SQL-backed segmentation renders stale after every edit.
+# Replace with a released version pin once both land.
+[tool.uv.sources]
+funtracks = { git = "https://github.com/funkelab/funtracks.git", rev = "1de541258646c32340178c4e01c211c10762033f" }
 
 [tool.uv]
 # gurobi12 and gurobi13 conflict with each other (mutually exclusive version pins)
