@@ -6,6 +6,7 @@ segmentation inclusion.
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -21,6 +22,7 @@ from funtracks.import_export import (
 )
 
 from motile_tracker.import_export.menus.import_dialog import ImportDialog
+from motile_tracker.import_export.menus.prop_map_widget import StandardFieldMapWidget
 from motile_tracker.motile.backend.motile_run import MotileRun
 from motile_tracker.motile.backend.solver_params import SolverParams
 
@@ -130,6 +132,59 @@ def test_import_dialog_csv(qtbot, small_csv, dim_3d, include_seg):
             assert optional["area"]["recompute"].isEnabled() is True
         else:
             assert optional["area"]["recompute"].isEnabled() is False
+
+
+class TestInitialFieldMapping:
+    """Guessing which column is which, before the user corrects it."""
+
+    PROPS = [
+        "parent_id",
+        "area",
+        "solution",
+        "z",
+        "mask",
+        "t",
+        "frontier",
+        "bbox",
+        "y",
+        "x",
+    ]
+
+    def _mapping(self, props: list[str]) -> dict[str, str]:
+        """Call the guesser without building a widget (it needs no Qt)."""
+        state = SimpleNamespace(
+            node_attrs=props,
+            metadata={},
+            standard_fields=[
+                "time",
+                "z",
+                "y",
+                "x",
+                "seg_id",
+                "tracklet_id",
+                "lineage_id",
+            ],
+        )
+        return StandardFieldMapWidget._get_initial_mapping(state)
+
+    def test_time_is_taken_from_t(self):
+        """ "t" is what every funtracks graph calls time, and fuzzy matching misses it.
+
+        "time" scores 0.50 against "frontier" and only 0.40 against "t", so
+        without the alias the guess lands on an unrelated float column and the
+        import fails on the -1.0 values in it.
+        """
+        assert self._mapping(self.PROPS)["time"] == "t"
+
+    def test_parent_id_is_not_guessed_as_a_track_id(self):
+        """It points at another node, but scores 0.60 against "tracklet_id"."""
+        mapping = self._mapping(self.PROPS)
+
+        assert mapping["tracklet_id"] == "None"
+        assert mapping["lineage_id"] == "None"
+
+    def test_a_real_track_id_is_still_found(self):
+        assert self._mapping([*self.PROPS, "track_id"])["tracklet_id"] == "track_id"
 
 
 class TestPropMapWidgetKeys:
