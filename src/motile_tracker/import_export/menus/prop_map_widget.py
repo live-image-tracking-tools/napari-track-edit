@@ -28,6 +28,18 @@ from motile_tracker.import_export.menus.geff_import_utils import (
     geff_group_path,
 )
 
+# Names a column may go by, per standard field. Checked before fuzzy matching,
+# which cannot be trusted to find them: "time" scores 0.50 against "frontier"
+# but only 0.40 against "t", the name every funtracks graph uses.
+FIELD_ALIASES = {
+    "time": ("t", "frame"),
+    DEFAULT_TRACKLET_KEY: ("track_id",),
+    "id": ("node_id",),
+}
+
+# column names in the loaded file that should not be fuzzily matched
+EXACT_ONLY_PROPS = {"id", "node_id", "parent_id"}
+
 
 def get_attr_dtype_zarr(root: zarr.Group, attr: str) -> str:
     """
@@ -263,6 +275,18 @@ class StandardFieldMapWidget(QWidget):
                 mapping[attribute] = attribute
                 self.props_left.remove(attribute)
 
+        # then by a known alias, before any fuzzy matching gets the chance to
+        # prefer a coincidentally longer name
+        for attribute in self.standard_fields:
+            if attribute in mapping:
+                continue
+            lower_map = {p.lower(): p for p in self.props_left}
+            for alias in FIELD_ALIASES.get(attribute, ()):
+                if alias in lower_map:
+                    mapping[attribute] = lower_map[alias]
+                    self.props_left.remove(lower_map[alias])
+                    break
+
         # assign closest remaining column as best guess for remaining standard fields
         for attribute in self.standard_fields:
             if attribute in mapping:
@@ -274,7 +298,11 @@ class StandardFieldMapWidget(QWidget):
                 mapping[attribute] = "None"
                 continue
             if len(self.props_left) > 0:
-                lower_map = {p.lower(): p for p in self.props_left}
+                lower_map = {
+                    p.lower(): p
+                    for p in self.props_left
+                    if p.lower() not in EXACT_ONLY_PROPS
+                }
                 closest = difflib.get_close_matches(
                     attribute.lower(), lower_map.keys(), n=1, cutoff=0.4
                 )

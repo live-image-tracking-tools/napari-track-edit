@@ -1,8 +1,8 @@
 import argparse
+import logging
 import sys
 
 import napari
-import logging
 
 from motile_tracker.application_menus.main_app import StartupWidget
 
@@ -40,7 +40,6 @@ def main():
 
 
 if __name__ == "__main__":
-
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(filename)s:%(lineno)d] %(levelname)-8s %(message)s",
