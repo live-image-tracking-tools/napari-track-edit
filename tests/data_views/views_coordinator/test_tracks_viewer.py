@@ -550,3 +550,106 @@ class TestLayerCreation:
         assert "solve_test_points" in layer_names
         assert "solve_test_tracks" in layer_names
         assert "solve_test_seg" in layer_names
+
+
+class TestClearTracks:
+    """Tests that emptying the results list empties every view with it."""
+
+    def _load(self, viewer, tracks, name="test"):
+        """Load tracks the way the UI does, through the results list.
+
+        tree_widget_present is what the docked TreeWidget sets; without it
+        update_track_df returns early and track_df stays empty whatever happens,
+        which would make the assertions about it meaningless.
+        """
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.tree_widget_present = True
+        tracks_viewer.tracks_list.add_tracks(tracks, name, select=True)
+        return tracks_viewer
+
+    def _delete_row(self, tracks_viewer, row=0):
+        tracks_list = tracks_viewer.tracks_list
+        tracks_list.remove_tracks(tracks_list.tracks_list.item(row))
+
+    def test_removing_only_row_clears_tracks(self, viewer, solution_tracks_2d):
+        tracks_viewer = self._load(viewer, solution_tracks_2d)
+        assert tracks_viewer.tracks is not None
+        # guard against the assertions below passing vacuously
+        assert not tracks_viewer.track_df.empty
+
+        self._delete_row(tracks_viewer)
+
+        assert tracks_viewer.tracks is None
+        assert tracks_viewer.track_df.empty
+        assert tracks_viewer.axis_order == []
+        assert tracks_viewer.mode == "all"
+        assert len(tracks_viewer.selected_nodes) == 0
+
+    def test_removing_only_row_removes_layers(self, viewer, solution_tracks_2d):
+        tracks_viewer = self._load(viewer, solution_tracks_2d)
+        assert "test_points" in [layer.name for layer in viewer.layers]
+
+        self._delete_row(tracks_viewer)
+
+        layers = tracks_viewer.tracking_layers
+        assert layers.points_layer is None
+        assert layers.tracks_layer is None
+        assert layers.seg_layer is None
+        layer_names = [layer.name for layer in viewer.layers]
+        assert "test_points" not in layer_names
+        assert "test_tracks" not in layer_names
+        assert "test_seg" not in layer_names
+
+    def test_removing_one_of_two_rows_keeps_showing_tracks(
+        self, viewer, solution_tracks_2d, graph_2d
+    ):
+        """Deleting a row while another remains must not clear anything: Qt selects
+        the neighbouring row, which re-emits view_tracks."""
+        second = MotileRun(graph=graph_2d, run_name="second", ndim=3, time_attr="t")
+        tracks_viewer = self._load(viewer, solution_tracks_2d, "first")
+        tracks_viewer.tracks_list.add_tracks(second, "second", select=True)
+
+        self._delete_row(tracks_viewer, row=1)
+
+        assert tracks_viewer.tracks is not None
+        assert not tracks_viewer.track_df.empty
+        assert tracks_viewer.tracking_layers.points_layer is not None
+
+    def test_clear_with_node_selected(self, viewer, solution_tracks_2d):
+        """A live selection must not make the clear raise, and must not survive it."""
+        tracks_viewer = self._load(viewer, solution_tracks_2d)
+        node = next(iter(solution_tracks_2d.graph_solution.node_ids()))
+        tracks_viewer.selected_nodes.add(node)
+
+        self._delete_row(tracks_viewer)
+
+        assert len(tracks_viewer.selected_nodes) == 0
+        assert not tracks_viewer.selected_nodes.has_valid_last_shown_set
+        assert not tracks_viewer.selected_nodes.has_previous_set
+
+    def test_clear_in_lineage_mode(self, viewer, solution_tracks_2d):
+        """Lineage mode walks the graph to decide what is visible, so the clear has
+        to survive being called while it is active."""
+        tracks_viewer = self._load(viewer, solution_tracks_2d)
+        node = next(iter(solution_tracks_2d.graph_solution.node_ids()))
+        tracks_viewer.selected_nodes.add(node)
+        tracks_viewer.set_display_mode("lineage")
+
+        self._delete_row(tracks_viewer)
+
+        assert tracks_viewer.tracks is None
+        assert tracks_viewer.mode == "all"
+
+    def test_actions_do_not_raise_after_clear(self, viewer, solution_tracks_2d):
+        """Buttons and keybindings that stay enabled after the clear used to
+        dereference the removed tracks object."""
+        tracks_viewer = self._load(viewer, solution_tracks_2d)
+        self._delete_row(tracks_viewer)
+
+        tracks_viewer.request_new_track()
+        tracks_viewer.toggle_display_mode()
+        tracks_viewer.update_selection()
+        tracks_viewer.filter_visible_nodes()
+        tracks_viewer.delete_node()
+        tracks_viewer.undo()
+        tracks_viewer.redo()

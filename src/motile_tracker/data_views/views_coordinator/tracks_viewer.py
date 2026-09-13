@@ -112,6 +112,7 @@ class TracksViewer:
 
         self.tracks_list = TracksList()
         self.tracks_list.view_tracks.connect(self.update_tracks)
+        self.tracks_list.tracks_cleared.connect(self.clear_tracks)
         self.tracks_list.request_colormap.connect(self.set_colormap_to_trackslist)
         self.selected_track = None
         self.track_id_color = [0, 0, 0, 0]
@@ -152,6 +153,8 @@ class TracksViewer:
     def request_new_track(self) -> None:
         """Request a new track id (with new segmentation label if a seg layer is present)"""
 
+        if self.tracks is None:
+            return
         if self.tracking_layers.seg_layer is not None:
             new_label(self.tracking_layers.seg_layer)
         else:
@@ -315,6 +318,39 @@ class TracksViewer:
         # Update visualization widget
         self.mode_updated.emit()
 
+    def clear_tracks(self) -> None:
+        """Stop displaying any tracks at all: the mirror of update_tracks.
+
+        Called when the last entry leaves the results list. Without it the napari
+        layers, the tree plot and the table keep rendering a tracks object that the
+        application no longer holds.
+
+        Input layers that update_tracks hid stay hidden: the user may have hidden
+        them themselves, and we do not record which ones were ours.
+        """
+
+        self._disconnect_tracks()
+        self.tracks = None
+        # update_track_df cannot produce this: it returns early without tracks, so
+        # the dataframe of the tracks that just went away would survive
+        self.track_df = pd.DataFrame()
+        self.axis_order = []
+
+        # remove the layers before clearing the selection: clearing emits
+        # selection_updated, and the update_selection that follows would otherwise
+        # recolour layers that are about to be thrown away
+        self.tracking_layers.set_tracks(None, "")
+        self.selected_nodes.clear()
+
+        self.set_display_mode("all")
+        if self.collection_widget is not None:
+            self.collection_widget.retrieve_existing_groups()
+
+        # reset_view=True is required: the TreeWidget only returns to "all" mode and
+        # drops its lineage dataframe when this argument is truthy
+        self.tracks_updated.emit(True)
+        self.mode_updated.emit()
+
     def toggle_display_mode(self, event=None) -> None:
         """Toggle the display mode between available options.
 
@@ -322,7 +358,10 @@ class TracksViewer:
         'all' and 'lineage' in that case.
         """
 
-        has_groups = self.collection_widget.collection_list.count() > 0
+        has_groups = (
+            self.collection_widget is not None
+            and self.collection_widget.collection_list.count() > 0
+        )
 
         if self.mode == "lineage":
             self.set_display_mode("group" if has_groups else "all")
@@ -360,6 +399,7 @@ class TracksViewer:
 
         if self.tracks is None or self.tracks.graph is None:
             self.visible = []
+            return
         if self.mode == "lineage":
             # if no nodes are selected, check which nodes were previously visible and
             # filter those
@@ -426,7 +466,7 @@ class TracksViewer:
         self.filter_visible_nodes()
         self.tracking_layers.update_visible(self.visible)
 
-        if len(self.selected_nodes) > 0:
+        if self.tracks is not None and len(self.selected_nodes) > 0:
             self.selected_track = self.tracks.get_track_id(self.selected_nodes[-1])
         else:
             self.selected_track = None
