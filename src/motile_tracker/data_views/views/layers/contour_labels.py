@@ -17,6 +17,39 @@ from scipy import ndimage as ndi
 from motile_tracker.data_views.lazy_array_wrapper import LazyArrayWrapper
 
 
+def as_index_atom(atom):
+    """Normalize a napari paint history atom to (multi-index, old values, new value).
+
+    napari 0.8 added ``_MaskedPaintAtom`` for the mask-based tools. Expand that back
+    into explicit indices, so the paint and undo handling only hves to deal with one
+    shape.
+
+    Args:
+        atom: a paint "atom" from the labels layer's undo history.
+
+    Returns:
+        tuple: the multi-index of the changed elements (a tuple with len ndims),
+            their values before the change, and the value after the change.
+    """
+
+    if len(atom) == 3:  # a data_setitem atom, already index based
+        return atom
+
+    slice_key, mask, old_values, new_value = atom
+    if mask is None:
+        # every pixel in the bounding box changed, so napari dropped the mask
+        # and stored a snapshot of the whole box instead
+        mask = np.ones(np.shape(old_values), dtype=bool)
+        old_values = np.asarray(old_values).reshape(-1)
+
+    # mask is relative to the bounding box, so shift it back into data coordinates
+    indices = tuple(
+        axis_indices + (0 if sl.start is None else sl.start)
+        for axis_indices, sl in zip(np.nonzero(mask), slice_key, strict=True)
+    )
+    return indices, old_values, new_value
+
+
 def left_only_draw(layer, event):
     if event.button != 1:
         return  # skip non‑left
@@ -253,6 +286,57 @@ class ContourLabels(napari.layers.Labels):
             return
         super().data_setitem(indices, value, refresh)
 
+    def _paint_region_with_mask(
+        self,
+        slice_key,
+        mask,
+        new_label,
+        dims_to_paint,
+        refresh=True,
+        region_data=None,
+    ):
+        """Override to handle read-only data (e.g. GraphArrayView).
+
+        napari ≥0.8 equivalent of ``data_setitem`` above. This method writes the
+        painted bounding box straight back with ``self.data[slice_key] = region_data``.
+        Read-only data cannot take that write, so run the same steps napari does, minus
+        the write-back: the region is materialized as a numpy copy, so painting into it
+        records the undo atom (firing events.paint, which is what upstream code acts on)
+        and updates the display, while the underlying array is left untouched.
+        """
+
+        if hasattr(self.data, "__setitem__"):
+            super()._paint_region_with_mask(
+                slice_key, mask, new_label, dims_to_paint, refresh, region_data
+            )
+            return
+
+        # slice_key consists solely of slices, so the extracted region keeps the
+        # full data dimensionality; give the painted-dims mask matching length-1
+        # axes.
+        extra_axes = tuple(dim for dim in range(self.ndim) if dim not in dims_to_paint)
+        if extra_axes:
+            mask = np.expand_dims(mask, extra_axes)
+            if region_data is not None:
+                region_data = np.expand_dims(region_data, extra_axes)
+
+        if region_data is None:
+            region_data = np.asarray(self.data[slice_key])
+
+        effective_mask = self._apply_mask_to_data(
+            region_data, mask, new_label, slice_key
+        )
+        if effective_mask is None:
+            return
+
+        self._refresh_caches_from_region(
+            region_data, slice_key, effective_mask, new_label
+        )
+        self._accumulate_updated_slice(slice_key)
+
+        if refresh:
+            self._partial_labels_refresh()
+
     def undo(self):
         """Override undo for read-only data (e.g. GraphArrayView).
 
@@ -278,7 +362,7 @@ class ContourLabels(napari.layers.Labels):
             item = self._undo_history.pop()
             self._redo_history.append(item)
             pt_not_disp = self._get_pt_not_disp()
-            for indices, old_values, _new_value in item:
+            for indices, old_values, _new_value in map(as_index_atom, item):
                 displayed_indices = index_in_slice(
                     indices, pt_not_disp, self._slice.slice_input.order
                 )
