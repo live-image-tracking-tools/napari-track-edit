@@ -4,7 +4,7 @@ test:
     uv run pytest .
 
 start:
-    uv run motile_tracker
+    uv run --extra gurobipy13 motile_tracker
 
 [working-directory: 'docs']
 @docs-build:
