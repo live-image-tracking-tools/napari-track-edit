@@ -6,9 +6,10 @@ ever changes how it aligns layers to the viewer, or starts reindexing
 leaving the plugin to misbehave somewhere far away.
 """
 
+import numpy as np
 import pytest
-from napari.components.dims import Dims
-from napari.layers.base.base import _LayerSlicingState
+from napari.components import Dims
+from napari.layers import Image
 
 from motile_tracker.data_views.dims_utils import TracksDims, world_to_layer_axis
 
@@ -65,18 +66,31 @@ class TestNapariDimsInvariants:
 
 class TestWorldToLayerAxis:
     def test_agrees_with_napari(self):
-        """Cross-check the trailing alignment against napari's own version."""
+        """Cross-check the trailing alignment against napari itself.
+
+        ``Layer.world_to_data`` keeps the last ``layer.ndim`` entries of a world
+        position and drops the leading ones, which is the rule
+        ``world_to_layer_axis`` encodes. Going through that rather than napari's
+        internal dims mapping keeps this test on public API, so it holds across
+        the napari versions the plugin supports (the internals moved in 0.7).
+        """
 
         for ndim_world in range(2, 6):
             for ndim_layer in range(2, ndim_world + 1):
+                layer = Image(np.zeros((3,) * ndim_layer))
+                # each slot of the world position names its own world axis, so the
+                # data position reads back as "which world axis landed here"
+                data = [
+                    round(float(value))
+                    for value in layer.world_to_data(list(range(ndim_world)))
+                ]
+
                 for world_axis in range(ndim_world):
-                    napari_result = list(
-                        _LayerSlicingState._world_to_layer_dims_impl(
-                            [world_axis], ndim_world, ndim_layer
-                        )
+                    expected = data.index(world_axis) if world_axis in data else None
+                    assert (
+                        world_to_layer_axis(world_axis, ndim_world, ndim_layer)
+                        == expected
                     )
-                    ours = world_to_layer_axis(world_axis, ndim_world, ndim_layer)
-                    assert ours == (napari_result[0] if napari_result else None)
 
     @pytest.mark.parametrize(
         ("world_axis", "expected"),
