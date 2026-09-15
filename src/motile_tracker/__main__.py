@@ -1,8 +1,8 @@
 import argparse
+import logging
 import sys
 
 import napari
-import logging
 
 from motile_tracker.application_menus.main_app import StartupWidget
 
