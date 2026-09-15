@@ -349,7 +349,7 @@ class TestSelectionManagement:
             center_mock.assert_not_called()
 
     def test_selected_track_management(self, tracks_viewer_setup, click_node):
-        """Test selected_track updates and clearing."""
+        """Test selected_track follows the selection, and outlives clearing it."""
         viewer, tracks_viewer, tracks = tracks_viewer_setup
 
         # Test 1: Update selected_track from selection
@@ -361,12 +361,25 @@ class TestSelectionManagement:
         expected_track_id = tracks.get_track_id(node)
         assert tracks_viewer.selected_track == expected_track_id
 
-        # Test 2: Clear selected_track when selection cleared
+        # Test 2: Keep selected_track when the selection is cleared. It is the
+        # track being painted in, and editing carries on in it - undoing a paint,
+        # for instance, deselects but should not send the next stroke to a
+        # different track and colour.
         tracks_viewer.selected_nodes.reset()
         tracks_viewer.update_selection()
 
-        # selected_track should be None
-        assert tracks_viewer.selected_track is None
+        assert tracks_viewer.selected_track == expected_track_id
+
+        # Test 3: Selecting another node still moves it
+        other = next(
+            n
+            for n in tracks.graph.node_ids()
+            if tracks.get_track_id(n) != expected_track_id
+        )
+        click_node(tracks_viewer, other)
+        tracks_viewer.update_selection()
+
+        assert tracks_viewer.selected_track == tracks.get_track_id(other)
 
 
 class TestSingletonLifecycle:
