@@ -282,12 +282,14 @@ class TracksViewer:
             tracks (funtracks.data_model.Tracks): The tracks to visualize in napari.
             name (str): The name of the tracks to display in the layer names
         """
-        self.selected_nodes.reset()
+        # clear rather than reset: the selection history belongs to the outgoing
+        # tracks, and restoring one of its node ids against a different graph is
+        # meaningless. This drops deleted_items with it.
+        self.selected_nodes.clear()
 
         self._disconnect_tracks()
 
         self.tracks = tracks
-        self.selected_nodes.deleted_items.clear()  # Reset deleted nodes when switching tracks
 
         # listen to refresh signals from the tracks
         self.tracks.refresh.connect(self._refresh)
