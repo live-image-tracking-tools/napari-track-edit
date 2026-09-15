@@ -11,7 +11,9 @@ from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
 from motile_tracker.data_views.views.tree_view.tree_widget_utils import (
     extract_sorted_tracks,
     get_features_from_tracks,
+    get_sorted_track_ids,
     get_tracklets,
+    order_roots_by_prev,
 )
 
 
@@ -269,3 +271,174 @@ def test_get_tracklets_partition_property():
     all_nodes = [n for t in result for n in t]
     assert sorted(all_nodes) == [1, 2, 3, 4]
     assert len(all_nodes) == len(set(all_nodes))
+
+
+def test_extract_sorted_tracks_cache_ignored_when_feature_set_changes(
+    solution_tracks_2d,
+):
+    """Enabling a feature must not reuse a cache that predates it.
+
+    Enabling or disabling a feature changes which columns the dataframe needs,
+    but goes through no action, so nothing marks the cache stale. Reusing it
+    then raised ColumnNotFoundError for the new column. The guard is on the
+    column set, so it covers enable, disable and re-enable alike.
+    """
+    tracks = solution_tracks_2d
+    colormap = napari.utils.colormaps.label_colormap(49, seed=0.5, background_value=0)
+
+    _, axis, attrs = extract_sorted_tracks(tracks, colormap)
+
+    # A feature that was not in the frame the cache was built from.
+    tracks.graph.add_node_attr_key("extra_attr", default_value=0, dtype=pl.Int64)
+    tracks.features["extra_attr"] = Feature(
+        feature_type="node", value_type="int", num_values=1
+    )
+
+    # Must fall back to a full fetch rather than raise.
+    df, _, new_attrs = extract_sorted_tracks(
+        tracks, colormap, axis, cached_node_attrs=attrs
+    )
+    assert "extra_attr" in df.columns
+    assert "extra_attr" in new_attrs.columns
+
+    # And the other direction: dropping the feature again also invalidates.
+    del tracks.features["extra_attr"]
+    df_after, _, _ = extract_sorted_tracks(
+        tracks, colormap, axis, cached_node_attrs=new_attrs
+    )
+    assert "extra_attr" not in df_after.columns
+
+
+def test_get_sorted_track_ids_handles_tracklet_id_zero():
+    """Track ids numbered from 0 must order normally, not hang.
+
+    0 used to double as the "no parent" sentinel, so a tracklet numbered 0 was
+    its own parent and the traversal never terminated. That input is reachable
+    in normal use: CSV and geff files commonly number tracks from 0, and
+    funtracks adopts ids already on the graph rather than renumbering them.
+    """
+    # 0 -> 1, plus an unrelated root 2. Node ids differ from track ids so a
+    # mix-up cannot pass.
+    order = get_sorted_track_ids(
+        node_ids=[10, 11, 12],
+        node_to_track_id={10: 0, 11: 1, 12: 2},
+        child_to_parent={11: 10},
+        parent_to_children={10: [11]},
+    )
+    assert sorted(order) == [0, 1, 2]
+    # The daughter sits beside its parent, and the unrelated root stays separate.
+    assert order.index(1) == order.index(0) - 1
+
+
+def test_get_sorted_track_ids_zero_based_division():
+    """A division among 0-based ids puts the parent between its daughters."""
+    assert get_sorted_track_ids(
+        node_ids=[10, 11, 12],
+        node_to_track_id={10: 0, 11: 1, 12: 2},
+        child_to_parent={11: 10, 12: 10},
+        parent_to_children={10: [11, 12]},
+    ) == [1, 0, 2]
+
+
+def _reference_sorted_track_ids(
+    tracklet_to_parent_tracklet: dict[int, int],
+    roots: list[int],
+) -> list[int]:
+    """The pre-optimisation ordering algorithm, kept as a test oracle.
+
+    Quadratic in the number of tracklets - it rescans the parent mapping for
+    every tracklet and calls list.index() inside insert() - which is why
+    get_sorted_track_ids no longer works this way. Preserved verbatim so the
+    replacement is checked against it rather than against hand-written
+    expectations, which would only cover the cases someone thought of.
+    """
+    x_axis_order = list(roots)
+    while len(roots) > 0:
+        children_list = []
+        for tracklet_id in roots:
+            children = [
+                tid
+                for tid, ptid in tracklet_to_parent_tracklet.items()
+                if ptid == tracklet_id
+            ]
+            for i, child in enumerate(children):
+                children_list.append(child)
+                x_axis_order.insert(x_axis_order.index(tracklet_id) + i, child)
+        roots = children_list
+    return x_axis_order
+
+
+def _build_forest(rng, n_tracklets: int, max_children: int = 2):
+    """A random forest of tracklets, as nodes carrying one tracklet each.
+
+    Node ids and tracklet ids are deliberately different numbers so a mix-up
+    between the two cannot pass. Tracklet ids start at 1 because the *oracle*
+    below cannot handle 0 - it uses 0 as its "no parent" sentinel and would
+    never terminate. get_sorted_track_ids itself handles 0 fine, which
+    test_get_sorted_track_ids_handles_tracklet_id_zero covers separately.
+    """
+    parent_of = {}
+    for tracklet in range(1, n_tracklets + 1):
+        # Only earlier tracklets may be parents, so the result is acyclic.
+        candidates = [
+            other
+            for other in range(1, tracklet)
+            if sum(1 for p in parent_of.values() if p == other) < max_children
+        ]
+        parent_of[tracklet] = int(rng.choice(candidates)) if candidates else 0
+
+    node_of_tracklet = {tracklet: 1000 + tracklet for tracklet in parent_of}
+    node_to_track_id = {node: t for t, node in node_of_tracklet.items()}
+    child_to_parent = {
+        node_of_tracklet[t]: node_of_tracklet[p] for t, p in parent_of.items() if p != 0
+    }
+    parent_to_children: dict[int, list[int]] = {}
+    for child, parent in child_to_parent.items():
+        parent_to_children.setdefault(parent, []).append(child)
+
+    return {
+        "node_ids": list(node_to_track_id),
+        "node_to_track_id": node_to_track_id,
+        "child_to_parent": child_to_parent,
+        "parent_to_children": parent_to_children,
+    }, parent_of
+
+
+def test_get_sorted_track_ids_matches_the_previous_algorithm():
+    """The ordering must be identical to the quadratic version it replaced.
+
+    That order is the tree's vertical layout, so a different-but-plausible one
+    would be a silent visual regression. Checked over random forests rather
+    than a fixed example.
+    """
+    rng = np.random.default_rng(0)
+    for trial in range(40):
+        kwargs, parent_of = _build_forest(rng, n_tracklets=int(rng.integers(1, 25)))
+        got = get_sorted_track_ids(**kwargs)
+
+        roots = sorted([t for t, p in parent_of.items() if p == 0])
+        expected = _reference_sorted_track_ids(dict(parent_of), list(roots))
+
+        assert got == expected, f"trial {trial}: {got} != {expected}"
+
+
+def test_get_sorted_track_ids_places_parent_between_daughters():
+    """A division puts the parent between its two daughters."""
+    assert get_sorted_track_ids(
+        node_ids=[1, 2, 3],
+        node_to_track_id={1: 10, 2: 20, 3: 30},
+        child_to_parent={2: 1, 3: 1},
+        parent_to_children={1: [2, 3]},
+    ) == [20, 10, 30]
+
+
+def test_get_sorted_track_ids_keeps_every_tracklet_once():
+    rng = np.random.default_rng(7)
+    kwargs, _ = _build_forest(rng, n_tracklets=60)
+    order = get_sorted_track_ids(**kwargs)
+    assert sorted(order) == sorted(set(kwargs["node_to_track_id"].values()))
+
+
+def test_order_roots_by_prev_keeps_all_roots():
+    """Roots absent from the previous order are inserted, never dropped."""
+    assert order_roots_by_prev([5, 3, 1], [1, 3, 4, 5]) == [5, 3, 4, 1]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from typing import Any
 
 import napari.layers
@@ -11,6 +12,15 @@ from funtracks.data_model import Tracks
 from tracksdata.constants import DEFAULT_ATTR_KEYS
 
 from motile_tracker.data_views.node_type import NodeType
+
+# Stands in for "this tracklet has no parent" while ordering the tree axis. A
+# sentinel object rather than a number, because every number is a tracklet id
+# somebody might legitimately use: track ids imported from CSV or geff are often
+# numbered from 0, and funtracks adopts ids already on the graph instead of
+# renumbering them, so 0 arrives in normal use. -1 is funtracks' own
+# "not computed" sentinel and is equally unavailable. Only used inside
+# get_sorted_track_ids, so it never reaches a caller.
+_NO_PARENT = object()
 
 
 def get_tracklets(
@@ -84,12 +94,14 @@ def extract_sorted_tracks(
         colormap (napari.utils.CyclicLabelColormap): The colormap to use to
             extract the color of each node from the track ID
         prev_axis_order (list[int], Optional). The previous axis order.
-        cached_node_attrs (pl.DataFrame, Optional): node attributes from a previous
-            call. When provided and still valid (the current nodes are a subset and
-            their feature values are unchanged), the expensive per-feature fetch is
-            skipped and only the tracklet_id column is refetched. The caller must only
-            pass this when node feature values have not changed (i.e. topology-only
-            edits, not attribute/segmentation edits).
+        cached_node_attrs (pl.DataFrame, Optional): node attributes returned by a
+            previous call. When it still applies - the current nodes are a subset of
+            the cached ones and the cached columns match the keys now wanted - the
+            expensive per-feature fetch is skipped and only the track-id columns are
+            refetched. Both of those are checked here, so a stale *shape* cannot get
+            through. What is not checked is a recompute that changes values while
+            leaving the key set alone, so pass this only after topology-only edits,
+            not after attribute or segmentation edits.
 
     Returns:
         tuple | None: (dataframe, x_axis_order, node_attrs). The dataframe has all the
@@ -118,14 +130,29 @@ def extract_sorted_tracks(
     )
 
     # Reuse cached node attributes when possible. Static feature values (position,
-    # area, time, mask, ...) don't change under topology edits; only the derived
+    # area, ...) don't change under topology edits; only the derived
     # track-structure columns (tracklet_id and lineage_id) can. Refetch just those
     # cheap columns and splice them into the cached frame, avoiding the expensive
-    # full-feature fetch (~0.5s -> ~0.15s). Only used when the caller guarantees
-    # feature values are unchanged; a full fetch is done otherwise.
+    # full-feature fetch (~0.5s -> ~0.15s).
+    #
+    # Two conditions have to hold, and both are checked here rather than trusted
+    # of the caller:
+    #
+    # - the current nodes must be a subset of the cached ones, so no node is
+    #   missing a row;
+    # - the cached frame must cover exactly the keys being asked for now.
+    #   Enabling or disabling a feature changes that set without going through an
+    #   action, so nothing invalidates the cache on that path; without this check
+    #   enabling a feature raises ColumnNotFoundError on the next refresh.
+    #
+    # What remains the caller's responsibility is a *recompute* that changes
+    # values while leaving the key set alone - see TracksViewer, which clears the
+    # cache for any action other than a topology or track-id edit.
+    current_ids = [int(n) for n in solution_nx_graph.node_ids()]
     df_attrs = None
-    if cached_node_attrs is not None:
-        current_ids = [int(n) for n in solution_nx_graph.node_ids()]
+    if cached_node_attrs is not None and set(cached_node_attrs.columns) == set(
+        all_keys
+    ):
         cached_ids = set(cached_node_attrs[DEFAULT_ATTR_KEYS.NODE_ID].to_list())
         if set(current_ids).issubset(cached_ids):
             dynamic_keys = [
@@ -144,7 +171,7 @@ def extract_sorted_tracks(
                 .join(fresh, on=DEFAULT_ATTR_KEYS.NODE_ID, how="left")
             )
     if df_attrs is None:
-        if len(solution_nx_graph.node_ids()) != 0:
+        if current_ids:
             df_attrs = solution_nx_graph.node_attrs(attr_keys=all_keys)
         else:
             df_attrs = pl.DataFrame(schema=all_keys)
@@ -174,7 +201,6 @@ def extract_sorted_tracks(
         parent_to_children.setdefault(src, []).append(tgt)
 
     track_list = []
-    parent_mapping = []
 
     # Identify parent nodes (nodes with more than one child) and end nodes.
     # Sets, so per-node membership checks in the loop below are O(1), not O(N).
@@ -282,10 +308,6 @@ def extract_sorted_tracks(
 
             track_list.append(track_dict)
 
-        parent_mapping.append(
-            {"track_id": track_id, "parent_track_id": parent_track_id, "node_id": node}
-        )
-
     x_axis_order = get_sorted_track_ids(
         node_ids_list,
         node_to_track_id,
@@ -325,8 +347,11 @@ def order_roots_by_prev(prev_axis_order: list[int], roots: list[int]) -> list[in
         list[int]: sorted list of root nodes.
     """
 
-    roots_in_prev = [r for r in prev_axis_order if r in roots]
-    missing = sorted(set(roots) - set(roots_in_prev))
+    # Set membership: prev_axis_order holds every tracklet, so testing against
+    # the roots list made this O(tracklets x roots).
+    root_set = set(roots)
+    roots_in_prev = [r for r in prev_axis_order if r in root_set]
+    missing = sorted(root_set - set(roots_in_prev))
 
     for r in missing:
         # find the index of the rightmost smaller element in roots_in_prev
@@ -360,52 +385,74 @@ def get_sorted_track_ids(
         list[Any] of ordered tracklet_ids.
     """
 
-    # Topological sort via Kahn's algorithm (BFS from roots)
+    # Topological sort via Kahn's algorithm (BFS from roots). A deque, because
+    # list.pop(0) is O(len(queue)) and the queue holds every track start at once
+    # - 62k of them on a 336k-node graph, which cost 2.0s against 0.2s here.
     in_degree = {n: (1 if n in child_to_parent else 0) for n in node_ids}
-    queue = [n for n, d in in_degree.items() if d == 0]
+    queue = deque(n for n, d in in_degree.items() if d == 0)
     topo_order = []
     while queue:
-        node = queue.pop(0)
+        node = queue.popleft()
         topo_order.append(node)
         for succ in parent_to_children.get(node, []):
             in_degree[succ] -= 1
             if in_degree[succ] == 0:
                 queue.append(succ)
 
-    # Create tracklet_id to parent_tracklet_id mapping (0 if tracklet has no parent)
+    # Create tracklet_id to parent_tracklet_id mapping (_NO_PARENT for roots)
     tracklet_to_parent_tracklet = {}
     for node in topo_order:
         tracklet = node_to_track_id[node]
         if tracklet in tracklet_to_parent_tracklet:
             continue
         parent_id = child_to_parent.get(node)
-        parent_tracklet_id = node_to_track_id[parent_id] if parent_id is not None else 0
+        parent_tracklet_id = (
+            node_to_track_id[parent_id] if parent_id is not None else _NO_PARENT
+        )
         tracklet_to_parent_tracklet[tracklet] = parent_tracklet_id
 
     # Final sorted order of roots
     roots = sorted(
-        [tid for tid, ptid in tracklet_to_parent_tracklet.items() if ptid == 0]
+        tid for tid, ptid in tracklet_to_parent_tracklet.items() if ptid is _NO_PARENT
     )
 
     # Optionally sort roots according to their position in prev_axis_order
     if prev_axis_order is not None:
         roots = order_roots_by_prev(prev_axis_order, roots)
 
-    x_axis_order = list(roots)
+    # Invert the parent mapping once. Scanning it per tracklet to find children,
+    # as this used to, is O(tracklets^2) - about 6e11 operations on a graph with
+    # 772k tracklets. Iterating in the same order keeps each parent's children in
+    # the order the scan produced them.
+    children_by_parent: dict[int, list[int]] = {}
+    for tid, ptid in tracklet_to_parent_tracklet.items():
+        children_by_parent.setdefault(ptid, []).append(tid)
 
-    # Find the children of each of the starting points, and work down the tree.
-    while len(roots) > 0:
-        children_list = []
-        for tracklet_id in roots:
-            children = [
-                tid
-                for tid, ptid in tracklet_to_parent_tracklet.items()
-                if ptid == tracklet_id
-            ]
-            for i, child in enumerate(children):
-                [children_list.append(child)]
-                x_axis_order.insert(x_axis_order.index(tracklet_id) + i, child)
-        roots = children_list
+    # Place each tracklet between its daughters, as before. The old code did this
+    # by inserting child i at `index(parent) + i` and re-reading the index after
+    # every insert, which works out to replacing a parent by
+    # [child_0, parent, child_1, ..., child_n] - the first daughter to its left
+    # and the rest to its right. Applying that at every level is the same as one
+    # traversal emitting, for each tracklet, order(child_0), the tracklet itself,
+    # then order(child_1..n). Doing it directly avoids both the repeated
+    # `index()` scans and the O(tracklets) list inserts.
+    #
+    # Iterative rather than recursive: a lineage can be as deep as the number of
+    # divisions along it, which is not bounded by anything small.
+    x_axis_order: list[Any] = []
+    stack: list[tuple[bool, Any]] = [(True, root) for root in reversed(roots)]
+    while stack:
+        expand, tracklet_id = stack.pop()
+        children = children_by_parent.get(tracklet_id, []) if expand else []
+        if not children:
+            x_axis_order.append(tracklet_id)
+            continue
+        # Pushed in reverse, so they pop in order: first daughter, this tracklet,
+        # then the remaining daughters.
+        for child in reversed(children[1:]):
+            stack.append((True, child))
+        stack.append((False, tracklet_id))
+        stack.append((True, children[0]))
 
     return x_axis_order
 

@@ -305,6 +305,12 @@ class TracksViewer:
         self.tracks = tracks
         self.selected_nodes.deleted_items.clear()  # Reset deleted nodes when switching tracks
 
+        # Drop the cached node attributes: they describe the previous tracks, and
+        # holding them also pins every one of that graph's Mask objects. The
+        # update_track_df call below passes refresh_view=True, which ignores the
+        # cache anyway - this is so that stays true if the call ever changes.
+        self._cached_node_attrs = None
+
         # listen to refresh signals from the tracks
         self.tracks.refresh.connect(self._refresh)
         # connect to action_applied signal to track deleted nodes
