@@ -149,7 +149,6 @@ def extract_sorted_tracks(
         else:
             df_attrs = pl.DataFrame(schema=all_keys)
 
-
     node_ids_list = df_attrs[DEFAULT_ATTR_KEYS.NODE_ID].to_list()
     node_to_time = dict(zip(node_ids_list, df_attrs[time_key].to_list(), strict=True))
     node_to_track_id = dict(

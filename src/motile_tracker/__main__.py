@@ -40,7 +40,6 @@ def main():
 
 
 if __name__ == "__main__":
-
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(filename)s:%(lineno)d] %(levelname)-8s %(message)s",
