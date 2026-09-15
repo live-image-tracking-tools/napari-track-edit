@@ -145,6 +145,9 @@ def test_zonly_thick_z_slice():
 
     zonly, normal = add_points(viewer, data)
 
+    zonly.projection_mode = "all"  # set explicitily for napari 0.6.2
+    normal.projection_mode = "all"
+
     viewer.dims.current_step = (1, 5, 20, 20)
     viewer.dims.margin_left = (0, 5, 0, 0)
     viewer.dims.margin_right = (0, 5, 0, 0)
