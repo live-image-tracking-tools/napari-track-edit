@@ -7,7 +7,7 @@ from warnings import warn
 
 from appdirs import AppDirs
 from fonticon_fa6 import FA6S
-from funtracks.data_model import SolutionTracks, Tracks
+from funtracks.data_model import Tracks
 from funtracks.import_export import import_from_geff
 from napari._qt.qt_resources import QColoredSVGIcon
 from qtpy.QtCore import Signal
@@ -47,51 +47,6 @@ def default_save_dir() -> Path:
     user's home directory.
     """
     return Path(AppDirs("motile-tracker").user_data_dir)
-
-
-def _as_solution_tracks(tracks: Tracks) -> SolutionTracks:
-    """Return a SolutionTracks view of the given tracks.
-
-    The list stores plain Tracks, but the views and actions downstream of
-    view_tracks still require track IDs, so they are handed a SolutionTracks.
-    Objects that are already SolutionTracks (including MotileRun) are passed
-    through unchanged, so a solved run keeps its solver params and identity.
-
-    Constructs directly rather than using SolutionTracks.from_tracks, which in
-    funtracks 2.0.x reads features.tracklet_key off the graph before building
-    anything. tracklet_key only declares which attribute *would* hold the
-    tracklet id; whether it exists is a separate question (whether that key is
-    in the FeatureDict). Tracks whose tracklet column was never created
-    therefore raise KeyError there.
-
-    TODO: remove once motile_tracker operates on Tracks directly and consumers
-    call tracks.graph_solution themselves.
-    """
-    if isinstance(tracks, SolutionTracks):
-        return tracks
-    graph = tracks.graph_full
-    if tracks.segmentation is not None and graph.metadata.get("shape") is None:
-        # the new object needs to build its own segmentation view, assigning one via
-        # _segmentation binds the old one, and then the user cannot update it via painting
-        graph._update_metadata(shape=tuple(tracks.segmentation.shape))
-    solution_tracks = SolutionTracks(
-        graph,
-        scale=tracks.scale,
-        ndim=tracks.ndim,
-        features=tracks.features,
-    )
-    # Only needed on funtracks < 2.1, where passing a FeatureDict makes
-    # __init__ activate the declared features without computing the missing
-    # ones. From 2.1 every Tracks already has track ids, so this finds nothing.
-    features = solution_tracks.features
-    missing = [
-        key
-        for key in (features.tracklet_key, features.lineage_key)
-        if key is not None and key not in solution_tracks.graph.node_attr_keys()
-    ]
-    if missing:
-        solution_tracks.enable_features(missing)
-    return solution_tracks
 
 
 class TracksButton(QWidget):
@@ -303,13 +258,13 @@ class TracksList(QGroupBox):
             tracks_button = self.tracks_list.itemWidget(selected[0])
             name = tracks_button.name.text()
             self._update_save_name(name)
-            self.view_tracks.emit(_as_solution_tracks(tracks_button.tracks), name)
+            self.view_tracks.emit(tracks_button.tracks, name)
 
     def add_tracks(self, tracks: Tracks, name: str, select=True):
         """Add tracks to the list and optionally select them. Will make a new
         row in the list UI representing the given tracks.
 
-        Accepts any Tracks object directly (SolutionTracks, MotileRun, etc.).
+        Accepts any Tracks object directly (including MotileRun).
 
         Note: selecting the tracks will also emit the selection changed event on
         the list.
