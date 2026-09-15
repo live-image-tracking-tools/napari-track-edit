@@ -82,3 +82,22 @@ The incoming edges of two nodes at the same time point can be swapped with the '
 Undoing and redoing actions
 ***************************
 All types of actions described above are appended to the Action History, and can be undone or redone. To undo, click 'Undo' in the Edit Tracks menu or by pressing ``Z``. Similarly, to redo an action, press 'Redo' in the Edit Tracks menu or ``R``.
+
+
+Copying nodes from an external source
+*************************************
+Apart from adding new nodes by adding points or segmentation labels, it is also possible to copy nodes from points or labels on another napari layer.
+The ``Copy from source`` tab in the ``Editing & Selection`` widget allows you to pick a source layer (either Points or Labels).
+Once connected, right-clicking while the target layer (either the tracking Points ('_points') or Labels layer ('_seg')) is active, allows you to copy the underlying source node to the target layer.
+The copied node will have the currently active tracklet ID, unless the ``Copy as new track`` checkbox is activated, in which case a copy will start a new track.
+For Labels layers, a copy event outcome depends on the target layer's label at the clicked location:
+
+- If the target layer had no label (only background) at the clicked location, all source label pixels will be copied to the target, overwriting the background and any other values in that region.
+- If the target layer had a label at the clicked location, that label will first be removed entirely (also outside the source label region), and then the source label will be copied to the target.
+
+The target layer can be protected from being overwritten by a copy event by activating the ``preserve labels`` option. When active, any non-zero, non-active tracklet ID target label pixels that overlap with the source label will be preserved, and only the source label pixels that do not overlap with these pixels will be copied.
+
+.. figure:: images/copy_labels.png
+   :width: 600px
+   :align: center
+   :alt: Copying labels from a source layer to the target layer

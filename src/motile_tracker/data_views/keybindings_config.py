@@ -98,6 +98,11 @@ KEYBINDINGS = {
         "qt_keys": [Qt.Key_N],
         "targets": ["tracks_viewer"],
     },
+    "request_new_track": {
+        "napari_keys": ["'"],  # Start a new track / tracklet id
+        "qt_keys": [],
+        "targets": ["tracks_viewer"],
+    },
     # Actions available in both napari and tree_widget (but connected to different functions)
     "toggle_display_mode": {
         "napari_keys": ["q"],
