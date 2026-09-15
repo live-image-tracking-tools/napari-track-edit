@@ -56,15 +56,11 @@ def _make_single_node_graph(
     return graph
 
 
-@pytest.fixture
-def viewer(make_napari_viewer):
-    """Per-test viewer for center_view tests.
-
-    These tests check viewer.dims.point and _indices_view, which depend on
-    viewer.dims.current_step. Napari does not reset current_step when layers
-    are cleared, so a fresh viewer per test is required for isolation.
-    """
-    return make_napari_viewer()
+@pytest.fixture(autouse=True)
+def clear_viewer_layers(viewer):
+    """Clear viewer layers between tests."""
+    yield
+    viewer.layers.clear()
 
 
 class TestCenterViewWithScale:
@@ -520,3 +516,64 @@ class TestOrthoViewsWithExtraDims:
             qtbot.wait(50)
 
         ortho_manager.cleanup()
+
+
+class TestAxisLabels:
+    """The tracks name the sliders they own.
+
+    napari shows dims.axis_labels on the dim sliders, and they are indexed by world
+    axis, so the tracks' names go on the trailing axes they occupy and any extra
+    leading axis keeps its own label.
+    """
+
+    def _tracks_3d(self, tmp_path):
+        graph = _make_single_node_graph(
+            tmp_path,
+            pos=[5, 10, 10],
+            seg_bbox=[4, 9, 9, 6, 11, 11],
+            seg_shape=(2, 20, 20, 20),
+        )
+        return SolutionTracks(
+            graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t"
+        )
+
+    def test_tracks_name_their_own_axes_only(self, viewer, tmp_path):
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(tracks=self._tracks_3d(tmp_path), name="test")
+
+        assert tuple(viewer.dims.axis_labels) == ("t", "z", "y", "x")
+
+        # a channel layer arriving later widens the viewer; napari prepends, so the
+        # names stay on the tracks' own axes and the new one keeps its own label
+        viewer.add_image(np.zeros((3, 2, 20, 20, 20), dtype=np.uint8), name="chan")
+        viewer.dims.set_axis_label(0, "channel")
+
+        dims = tracks_viewer.tracks_dims
+        labels = viewer.dims.axis_labels
+        assert tuple(labels) == ("channel", "t", "z", "y", "x")
+        # the labelling and the axis map agree, or a slider would say one thing
+        # while centering did another
+        assert labels[dims.time_axis] == "t"
+        assert tuple(labels[axis] for axis in dims.spatial_axes) == ("z", "y", "x")
+
+    def test_2d_tracks_are_labelled_without_a_z(self, viewer, tmp_path):
+        """The old hardcoded suffix gave 2D+time tracks ('z','y','x'), naming the
+        time axis 'z'."""
+
+        graph = create_empty_graphview_graph(
+            node_attributes=["pos", "area"],
+            ndim=3,
+            database=str(tmp_path / "graph2d.db"),
+        )
+        graph.bulk_add_nodes(
+            nodes=[{"t": 0, "pos": [10, 10], "area": 100.0, "solution": True}],
+            indices=[1],
+        )
+        tracks = SolutionTracks(
+            graph=graph, scale=[1.0, 1.0, 1.0], ndim=3, time_attr="t"
+        )
+
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(tracks=tracks, name="test")
+
+        assert tuple(viewer.dims.axis_labels) == ("t", "y", "x")
