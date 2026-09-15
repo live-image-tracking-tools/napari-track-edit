@@ -428,8 +428,6 @@ class TracksViewer:
 
         if len(self.selected_nodes) > 0:
             self.selected_track = self.tracks.get_track_id(self.selected_nodes[-1])
-        else:
-            self.selected_track = None
 
         self.set_track_id_color(self.selected_track)
         self.update_track_id.emit()
