@@ -143,6 +143,11 @@ column mapping step described in :doc:`Importing externally generated tracks <vi
 In short: save/load round-trips within the application, import/export crosses the
 boundary to other tools.
 
+There is a third option, described under :ref:`working-in-a-database` below, where
+the tracks live in a database on disk and every edit is written there as you make
+it. That removes the need to remember to save at all, at the cost of the tracks
+being tied to one file on one machine.
+
 Saving tracks
 -------------
 Above the results list are a ``Save directory`` field, with a ``Browse`` button, and a
@@ -175,6 +180,9 @@ button starts it:
   the ``Run Editor`` along with the tracks. Select the ``.geff`` store the run was
   saved to. Runs saved by older versions, which used a timestamped directory
   containing the tracks and a separate parameters file, can still be loaded.
+- ``SQL database`` - open a tracks database. Unlike the other options this
+  does not read the tracks into memory: the database is opened in place and every
+  edit is written to it. See :ref:`working-in-a-database`.
 - ``External tracks from CSV`` and ``External tracks from geff`` - import tracks that
   were generated elsewhere. These open the import dialog, where you map columns to
   attributes and optionally provide a segmentation; see
@@ -183,10 +191,63 @@ button starts it:
 Exporting tracks
 ----------------
 The export button beside a set of tracks in the results list opens the export dialog,
-where you choose ``GEFF``
-or ``CSV`` and pick the location, optionally including the (relabeled) segmentation as
+where you choose ``GEFF``, ``CSV`` or ``SQL database`` and pick the location, optionally
+including the (relabeled) segmentation as
 zarr or tiff. You can also export a subset of tracks from the Groups tab. Exported tracks are meant to be read by other tools: to continue working
-on them here later, save them instead.
+on them here later, save them instead, or export a database and keep editing in it.
+
+.. _working-in-a-database:
+
+Working in a database
+---------------------
+Tracks normally live in memory until you save them. They can instead live in a SQLite
+database on disk, where every edit is written as you make it. This is worth doing when:
+
+- you do not want to lose work if napari closes unexpectedly, since there is nothing
+  to remember to save;
+- the graph is large, because the candidate nodes the solver considered but did not
+  select stay on disk rather than in memory;
+- several people annotate the same tracks, for example by each taking a different
+  range of timepoints.
+
+Getting into a database
+~~~~~~~~~~~~~~~~~~~~~~~
+Importing never puts tracks in a database - CSV and geff imports always build an
+in-memory copy. There are two ways in:
+
+- **Export one.** In the export dialog choose ``SQL database``. By default the current
+  tracks switch over to the file you just wrote, so editing continues there - which is
+  usually why you are writing one. Switching over clears the undo history. Tick
+  ``Continue editing the in-memory graph`` if you would rather write a plain copy and
+  carry on as before.
+- **Open one.** Choose ``SQL database`` in the load dropdown and select the
+  ``.db`` file.
+
+Exporting a copy of tracks that are *already* in a database works the other way round:
+the default is to stay in the database you are in, since a copy is normally something
+you are handing to someone else. Untick the box to move over to the copy instead.
+
+When a set of tracks in the results list is stored in a database, the path is shown
+above the list.
+
+What a database holds
+~~~~~~~~~~~~~~~~~~~~~
+A database holds the whole graph, including the segmentation and the candidate nodes
+that the solver considered but did not select - which a geff export drops. Deleted
+nodes are kept as candidates too, so a reopened database still knows about them and
+they can be reconnected. Undo history is not part of the graph and is not kept: after
+reopening, the undo stack starts empty, just as it does after loading a geff.
+
+A database also records which attributes hold time, position and track ids, and the
+scale if the tracks had one, so it reopens without asking you anything. A database
+written by another tool will not have that; the attributes are then guessed from the
+column names, and the tracks open without a scale, just as they do when loading a geff.
+
+Saving and databases
+~~~~~~~~~~~~~~~~~~~~
+The save button still writes a geff, for every set of tracks including database-backed
+ones. For those, saving is not what protects your work - the database already does
+that - it is how you take a snapshot or hand the tracks to someone else.
 
 .. _Issue #48: https://github.com/funkelab/motile_tracker/issues/48
 .. _Cell Tracking Challenge: https://celltrackingchallenge.net/

@@ -386,3 +386,63 @@ def test_undo_on_readonly_data_does_not_fire_paint_event(
         "undo() on read-only data must restore the display buffer directly "
         "without emitting events.paint"
     )
+
+
+def test_paint_onto_existing_node_when_tracks_live_in_a_database(
+    viewer, graph_3d_with_division, tmp_path
+):
+    """Extending an existing node by painting must work on a SQL-backed graph.
+
+    napari stores selected_label as a numpy integer, and a SQL graph does not
+    match one against its integer node ids: has_node answered False for a node
+    that plainly exists. The paint was then routed down the "add a new node"
+    branch, which found the node already present and raised
+    "Node N is already in the view". Only databases were affected, because the
+    in-memory graph matches numpy and Python ints alike.
+
+    TrackLabels works around this by converting to a plain int. This test keeps
+    passing once tracksdata coerces numpy scalars itself and that workaround is
+    removed, since it asserts the behaviour rather than the conversion - so keep
+    it, and use it to check the removal is safe.
+    """
+    from funtracks.data_model import SolutionTracks, Tracks
+
+    from motile_tracker.import_export.sql_io import (
+        tracks_from_sql,
+        write_tracks_to_sql,
+    )
+
+    write_tracks_to_sql(
+        Tracks(graph_3d_with_division, ndim=4, time_attr="t"), tmp_path / "tracks.db"
+    )
+    on_disk = tracks_from_sql(tmp_path / "tracks.db")
+    tracks = SolutionTracks(
+        on_disk.graph_full,
+        ndim=on_disk.ndim,
+        features=on_disk.features,
+        _segmentation=on_disk.segmentation,
+    )
+
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=tracks, name="test")
+    seg_layer = tracks_viewer.tracking_layers.seg_layer
+    seg_layer.mode = "paint"
+
+    # Select an existing node and paint a few pixels next to it, at its own
+    # timepoint - the ordinary "grow this cell" edit.
+    node = 3
+    time = int(tracks.get_time(node))
+    step = list(viewer.dims.current_step)
+    step[0] = time
+    viewer.dims.current_step = step
+    seg_layer.selected_label = np.int64(node)  # what napari actually stores
+
+    nodes_before = tracks.graph.num_nodes()
+    event_val = create_event_val(
+        tp=time, z=(20, 22), y=(20, 22), x=(20, 22), old_val=0, target_val=node
+    )
+    seg_layer._on_paint(MockEvent(event_val))
+
+    # The node was extended, not added again.
+    assert tracks.graph.num_nodes() == nodes_before
+    assert tracks.graph.has_node(node)
