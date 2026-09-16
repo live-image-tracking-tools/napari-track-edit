@@ -11,6 +11,7 @@ from funtracks.user_actions import (
     UserAddEdge,
     UserDeleteEdge,
     UserDeleteNodes,
+    UserSetDivision,
     UserSwapPredecessors,
 )
 from psygnal import Signal
@@ -474,6 +475,19 @@ class TracksViewer:
             node2 = self.selected_nodes[1]
 
             UserSwapPredecessors(self.tracks, nodes=(int(node1), int(node2)))
+
+    def set_division(self, event=None):
+        """Calls the UserAction to make or break a division between the three
+        currently selected nodes
+        """
+
+        if self.tracks is None:
+            return
+        nodes = [int(node) for node in self.selected_nodes.as_list]
+        try:
+            UserSetDivision(self.tracks, tuple(nodes))
+        except InvalidActionError as e:
+            QMessageBox.warning(None, "Cannot set division", str(e))
 
     def create_edge(self, event=None):
         """Add an edge between the two currently selected nodes"""
