@@ -6,7 +6,7 @@ from typing import Optional
 import napari
 import pandas as pd
 from funtracks.actions import AddNode, BasicAction, DeleteNode
-from funtracks.data_model import SolutionTracks
+from funtracks.data_model import Tracks
 from funtracks.exceptions import InvalidActionError
 from funtracks.user_actions import (
     UserAddEdge,
@@ -102,7 +102,7 @@ class TracksViewer:
             NodeType.SPLIT: "triangle_up",
         }
         self.mode = "all"
-        self.tracks: SolutionTracks | None = None
+        self.tracks: Tracks | None = None
         self.visible: list | str = []
         self.tracking_layers = TracksLayerGroup(self.viewer, self.tracks, "", self)
         self.center_node.connect(self.tracking_layers.center_view)
@@ -280,7 +280,7 @@ class TracksViewer:
             tracks.refresh.disconnect(self._refresh)
             tracks.action_applied.disconnect(self._on_action_applied)
 
-    def update_tracks(self, tracks: SolutionTracks, name: str) -> None:
+    def update_tracks(self, tracks: Tracks, name: str) -> None:
         """Stop viewing a previous set of tracks and replace it with a new one.
         Will create new segmentation and tracks layers and add them to the viewer.
 

@@ -8,7 +8,7 @@ import numpy as np
 from tracksdata.constants import DEFAULT_ATTR_KEYS
 
 if TYPE_CHECKING:
-    from funtracks.data_model import SolutionTracks
+    from funtracks.data_model import Tracks
 
     from motile_tracker.data_views.views_coordinator.tracks_viewer import (
         TracksViewer,
@@ -17,13 +17,13 @@ import polars as pl
 
 
 def update_napari_tracks(
-    tracks: SolutionTracks,
+    tracks: Tracks,
 ):
     """Function to take a networkx graph with assigned track_ids and return the data
     needed to add to a napari tracks layer.
 
     Args:
-        tracks (SolutionTracks): tracks that have track_ids and have a tree structure
+        tracks (Tracks): tracks that have track_ids and have a tree structure
 
     Returns:
         data: array (N, D+1)

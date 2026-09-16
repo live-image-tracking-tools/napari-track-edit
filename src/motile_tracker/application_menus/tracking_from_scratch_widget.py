@@ -1,5 +1,5 @@
 import napari
-from funtracks.data_model import SolutionTracks
+from funtracks.data_model import Tracks
 from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
 from napari.layers import Image, Labels
 from qtpy.QtCore import Qt
@@ -87,7 +87,7 @@ class TrackingFromScratch(QWidget):
 
         if mode == "labels":
             # an empty segmentation-backed graph: registering the 'mask' attribute and
-            # the segmentation shape makes SolutionTracks expose an (empty) segmentation,
+            # the segmentation shape makes Tracks expose an (empty) segmentation,
             # so a TrackLabels layer is created and grows as labels are added.
             graph = create_empty_graphview_graph(
                 node_attributes=["pos", "area", "mask", "bbox"],
@@ -102,7 +102,7 @@ class TrackingFromScratch(QWidget):
                 ndim=layer.data.ndim,
             )
 
-        tracks = SolutionTracks(
+        tracks = Tracks(
             graph=graph,
             scale=layer.scale,
             ndim=layer.ndim,

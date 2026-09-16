@@ -2,7 +2,7 @@
 
 import logging
 
-from funtracks.data_model import SolutionTracks
+from funtracks.data_model import Tracks
 from funtracks.utils import ensure_unique_labels
 from napari import Viewer
 from napari.utils.notifications import show_warning
@@ -33,7 +33,7 @@ class MotileWidget(QWidget):
     # A signal for passing events from the motile solver to the run view widget
     # To provide updates on progress of the solver
     solver_update = Signal()
-    new_run = Signal(SolutionTracks, str)
+    new_run = Signal(Tracks, str)
 
     def __init__(self, viewer: Viewer):
         super().__init__()
@@ -59,7 +59,7 @@ class MotileWidget(QWidget):
         main_layout.addStretch()
         self.setLayout(main_layout)
 
-    def view_run(self, tracks: SolutionTracks) -> None:
+    def view_run(self, tracks: Tracks) -> None:
         """Populates the run viewer with the output
         of the provided run.
 
@@ -141,9 +141,9 @@ class MotileWidget(QWidget):
             scale=run.scale,
             cand_graph=cand_graph,
         )
-        # Create a new MotileRun with the solution graph so that
-        # SolutionTracks.__init__ runs fresh and correctly assigns track IDs
-        # via _setup_core_computed_features (detecting that track_id is absent).
+        # Create a new MotileRun with the solution graph so that Tracks.__init__
+        # runs fresh and correctly assigns track IDs via
+        # _setup_core_computed_features (detecting that track_id is absent).
         run = MotileRun(
             graph=solution_graph,
             run_name=run.run_name,

@@ -1,6 +1,6 @@
 """Synthetic "large" tracking dataset generator for benchmarks.
 
-Builds a :class:`funtracks.data_model.SolutionTracks` of dividing spheres directly
+Builds a :class:`funtracks.data_model.Tracks` of dividing spheres directly
 as an in-memory tracksdata graph, following the same construction pattern used in
 ``tests/conftest.py``. Masks and bounding boxes live on the graph nodes, so the
 segmentation is exposed lazily as a ``td.array.GraphArrayView`` (exactly the
@@ -23,11 +23,11 @@ from dataclasses import dataclass
 
 import numpy as np
 import tracksdata as td
-from funtracks.data_model import SolutionTracks
+from funtracks.data_model import Tracks
 from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
 from tracksdata.nodes._mask import Mask
 
-# Node attributes mirror tests/conftest.py. The TrackAnnotator inside SolutionTracks
+# Node attributes mirror tests/conftest.py. The TrackAnnotator inside Tracks
 # recomputes tracklet_id / lineage_id from graph topology, so track_id / lineage_id
 # here are informational; edges are the source of truth for divisions.
 _NODE_ATTRS = [
@@ -137,9 +137,9 @@ def _bbox_and_mask(
 
 
 def build_graph(params: SyntheticParams = LARGE) -> td.graph.GraphView:
-    """Build the raw tracksdata GraphView of dividing spheres (no SolutionTracks wrap).
+    """Build the raw tracksdata GraphView of dividing spheres (no Tracks wrap).
 
-    Exposed separately so benchmarks can time ``SolutionTracks`` construction on a
+    Exposed separately so benchmarks can time ``Tracks`` construction on a
     freshly-built graph.
     """
     rng = np.random.default_rng(params.seed)
@@ -234,17 +234,17 @@ def build_graph(params: SyntheticParams = LARGE) -> td.graph.GraphView:
     return graph
 
 
-def generate_synthetic_tracks(params: SyntheticParams = LARGE) -> SolutionTracks:
-    """Generate a SolutionTracks of dividing spheres from ``params``.
+def generate_synthetic_tracks(params: SyntheticParams = LARGE) -> Tracks:
+    """Generate a Tracks of dividing spheres from ``params``.
 
-    Returns a fully-constructed SolutionTracks whose ``.segmentation`` is a lazy
+    Returns a fully-constructed Tracks whose ``.segmentation`` is a lazy
     GraphArrayView backed by the per-node masks.
     """
     graph = build_graph(params)
-    return SolutionTracks(graph=graph, ndim=params.ndim, time_attr="t")
+    return Tracks(graph=graph, ndim=params.ndim, time_attr="t")
 
 
-def pick_nodes(tracks: SolutionTracks) -> dict:
+def pick_nodes(tracks: Tracks) -> dict:
     """Pick deterministic, distinct nodes/edges to act on."""
     edges = tracks.graph.edge_attrs(
         attr_keys=[td.DEFAULT_ATTR_KEYS.EDGE_SOURCE, td.DEFAULT_ATTR_KEYS.EDGE_TARGET]
@@ -259,13 +259,13 @@ def pick_nodes(tracks: SolutionTracks) -> dict:
     }
 
 
-def tracklet_nodes(tracks: SolutionTracks, node: int) -> list[int]:
+def tracklet_nodes(tracks: Tracks, node: int) -> list[int]:
     """All node ids sharing the tracklet (track_id) of ``node`` -- a connected path."""
     tid = tracks.get_track_id(node)
     return [int(n) for n in tracks.graph.node_ids() if tracks.get_track_id(n) == tid]
 
 
-def _describe(tracks: SolutionTracks) -> dict:
+def _describe(tracks: Tracks) -> dict:
     graph = tracks.graph
     src = graph.edge_attrs(attr_keys=[td.DEFAULT_ATTR_KEYS.EDGE_SOURCE])[
         td.DEFAULT_ATTR_KEYS.EDGE_SOURCE

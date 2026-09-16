@@ -56,7 +56,7 @@ def test_view_and_edit_run(make_napari_viewer, solution_tracks_2d, qtbot):
     assert widget.view_run_widget.isVisible()
     assert not widget.edit_run_widget.isVisible()
 
-    # view_run with SolutionTracks (non-MotileRun) hides viewer
+    # view_run with Tracks (non-MotileRun) hides viewer
     widget.view_run(solution_tracks_2d)
     assert not widget.view_run_widget.isVisible()
 

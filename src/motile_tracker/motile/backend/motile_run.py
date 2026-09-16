@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import tracksdata as td
-from funtracks.data_model import SolutionTracks
+from funtracks.data_model import Tracks
 from funtracks.import_export import import_from_geff, load_v1_tracks
 
 from motile_tracker.import_export.geff_io import is_geff, write_geff_over
@@ -27,7 +27,7 @@ ATTRS_FILENAME = "attrs.json"
 _TRACKSDATA_INTERNAL_EDGE_KEYS = frozenset({"edge_id", "source_id", "target_id"})
 
 
-class MotileRun(SolutionTracks):
+class MotileRun(Tracks):
     """An object representing a motile tracking run. Contains a name,
     parameters, time of creation, information about the solving process
     (status and list of solver gaps), and optionally the input and output
@@ -37,7 +37,7 @@ class MotileRun(SolutionTracks):
 
     def __init__(
         self,
-        graph: td.graph.GraphView,
+        graph: td.graph.BaseGraph | td.graph.GraphView,
         run_name: str,
         time_attr: str = "t",
         pos_attr: str | tuple[str] | list[str] = "pos",
@@ -54,6 +54,13 @@ class MotileRun(SolutionTracks):
     ):
         if ndim is None and input_segmentation is not None:
             ndim = input_segmentation.ndim
+
+        if isinstance(graph, td.graph.GraphView):
+            # solve() still hands back a solution view. Tracks wants the root base
+            # graph and builds its own solution view, so unwrap here rather than
+            # letting Tracks do it and warn.
+            # TODO: make solve() return the base graph and drop this.
+            graph = graph._root
 
         super().__init__(
             graph,

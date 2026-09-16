@@ -4,7 +4,7 @@ import napari
 import numpy as np
 import pytest
 import tracksdata as td
-from funtracks.data_model import SolutionTracks
+from funtracks.data_model import Tracks
 from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
 from tracksdata.nodes._mask import Mask
 
@@ -25,7 +25,7 @@ def _make_single_node_graph(
         pos: Node position in world coordinates [z, y, x].
         seg_bbox: Bounding box [z0, y0, x0, z1, y1, x1] for the node's mask.
             If provided, mask/bbox node attributes and shape metadata
-            are added so SolutionTracks can reconstruct the segmentation.
+            are added so Tracks can reconstruct the segmentation.
         seg_shape: Full segmentation array shape (t, z, y, x). Required when
             seg_bbox is provided.
     """
@@ -95,7 +95,7 @@ class TestCenterViewWithScale:
         )
 
         scale = [1.0, 0.5, 1.0, 1.0]  # t, z, y, x
-        tracks = SolutionTracks(graph=graph, scale=scale, ndim=4, time_attr="t")
+        tracks = Tracks(graph=graph, scale=scale, ndim=4, time_attr="t")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
@@ -134,7 +134,7 @@ class TestCenterViewWithScale:
         )
 
         scale = [1.0, 2.0, 1.0, 1.0]
-        tracks = SolutionTracks(graph=graph, scale=scale, ndim=4, time_attr="t")
+        tracks = Tracks(graph=graph, scale=scale, ndim=4, time_attr="t")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
@@ -176,7 +176,7 @@ class TestCenterViewWithScale:
         )
 
         scale = [1.0, 0.5, 1.0, 1.0]
-        tracks = SolutionTracks(graph=graph, scale=scale, ndim=4, time_attr="t")
+        tracks = Tracks(graph=graph, scale=scale, ndim=4, time_attr="t")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
@@ -208,7 +208,7 @@ class TestCenterViewWithScale:
             seg_shape=(2, 20, 20, 20),
         )
 
-        tracks = SolutionTracks(graph=graph, ndim=4, time_attr="t")
+        tracks = Tracks(graph=graph, ndim=4, time_attr="t")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
@@ -248,9 +248,7 @@ class TestCenterViewWithScale:
         # Node at world position [5, 10, 10] — no segmentation
         graph = _make_single_node_graph(tmp_path, pos=[5, 10, 10])
 
-        tracks = SolutionTracks(
-            graph=graph, scale=[1.0, 0.5, 1.0, 1.0], ndim=4, time_attr="t"
-        )
+        tracks = Tracks(graph=graph, scale=[1.0, 0.5, 1.0, 1.0], ndim=4, time_attr="t")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
@@ -290,9 +288,7 @@ class TestCenterViewWithScale:
         # Node at world position [5, 10, 10] — no segmentation
         graph = _make_single_node_graph(tmp_path, pos=[5, 10, 10])
 
-        tracks = SolutionTracks(
-            graph=graph, scale=[1.0, 0.5, 1.0, 1.0], ndim=4, time_attr="t"
-        )
+        tracks = Tracks(graph=graph, scale=[1.0, 0.5, 1.0, 1.0], ndim=4, time_attr="t")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
@@ -333,7 +329,7 @@ class TestCenterViewWithScale:
         )
 
         scale = [1.0, 0.5, 1.0, 1.0]  # z-scale = 0.5
-        tracks = SolutionTracks(graph=graph, scale=scale, ndim=4, time_attr="t")
+        tracks = Tracks(graph=graph, scale=scale, ndim=4, time_attr="t")
 
         # Show orthogonal views BEFORE adding tracks so they get the layers
         ortho_manager.show()

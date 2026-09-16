@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 import tracksdata as td
-from funtracks.data_model import SolutionTracks, Tracks
+from funtracks.data_model import Tracks
 from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
 from tracksdata.nodes._mask import Mask
 
@@ -291,37 +291,37 @@ def graph_3d_with_division() -> td.graph.GraphView:
 
 
 @pytest.fixture
-def solution_tracks_2d(graph_2d) -> SolutionTracks:
-    """Return a SolutionTracks object wrapping graph_2d."""
-    return SolutionTracks(graph=graph_2d, ndim=3, time_attr="t")
+def solution_tracks_2d(graph_2d) -> Tracks:
+    """Return a Tracks object wrapping graph_2d."""
+    return Tracks(graph=graph_2d, ndim=3, time_attr="t")
 
 
 @pytest.fixture
-def solution_tracks_3d(graph_3d) -> SolutionTracks:
-    """Return a SolutionTracks object wrapping graph_3d."""
-    return SolutionTracks(graph=graph_3d, ndim=4, time_attr="t")
+def solution_tracks_3d(graph_3d) -> Tracks:
+    """Return a Tracks object wrapping graph_3d."""
+    return Tracks(graph=graph_3d, ndim=4, time_attr="t")
 
 
 @pytest.fixture
-def solution_tracks_3d_with_division(graph_3d_with_division) -> SolutionTracks:
-    """Return a SolutionTracks object wrapping graph_3d_with_division."""
-    return SolutionTracks(graph=graph_3d_with_division, ndim=4, time_attr="t")
+def solution_tracks_3d_with_division(graph_3d_with_division) -> Tracks:
+    """Return a Tracks object wrapping graph_3d_with_division."""
+    return Tracks(graph=graph_3d_with_division, ndim=4, time_attr="t")
 
 
 @pytest.fixture
 def solution_tracks_2d_without_segmentation(
     graph_2d_without_segmentation,
-) -> SolutionTracks:
-    """Return a SolutionTracks object wrapping graph_2d_without_segmentation."""
-    return SolutionTracks(graph=graph_2d_without_segmentation, ndim=3, time_attr="t")
+) -> Tracks:
+    """Return a Tracks object wrapping graph_2d_without_segmentation."""
+    return Tracks(graph=graph_2d_without_segmentation, ndim=3, time_attr="t")
 
 
 @pytest.fixture
 def solution_tracks_3d_without_segmentation(
     graph_3d_without_segmentation,
-) -> SolutionTracks:
-    """Return a SolutionTracks object wrapping graph_3d_without_segmentation."""
-    return SolutionTracks(graph=graph_3d_without_segmentation, ndim=4, time_attr="t")
+) -> Tracks:
+    """Return a Tracks object wrapping graph_3d_without_segmentation."""
+    return Tracks(graph=graph_3d_without_segmentation, ndim=4, time_attr="t")
 
 
 @pytest.fixture

@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import napari
 import pytest
-from funtracks.data_model import SolutionTracks
+from funtracks.data_model import Tracks
 
 from motile_tracker.data_views.views.layers.track_graph import TrackGraph
 from motile_tracker.data_views.views.layers.track_labels import TrackLabels
@@ -127,9 +127,7 @@ class TestEdgeOperations:
             [{"source_id": 7, "target_id": 6, "solution": True}]
         )
 
-        tracks = SolutionTracks(
-            graph=graph_2d_without_segmentation, ndim=3, time_attr="t"
-        )
+        tracks = Tracks(graph=graph_2d_without_segmentation, ndim=3, time_attr="t")
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
 
@@ -577,7 +575,7 @@ class TestLayerCreation:
 
     def test_layers_present_after_update_tracks(self, viewer, solution_tracks_2d):
         """Test that points, tracks graph, and seg layers are added to the viewer
-        after calling update_tracks with a SolutionTracks that has segmentation."""
+        after calling update_tracks with a Tracks that has segmentation."""
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
 
