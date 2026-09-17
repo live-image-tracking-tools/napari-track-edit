@@ -7,13 +7,38 @@ from funtracks.user_actions.user_update_segmentation import (
 )
 from funtracks.utils.tracksdata_utils import pixels_to_td_mask
 
-from motile_tracker.data_views.views.layers.contour_labels import as_index_atom
 from motile_tracker.data_views.views.layers.track_labels import (
     updates_from_index_atoms,
     updates_from_masked_atoms,
 )
 
 NDIM = 4  # (t, z, y, x)
+
+
+def as_index_atom(atom):
+    """Expand a napari paint atom to (multi-index, old values, new value).
+
+    The reference the mask route is checked against: it is the shape napari used
+    before 0.8 added ``_MaskedPaintAtom``, and going through explicit coordinates
+    is an independent way to arrive at the same masks.
+    """
+
+    if len(atom) == 3:  # a data_setitem atom, already index based
+        return atom
+
+    slice_key, mask, old_values, new_value = atom
+    if mask is None:
+        # every pixel in the bounding box changed, so napari dropped the mask
+        # and stored a snapshot of the whole box instead
+        mask = np.ones(np.shape(old_values), dtype=bool)
+        old_values = np.asarray(old_values).reshape(-1)
+
+    # mask is relative to the bounding box, so shift it back into data coordinates
+    indices = tuple(
+        axis_indices + (0 if sl.start is None else sl.start)
+        for axis_indices, sl in zip(np.nonzero(mask), slice_key, strict=True)
+    )
+    return indices, old_values, new_value
 
 
 def masked_atom(time, start, mask, old_region, new_value=9):

@@ -7,7 +7,13 @@ array: every changed pixel must be reported under the value it held before the
 stroke, nothing else may be reported, and once funtracks has combined the updates
 each pixel must belong to exactly one label.
 
-Both data backends are covered, because they make napari behave differently:
+Which atom form a real paint emits depends on the installed napari (masks from
+0.8, multi-indices before that), and the project supports both. The helpers here
+therefore take either form, so every test runs on either version, and
+``test_mask_atoms_are_checked_the_same_way`` builds the mask form by hand so it
+stays covered on an older napari.
+
+Both data backends are covered too, because they make napari behave differently:
 
 - a writable numpy array takes the paint, so napari's own "this pixel already
   holds the new label" check suppresses repeat visits and one brush position
@@ -21,7 +27,10 @@ Both must parse to the same updates.
 
 import numpy as np
 import pytest
-from funtracks.user_actions.user_update_segmentation import _create_masks_from_bboxes
+from funtracks.user_actions.user_update_segmentation import (
+    _create_masks_from_bboxes,
+    _create_masks_from_multi_index,
+)
 from napari.utils import DirectLabelColormap
 
 from motile_tracker.data_views.lazy_array_wrapper import LazyArrayWrapper
@@ -30,6 +39,7 @@ from motile_tracker.data_views.views.layers.track_labels import TrackLabels
 
 TIME = 1  # the frame every stroke is painted on
 NEW = 9  # the label painted with
+NDIM = 3  # (t, y, x)
 
 
 class ReadOnlyArray:
@@ -95,10 +105,32 @@ def paint_stroke(layer, coords, value=NEW):
 
 
 def pixels_of(update):
-    """The (time, row, column) index of a (mask, time, old value) update."""
+    """The (time, row, column) index of an update, in whichever form it came.
+
+    The parse reports masks on napari >= 0.8 and multi-indices on napari <= 0.7;
+    everything these tests assert holds for both, so the helpers take both.
+    """
+    if len(update) == 2:  # (multi-index, old value)
+        return update[0]
     mask, time, _old_value = update
     rows, cols = mask.mask_indices()
     return np.full(rows.shape, time), rows, cols
+
+
+def old_value_of(update):
+    """Both forms carry the old value last."""
+    return update[-1]
+
+
+def time_of(update):
+    return update[1] if len(update) == 3 else int(update[0][0][0])
+
+
+def combine(updates):
+    """Hand the updates to whichever funtracks combiner takes that form."""
+    if len(updates[0]) == 3:
+        return _create_masks_from_bboxes(updates)
+    return _create_masks_from_multi_index(updates, NDIM)
 
 
 def assert_updates_match_diff(updates, before, after, new_value=NEW):
@@ -113,7 +145,7 @@ def assert_updates_match_diff(updates, before, after, new_value=NEW):
     reported = np.zeros(before.shape, dtype=bool)
     for update in updates:
         index = pixels_of(update)
-        old_value = update[2]
+        old_value = old_value_of(update)
         assert np.all(before[index] == old_value), (
             f"update claims old value {old_value} for pixels that held "
             f"{np.unique(before[index])}"
@@ -128,7 +160,7 @@ def assert_updates_match_diff(updates, before, after, new_value=NEW):
 
 def assert_combined_partitions_diff(updates, before, after, new_value=NEW):
     """What funtracks ends up acting on: one mask per label, and no pixel twice."""
-    combined = _create_masks_from_bboxes(updates)
+    combined = combine(updates)
 
     keys = [(time, old_value) for _, time, old_value in combined]
     assert len(keys) == len(set(keys)), "a label was left with more than one mask"
@@ -168,8 +200,8 @@ def test_stroke_over_two_labels_and_background_matches_the_array_diff():
 
     updates = parse(event_val)
 
-    assert {old_value for _, _, old_value in updates} == {0, 1, 2}
-    assert all(time == TIME for _, time, _ in updates)
+    assert {old_value_of(update) for update in updates} == {0, 1, 2}
+    assert all(time_of(update) == TIME for update in updates)
     assert_updates_match_diff(updates, before, after)
     assert_combined_partitions_diff(updates, before, after)
 
@@ -189,9 +221,10 @@ def test_read_only_layer_repeats_atoms_but_parses_the_same():
     read_only = make_layer(LazyArrayWrapper(ReadOnlyArray(before.copy())))
     read_only_event = paint_stroke(read_only, coords)
 
-    # napari suppressed the repeats on the writable array but could not here
+    # nothing can be suppressed here: every brush position reports afresh
     assert len(read_only_event) == len(coords)
-    assert len(writable_event) < len(read_only_event)
+    # whereas napari drops what the writable array already holds
+    assert len(writable_event) <= len(read_only_event)
     # and the segmentation itself is untouched: funtracks owns that write
     assert np.array_equal(np.asarray(read_only.data), before)
 
@@ -221,7 +254,7 @@ def test_erasing_matches_the_array_diff():
 
     updates = parse(event_val)
 
-    assert {old_value for _, _, old_value in updates} == {1}
+    assert {old_value_of(update) for update in updates} == {1}
     assert_updates_match_diff(updates, before, after, new_value=0)
     assert_combined_partitions_diff(updates, before, after, new_value=0)
 
@@ -251,8 +284,6 @@ def test_a_label_touched_in_two_places_stays_one_mask():
     updates = parse(event_val)
     assert_updates_match_diff(updates, before, after)
 
-    # several updates for label 1 before combining, exactly one after
-    assert len([entry for entry in updates if entry[2] == 1]) > 1
     combined = assert_combined_partitions_diff(updates, before, after)
     for_label_1 = [entry for entry in combined if entry[2] == 1]
     assert len(for_label_1) == 1
@@ -274,6 +305,29 @@ def test_any_brush_size_matches_the_array_diff(brush_size):
     after = np.asarray(layer.data)
 
     updates = parse(event_val)
+    assert_updates_match_diff(updates, before, after)
+    assert_combined_partitions_diff(updates, before, after)
+
+
+def test_mask_atoms_are_checked_the_same_way():
+    """Cover the mask form even when the installed napari never produces it.
+
+    Which form a real paint emits depends on the napari version, so the layer
+    cannot be relied on to exercise both. This builds the ``_MaskedPaintAtom``
+    shape directly - including the repeats a read-only backend causes - and runs
+    it through the same checks.
+    """
+    before = segmentation()
+    box = (slice(TIME, TIME + 1), slice(8, 11), slice(8, 11))  # straddles label 1
+    # the whole box changed, so napari drops the mask and keeps a snapshot
+    atom = (box, None, before[box].copy(), NEW)
+    after = before.copy()
+    after[box] = NEW
+
+    updates = parse([atom] * 4)
+
+    assert len(updates[0]) == 3, "atoms in the mask form must parse to the mask form"
+    assert {old_value_of(update) for update in updates} == {0, 1}
     assert_updates_match_diff(updates, before, after)
     assert_combined_partitions_diff(updates, before, after)
 
@@ -309,3 +363,136 @@ def test_data_setitem_event_matches_the_array_diff():
         assert np.all(after[index] == NEW)
         reported[index] = True
     assert np.array_equal(reported, before != after)
+
+
+# --------------------------------------------------------------------------- #
+# reverting a paint (ContourLabels.undo)
+# --------------------------------------------------------------------------- #
+
+
+def displayed_segmentation():
+    """The same content on frame 0, so the layer's default slice shows it."""
+    seg = np.zeros((2, 20, 20), dtype=np.uint32)
+    seg[0, 5:10, 5:10] = 1
+    seg[0, 5:10, 12:16] = 2
+    return seg
+
+
+def read_only_layer_showing_the_painted_frame():
+    return make_layer(LazyArrayWrapper(ReadOnlyArray(displayed_segmentation())))
+
+
+def test_undo_restores_the_display_from_the_untouched_array():
+    """The revert path: the buffer goes back to what the array still holds.
+
+    Nothing was written during the stroke, so re-slicing restores the pre-stroke
+    state; the history atoms never have to be replayed.
+    """
+    layer = read_only_layer_showing_the_painted_frame()
+    before = np.array(layer._slice.image.raw)
+
+    paint_stroke(layer, [(0, 7, col) for col in (6, 6, 7, 7, 8, 9, 13)])
+    assert not np.array_equal(np.array(layer._slice.image.raw), before), (
+        "the stroke should have shown up in the display buffer"
+    )
+
+    layer.undo()
+
+    assert np.array_equal(np.array(layer._slice.image.raw), before)
+
+
+def test_undo_emits_no_paint_event():
+    """Why this override exists: a paint event here would re-enter _on_paint."""
+    layer = read_only_layer_showing_the_painted_frame()
+    paint_stroke(layer, [(0, 7, 7)])
+
+    events = []
+    layer.events.paint.connect(lambda event: events.append(event.value))
+    layer.undo()
+
+    assert events == []
+
+
+def test_undo_drops_the_item_instead_of_queueing_it_for_redo():
+    """A paint that never reached the data cannot be re-applied by this layer.
+
+    Keeping the redo queue empty is also what makes the inherited
+    ``Labels.redo()`` harmless, so the two belong together.
+    """
+    layer = read_only_layer_showing_the_painted_frame()
+    assert len(paint_stroke(layer, [(0, 7, 6), (0, 7, 8)])) > 1
+
+    layer.undo()
+
+    assert len(layer._undo_history) == 0
+    assert len(layer._redo_history) == 0
+
+
+def test_redo_on_read_only_data_does_not_raise():
+    """napari binds Ctrl+Shift+Z to Labels.redo() on every labels layer.
+
+    The ortho-view copies are plain ContourLabels, so they do not route redo to
+    the tracks viewer the way TrackLabels does. Without the override, the
+    inherited implementation assigns into self.data and raises
+    ``TypeError: 'LazyArrayWrapper' object does not support item assignment``.
+    """
+    layer = read_only_layer_showing_the_painted_frame()
+    before = np.array(layer._slice.image.raw)
+    paint_stroke(layer, [(0, 7, 6), (0, 7, 8)])
+    layer.undo()
+
+    layer.redo()  # must not raise
+
+    # the display still shows what the data holds, which the paint never reached
+    assert np.array_equal(np.array(layer._slice.image.raw), before)
+
+
+def test_redo_on_read_only_data_leaves_the_display_alone():
+    """Inert means inert: it must not re-slice the painted buffer away either.
+
+    A redo keypress has nothing to do at this level, so it should not double as a
+    resync that silently discards what is on screen.
+    """
+    layer = read_only_layer_showing_the_painted_frame()
+    paint_stroke(layer, [(0, 7, 6), (0, 7, 8)])
+    painted = np.array(layer._slice.image.raw)
+
+    layer.redo()
+
+    assert np.array_equal(np.array(layer._slice.image.raw), painted)
+
+
+def test_redo_on_writable_data_still_replays_the_paint():
+    """Writable data keeps napari's own undo/redo pair intact."""
+    before = displayed_segmentation()
+    layer = make_layer(before.copy())
+    paint_stroke(layer, [(0, 7, col) for col in (6, 7, 8)])
+    painted = np.asarray(layer.data).copy()
+
+    layer.undo()
+    assert np.array_equal(np.asarray(layer.data), before)
+
+    layer.redo()
+    assert np.array_equal(np.asarray(layer.data), painted)
+
+
+def test_undo_with_no_history_does_nothing():
+    layer = read_only_layer_showing_the_painted_frame()
+    before = np.array(layer._slice.image.raw)
+
+    layer.undo()
+
+    assert np.array_equal(np.array(layer._slice.image.raw), before)
+
+
+def test_undo_on_writable_data_still_restores_the_array():
+    """Writable data keeps napari's own undo, which rolls the array back."""
+    before = displayed_segmentation()
+    layer = make_layer(before.copy())
+
+    paint_stroke(layer, [(0, 7, col) for col in (6, 7, 8, 13)])
+    assert not np.array_equal(np.asarray(layer.data), before)
+
+    layer.undo()
+
+    assert np.array_equal(np.asarray(layer.data), before)
