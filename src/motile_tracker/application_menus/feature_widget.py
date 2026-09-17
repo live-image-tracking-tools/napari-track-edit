@@ -126,6 +126,7 @@ class FeatureWidget(QWidget):
             self._tracks = tracks
             self._forget_intensity_layers()
         if tracks is None:
+            self.box.setVisible(False)
             return
 
         for feature_key, feature in self._discover_features().items():
