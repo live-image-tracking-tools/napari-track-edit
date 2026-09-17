@@ -125,6 +125,9 @@ class TrackGraph(napari.layers.Tracks):
 
         self.colormaps_dict["track_id"] = self.tracks_viewer.colormap
         self.tracks_layer_graph = copy.deepcopy(self.graph)  # for restoring graph later
+        # Which key set the layer's graph currently holds; see _set_graph. The
+        # layer was just constructed with the whole graph.
+        self._displayed_graph_key: object = "all"
         # just to 'refresh' the track_id colormap, we do not actually use turbo
         self.colormap = "turbo"
 
@@ -146,32 +149,75 @@ class TrackGraph(napari.layers.Tracks):
         self.data = track_data
         self.graph = track_edges
         self.tracks_layer_graph = copy.deepcopy(self.graph)
+        self._displayed_graph_key = "all"
         self.colormaps_dict["track_id"] = self.tracks_viewer.colormap
         # just to 'refresh' the track_id colormap, we do not actually use turbo
         self.colormap = "turbo"
 
+    def _set_graph(self, graph: dict[int, list[int]], key: object) -> None:
+        """Hand the graph to napari, but only if the visible key set changed.
+
+        The `Tracks.graph` setter revalidates every entry and then rebuilds every
+        graph vertex, looking each track id up against all points: 2.0 s for
+        34k entries over 325k points. Selecting a node in "all" mode does not
+        change which tracks are visible - only which one is highlighted, which
+        is a colour write - so the rebuild is pure waste there.
+
+        An identity check cannot catch it: `layer.graph is tracks_layer_graph` is
+        False immediately after assignment, because the setter stores a
+        normalised copy. Hence the remembered key.
+
+        Args:
+            graph (dict[int, list[int]]): The graph to display.
+            key (object): Identifies the key set `graph` was built from, either
+                "all" or a frozenset of track ids. Only the set of keys matters,
+                since `graph` is a subset of `tracks_layer_graph` by key.
+        """
+        # Safe to cache because `tracks_layer_graph` and `data` - the two things
+        # that could invalidate a rebuilt graph - are written only in __init__
+        # and _refresh, which both reset the key.
+        if key == self._displayed_graph_key:
+            return
+        self.graph = graph
+        self._displayed_graph_key = key
+
+    def _set_track_alpha(self, visible: list[int] | str) -> None:
+        """Set track opacity so that only `visible` tracks are drawn."""
+        colors = self.track_colors
+        if visible == "all":
+            colors[:, 3] = 1
+        else:
+            track_id_mask = np.isin(self.properties["track_id"], visible)
+            colors[:, 3] = 0
+            colors[track_id_mask, 3] = 1
+        # The writes above mutate the array in place, which bypasses the
+        # track_colors setter and so never emits `color_by` - the event that
+        # makes the vispy layer re-upload the colour buffer. Until this
+        # assignment the new alphas only existed on our side: `rebuild_graph`,
+        # which used to be emitted here by the graph assignment, re-uploads the
+        # *graph* subvisual only, and in a hard-coded white.
+        self.track_colors = colors
+
     def update_track_visibility(self, visible: list[int] | str) -> None:
         """Optionally show only the tracks of a current lineage"""
 
-        if visible == "all":
-            self.track_colors[:, 3] = 1
-            self.graph = self.tracks_layer_graph
-        else:
-            track_id_mask = np.isin(
-                self.properties["track_id"],
-                visible,
-            )
-            self.graph = {
-                key: self.tracks_layer_graph[key]
-                for key in visible
-                if key in self.tracks_layer_graph
-            }
+        self._set_track_alpha(visible)
 
-            self.track_colors[:, 3] = 0
-            self.track_colors[track_id_mask, 3] = 1
-            # empty dicts to not trigger update (bug?) so disable the graph entirely as a
-            # workaround
-            if len(self.graph.items()) == 0:
-                self.display_graph = False
-            else:
-                self.display_graph = True
+        if visible == "all":
+            self._set_graph(self.tracks_layer_graph, "all")
+        else:
+            self._set_graph(
+                {
+                    key: self.tracks_layer_graph[key]
+                    for key in visible
+                    if key in self.tracks_layer_graph
+                },
+                frozenset(visible),
+            )
+
+        # empty dicts to not trigger update (bug?) so disable the graph entirely as a
+        # workaround. Assigned only on a change: the setter emits unconditionally,
+        # and an "all" selection would otherwise fire an appearance event per click.
+        display_graph = len(self.graph) > 0
+        if self.display_graph != display_graph:
+            self.display_graph = display_graph
