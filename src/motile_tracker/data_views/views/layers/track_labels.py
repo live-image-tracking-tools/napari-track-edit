@@ -348,7 +348,8 @@ class TrackLabels(ContourLabels):
 
         self.tracks_viewer.undo()
 
-    def _parse_paint_event(self, event_val):
+    @staticmethod
+    def _parse_paint_event(event_val):
         """Turn a paint event into the segmentation updates funtracks expects.
 
         napari reports the atoms of an event in one of two forms, never mixed

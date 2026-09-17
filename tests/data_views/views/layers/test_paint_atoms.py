@@ -1,11 +1,17 @@
 """Tests for turning napari paint events into the masks funtracks consumes."""
 
 import numpy as np
-from funtracks.user_actions.user_update_segmentation import _create_mask_per_label
+from funtracks.user_actions.user_update_segmentation import (
+    _create_masks_from_bboxes,
+    _create_masks_from_multi_index,
+)
 from funtracks.utils.tracksdata_utils import pixels_to_td_mask
 
 from motile_tracker.data_views.views.layers.contour_labels import as_index_atom
-from motile_tracker.data_views.views.layers.track_labels import split_paint_atom
+from motile_tracker.data_views.views.layers.track_labels import (
+    updates_from_index_atoms,
+    updates_from_masked_atoms,
+)
 
 NDIM = 4  # (t, z, y, x)
 
@@ -44,8 +50,9 @@ def as_updates_the_old_way(event_val):
 
 def combine(event_val):
     """Split the event as TrackLabels does, then combine as funtracks does."""
-    updates = [update for atom in event_val for update in split_paint_atom(atom)]
-    return _create_mask_per_label(updates, NDIM)
+    if len(event_val[0]) == 3:
+        return _create_masks_from_multi_index(updates_from_index_atoms(event_val), NDIM)
+    return _create_masks_from_bboxes(updates_from_masked_atoms(event_val))
 
 
 def assert_same_updates(actual, expected):
@@ -100,17 +107,42 @@ def test_matches_the_multi_index_route():
 def test_drag_combines_atoms_of_the_same_label():
     """A drag emits one atom per mouse event; each label ends up with one mask."""
     rng = np.random.default_rng(4)
+    # the atoms are brush positions over one segmentation, so where they overlap
+    # they report the same label, as napari's do
+    labels = rng.integers(0, 3, size=(2, 20, 40, 40)).astype(np.uint32)
     event = []
     for step in range(5):
+        start = (10 + step, 20 + 2 * step, 30)
+        box = (slice(1, 2),) + tuple(
+            slice(begin, begin + size)
+            for begin, size in zip(start, (3, 4, 4), strict=True)
+        )
         mask = rng.random((1, 3, 4, 4)) < 0.7
-        old_region = rng.integers(0, 2, size=mask.shape).astype(np.uint32)
-        event.append(masked_atom(1, (10 + step, 20 + 2 * step, 30), mask, old_region))
+        event.append(masked_atom(1, start, mask, labels[box]))
 
     updates = combine(event)
 
     # the atoms overlap in label but not in position, so they must be merged
     assert len(updates) == len({old_value for _, _, old_value in updates})
     assert_same_updates(updates, as_updates_the_old_way(event))
+
+
+def test_a_pixel_reported_by_two_atoms_lands_in_one_mask():
+    """The first atom to reach a pixel holds its pre-paint value.
+
+    A later atom of the same stroke either reports the same value (read-only data,
+    never written back) or skips the pixel (writable data). Either way a pixel
+    belongs to exactly one label, so it may never show up under two of them.
+    """
+    mask = np.ones((1, 1, 2, 2), dtype=bool)
+    first = masked_atom(0, (0, 0, 0), mask, np.full(mask.shape, 5, dtype=np.uint32))
+    # a stale repeat of the same box, as if the pixels were still untouched
+    stale = masked_atom(0, (0, 0, 0), mask, np.full(mask.shape, 5, dtype=np.uint32))
+
+    updates = combine([first, stale])
+
+    assert len(updates) == 1
+    assert updates[0][0].mask.sum() == 4
 
 
 def test_data_setitem_atom_still_supported():
