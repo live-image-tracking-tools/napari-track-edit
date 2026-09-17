@@ -253,6 +253,57 @@ class ContourLabels(napari.layers.Labels):
             return
         super().data_setitem(indices, value, refresh)
 
+    def _paint_region_with_mask(
+        self,
+        slice_key,
+        mask,
+        new_label,
+        dims_to_paint,
+        refresh=True,
+        region_data=None,
+    ):
+        """Override to handle read-only data (e.g. GraphArrayView).
+
+        napari ≥0.8 equivalent of ``data_setitem`` above. This method writes the
+        painted bounding box straight back with ``self.data[slice_key] = region_data``.
+        Read-only data cannot take that write, so run the same steps napari does, minus
+        the write-back: the region is materialized as a numpy copy, so painting into it
+        records the undo atom (firing events.paint, which is what upstream code acts on)
+        and updates the display, while the underlying array is left untouched.
+        """
+
+        if hasattr(self.data, "__setitem__"):
+            super()._paint_region_with_mask(
+                slice_key, mask, new_label, dims_to_paint, refresh, region_data
+            )
+            return
+
+        # slice_key consists solely of slices, so the extracted region keeps the
+        # full data dimensionality; give the painted-dims mask matching length-1
+        # axes.
+        extra_axes = tuple(dim for dim in range(self.ndim) if dim not in dims_to_paint)
+        if extra_axes:
+            mask = np.expand_dims(mask, extra_axes)
+            if region_data is not None:
+                region_data = np.expand_dims(region_data, extra_axes)
+
+        if region_data is None:
+            region_data = np.asarray(self.data[slice_key])
+
+        effective_mask = self._apply_mask_to_data(
+            region_data, mask, new_label, slice_key
+        )
+        if effective_mask is None:
+            return
+
+        self._refresh_caches_from_region(
+            region_data, slice_key, effective_mask, new_label
+        )
+        self._accumulate_updated_slice(slice_key)
+
+        if refresh:
+            self._partial_labels_refresh()
+
     def undo(self):
         """Override undo for read-only data (e.g. GraphArrayView).
 
@@ -263,30 +314,36 @@ class ContourLabels(napari.layers.Labels):
         triggers the same paint-event callbacks that initiated the undo in the
         first place, causing a recursive loop and a TypeError.
 
-        This override breaks the loop by restoring the display buffer directly
-        from the undo history atoms, without going through data_setitem or
-        emitting any paint event.
+        This override breaks the loop by dropping the display buffer and
+        re-slicing, without going through data_setitem or emitting any paint
+        event. Only the display buffer was ever updated, the underlying array
+        still holds the pre-stroke segmentation.
 
         This method is called (via super().undo()) from TrackLabels in three
         situations: reverting a failed paint on the main layer, reverting a
         failed paint on an ortho-view copy of the layer, and rolling back an
         invalid action inside _on_paint error handling.
+
+        The undone item is dropped rather than handed to the redo queue: a paint
+        that never reached the data cannot be re-applied by this layer, and what
+        the user redoes is the funtracks action. Leaving the redo queue empty is also what
+          keeps napari's own Labels.redo(), bound to Ctrl+Shift+Z, harmless here.
         """
         if not hasattr(self.data, "__setitem__"):
             if not self._undo_history:
                 return
-            item = self._undo_history.pop()
-            self._redo_history.append(item)
-            pt_not_disp = self._get_pt_not_disp()
-            for indices, old_values, _new_value in item:
-                displayed_indices = index_in_slice(
-                    indices, pt_not_disp, self._slice.slice_input.order
-                )
-                if isinstance(old_values, np.ndarray):
-                    vis_vals = old_values[elements_in_slice(indices, pt_not_disp)]
-                else:
-                    vis_vals = np.intp(old_values)
-                self._slice.image.raw[displayed_indices] = vis_vals
+            self._undo_history.pop()
+            self._updated_slice = None  # the whole slice is about to be reloaded
             self.refresh()
         else:
             super().undo()
+
+    def redo(self):
+        """Override redo for read-only data (e.g. GraphArrayView).
+        There is nothing to do here in our use case, since we have our own history logic,
+        but because napari binds Ctrl+Shift+Z to Labels.redo() we should override here
+        in case the user tries to redo on an ortho-view, triggering the TypeError:
+        'LazyArrayWrapper' object does not support item assignment error.
+        """
+        if hasattr(self.data, "__setitem__"):
+            super().redo()

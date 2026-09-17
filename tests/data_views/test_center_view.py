@@ -12,6 +12,20 @@ from motile_tracker.data_views.views.ortho_views import initialize_ortho_views
 from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
+def visible_point_indices(layer: napari.layers.Points) -> np.ndarray:
+    """Indices of the points currently in slice.
+
+    napari renamed this private attribute from ``_indices_view`` to
+    ``_view_indices`` in 0.9 (moving the state onto the layer's slicing state),
+    and it has no public equivalent.
+    """
+
+    try:
+        return layer._view_indices
+    except AttributeError:  # napari < 0.9
+        return layer._indices_view
+
+
 def _make_single_node_graph(
     tmp_path,
     pos: list,
@@ -60,7 +74,7 @@ def _make_single_node_graph(
 def viewer(make_napari_viewer):
     """Per-test viewer for center_view tests.
 
-    These tests check viewer.dims.point and _indices_view, which depend on
+    These tests check viewer.dims.point and the visible point indices, which depend on
     viewer.dims.current_step. Napari does not reset current_step when layers
     are cleared, so a fresh viewer per test is required for isolation.
     """
@@ -111,8 +125,8 @@ class TestCenterViewWithScale:
         new_point = viewer.dims.point
         assert abs(new_point[1] - 5) < 1, f"Expected world z≈5, got {new_point[1]}"
 
-        # Verify point is visible using _indices_view
-        visible_indices = points_layer._indices_view
+        # Verify point is visible using the in-slice point indices
+        visible_indices = visible_point_indices(points_layer)
         assert node_index in visible_indices, (
             f"Point index {node_index} not in visible indices {visible_indices}. "
             f"Viewer dims.point={viewer.dims.point}"
@@ -149,8 +163,8 @@ class TestCenterViewWithScale:
         new_point = viewer.dims.point
         assert abs(new_point[1] - 10) < 1, f"Expected world z≈10, got {new_point[1]}"
 
-        # Verify point is visible using _indices_view
-        visible_indices = points_layer._indices_view
+        # Verify point is visible using the in-slice point indices
+        visible_indices = visible_point_indices(points_layer)
         assert node_index in visible_indices, (
             f"Point index {node_index} not in visible indices {visible_indices}. "
             f"Viewer dims.point={viewer.dims.point}"
@@ -191,8 +205,8 @@ class TestCenterViewWithScale:
         new_point = viewer.dims.point
         assert abs(new_point[1] - 5) < 1, f"Expected world z≈5, got {new_point[1]}"
 
-        # Verify point is visible using _indices_view
-        visible_indices = points_layer._indices_view
+        # Verify point is visible using the in-slice point indices
+        visible_indices = visible_point_indices(points_layer)
         assert node_index in visible_indices, (
             f"Point index {node_index} not in visible indices {visible_indices}. "
             f"Viewer dims.point={viewer.dims.point}"
@@ -226,8 +240,8 @@ class TestCenterViewWithScale:
         assert new_point[2] == 10  # y
         assert new_point[3] == 10  # x
 
-        # Verify point is visible using _indices_view
-        visible_indices = points_layer._indices_view
+        # Verify point is visible using the in-slice point indices
+        visible_indices = visible_point_indices(points_layer)
         assert node_index in visible_indices, (
             f"Point index {node_index} not in visible indices {visible_indices}. "
             f"Viewer dims.point={viewer.dims.point}"
@@ -265,8 +279,8 @@ class TestCenterViewWithScale:
         new_point = viewer.dims.point
         assert abs(new_point[1] - 5) < 1, f"Expected world z≈5, got {new_point[1]}"
 
-        # Verify point is visible using _indices_view
-        visible_indices = points_layer._indices_view
+        # Verify point is visible using the in-slice point indices
+        visible_indices = visible_point_indices(points_layer)
         assert node_index in visible_indices, (
             f"Point index {node_index} not in visible indices {visible_indices}. "
             f"Viewer dims.point={viewer.dims.point}"
@@ -307,8 +321,8 @@ class TestCenterViewWithScale:
         new_point = viewer.dims.point
         assert abs(new_point[1] - 5) < 1, f"Expected world z≈5, got {new_point[1]}"
 
-        # Verify point is visible using _indices_view
-        visible_indices = points_layer._indices_view
+        # Verify point is visible using the in-slice point indices
+        visible_indices = visible_point_indices(points_layer)
         assert node_index in visible_indices, (
             f"Point index {node_index} not in visible indices {visible_indices}. "
             f"Viewer dims.point={viewer.dims.point}"
@@ -356,7 +370,7 @@ class TestCenterViewWithScale:
         qtbot.wait(50)
 
         # Verify main viewer point is visible
-        main_visible = main_points_layer._indices_view
+        main_visible = visible_point_indices(main_points_layer)
         assert node_index in main_visible, (
             f"Point not visible in main viewer. "
             f"Index {node_index} not in {main_visible}"
@@ -377,9 +391,9 @@ class TestCenterViewWithScale:
         )
 
         # The ortho views use copied Points layers (not TrackPoints), so we check
-        # _indices_view on those as well
-        right_visible = right_points._indices_view
-        bottom_visible = bottom_points._indices_view
+        # the visible indices on those as well
+        right_visible = visible_point_indices(right_points)
+        bottom_visible = visible_point_indices(bottom_points)
 
         assert node_index in right_visible, (
             f"Point not visible in right ortho view. "

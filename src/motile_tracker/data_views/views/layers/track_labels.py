@@ -12,6 +12,7 @@ from napari.layers import Labels
 from napari.utils import DirectLabelColormap
 from napari.utils.action_manager import action_manager
 from napari.utils.notifications import show_info
+from tracksdata.nodes import Mask
 
 from motile_tracker.data_views.keybindings_config import (
     KEYMAP,
@@ -31,6 +32,120 @@ if TYPE_CHECKING:
     from napari.utils.events import Event
 
     from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+
+
+def updates_from_masked_atoms(atoms) -> list[tuple[Mask, int, int]]:
+    """Turn napari >= 0.8 paint atoms into one segmentation update per label.
+
+    Each atom is a ``_MaskedPaintAtom``: a bounding box, a mask of the pixels that
+    changed inside it, their values before the change, and the value painted.
+
+    Note: A stroke emits one atom per brush position, normally napari records a pixel
+    only the first time it is painted: it drops pixels that already hold the value being
+    painted. That check reads the layer's data, which we never write back (see
+    ``ContourLabels._paint_region_with_mask``), so every brush position reports its whole
+      box afresh, and a slow drag repeats the same box dozens of times. Atoms that share
+      a box are therefore mergedfirst, so that a pixel is turned into mask pixels only
+      once.
+
+    Args:
+        atoms: the atoms of one paint event, all in the mask form.
+
+    Returns:
+        list[tuple[Mask, int, int]]: one (mask, time, old value) per label painted
+            over, per brush position and time point. Each mask carries the
+            bounding box of the brush position it came from; funtracks tightens
+            them around their own pixels and combines the ones of a label.
+    """
+
+    # Merge per bounding box rather than over the whole event: a label painted
+    # over in several places stays several small masks, which is what lets
+    # funtracks tighten cheaply before it unions them.
+    merged: dict[tuple, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+    for slice_key, mask, old_values, _new_value in atoms:
+        key = tuple((sl.start, sl.stop, sl.step) for sl in slice_key)
+        seen = merged.get(key)
+        if seen is not None and seen[1].all():
+            # nothing left in this box for another atom to contribute
+            continue
+
+        old_region = np.asarray(old_values)
+        if mask is None:
+            # every pixel in the bounding box changed, so napari dropped the mask
+            # and stored a snapshot of the whole box instead
+            mask = np.ones(old_region.shape, dtype=bool)
+        else:
+            old_region = np.zeros(mask.shape, dtype=old_region.dtype)
+            old_region[mask] = old_values
+
+        if seen is None:
+            start = np.array([0 if sl.start is None else sl.start for sl in slice_key])
+            # copy: the arrays of an atom belong to napari's undo history, and the
+            # accumulator is written into below
+            merged[key] = (start, mask.copy(), old_region.copy())
+            continue
+
+        _start, seen_mask, seen_old = seen
+        # The first atom to reach a pixel holds its pre-paint value: a later atom
+        # of the same stroke either reports the same value (read-only data, which
+        # is never written back, so every atom sees the pre-stroke array) or does
+        # not report the pixel at all (writable data, where napari drops pixels
+        # that already hold the value being painted).
+        np.copyto(seen_old, old_region, where=mask & ~seen_mask)
+        seen_mask |= mask
+
+    updates = []
+    for start, mask, old_region in merged.values():
+        # tracksdata bounding boxes are spatial only, so peel the time axis off
+        # the box and report it separately
+        spatial = start[1:]
+        bbox = np.concatenate([spatial, spatial + np.array(mask.shape[1:])])
+        for step, (mask_t, old_t) in enumerate(zip(mask, old_region, strict=True)):
+            for old_value in np.unique(old_t[mask_t]):
+                changed = mask_t & (old_t == old_value)
+                updates.append(
+                    (Mask(changed, bbox=bbox), int(start[0] + step), int(old_value))
+                )
+    return updates
+
+
+def updates_from_index_atoms(atoms) -> list[tuple[tuple[np.ndarray, ...], int]]:
+    """Turn napari ≤ 0.7 paint atoms into one segmentation update per label.
+
+    Each atom is a ``data_setitem`` 3-tuple: a multi-index of the elements that
+    changed, their values before the change, and the value after it. There is no
+    bounding box to work from, so the coordinates are handed to funtracks, which
+    builds the masks.
+
+    Args:
+        atoms: the atoms of one paint event, all in the multi-index form.
+
+    Returns:
+        list[tuple[tuple[np.ndarray, ...], int]]: one (multi-index, old value) per
+            label painted over, per time point. A coordinate may appear twice in
+            an index, which funtracks is free to ignore: painting a pixel into a
+            mask is idempotent.
+    """
+
+    ndim = len(atoms[0][0])
+    indices = tuple(
+        np.concatenate([np.asarray(atom[0][axis]) for atom in atoms])
+        for axis in range(ndim)
+    )
+    old_values = np.concatenate(
+        [
+            np.broadcast_to(np.asarray(old), np.shape(atom_indices[0])).ravel()
+            for atom_indices, old, _new_value in atoms
+        ]
+    )
+
+    updates = []
+    for old_value in np.unique(old_values):
+        of_value = old_values == old_value
+        for time in np.unique(indices[0][of_value]):
+            in_slice = of_value & (indices[0] == time)
+            updates.append((tuple(axis[in_slice] for axis in indices), int(old_value)))
+    return updates
 
 
 def new_label(layer: TrackLabels):
@@ -233,46 +348,30 @@ class TrackLabels(ContourLabels):
 
         self.tracks_viewer.undo()
 
-    def _parse_paint_event(self, event_val):
-        """_summary_
+    @staticmethod
+    def _parse_paint_event(event_val):
+        """Turn a paint event into the segmentation updates funtracks expects.
+
+        napari reports the atoms of an event in one of two forms, never mixed
+        within an event: the mask form of napari >= 0.8, and the multi-index form
+        that ``data_setitem`` still uses.
 
         Args:
-            event_val (list[tuple]): A list of paint "atoms" generated by the labels
-                layer. Each atom is a 3-tuple of arrays containing:
-                - a numpy multi-index, pointing to the array elements that were
-                changed (a tuple with len ndims)
-                - the values corresponding to those elements before the change
-                - the value after the change
+            event_val (list[tuple]): the paint "atoms" the labels layer recorded
+                for this event.
+
         Returns:
-            tuple(int, list[tuple]): The new value, and a list of node update actions
-                defined by the time point and node update item
-                Each "action" is a 2-tuple containing:
-                - a numpy multi-index, pointing to the array elements that were
-                changed (a tuple with len ndims)
-                - the value before the change
+            list[tuple]: the updates for every label painted over, in whichever of
+                the two forms ``UserUpdateSegmentation`` was handed. Empty when the
+                event changed nothing.
         """
 
-        new_value = event_val[-1][-1]
-        ndim = len(event_val[-1][0])
-        concatenated_indices = tuple(
-            np.concatenate([ev[0][dim] for ev in event_val]) for dim in range(ndim)
-        )
-        concatenated_values = np.concatenate([ev[1] for ev in event_val])
-        old_values = np.unique(concatenated_values)
-        actions = []
-        for old_value in old_values:
-            mask = concatenated_values == old_value
-            indices = tuple(concatenated_indices[dim][mask] for dim in range(ndim))
-            time_points = np.unique(indices[0])
-            for time_point in time_points:
-                time_mask = indices[0] == time_point
-                actions.append(
-                    (
-                        tuple(indices[dim][time_mask] for dim in range(ndim)),
-                        int(old_value),
-                    )
-                )
-        return new_value, actions
+        if not event_val:
+            return []
+
+        if len(event_val[0]) == 3:  # multi-index atoms
+            return updates_from_index_atoms(event_val)
+        return updates_from_masked_atoms(event_val)
 
     def _revert_paint(self, _, source_layer: Labels | None = None):
         """Revert a paint event after it fails validation (no motile tracker Actions have
@@ -301,9 +400,12 @@ class TrackLabels(ContourLabels):
             self._ensure_valid_label()
             target_value = self.selected_label
 
+        updated_pixels = self._parse_paint_event(event.value)
+        if not updated_pixels:
+            return
+
         with self.events.selected_label.blocker():
             try:
-                _, updated_pixels = self._parse_paint_event(event.value)
                 UserUpdateSegmentation(
                     tracks=self.tracks_viewer.tracks,
                     new_value=target_value,
