@@ -17,39 +17,6 @@ from scipy import ndimage as ndi
 from motile_tracker.data_views.lazy_array_wrapper import LazyArrayWrapper
 
 
-def as_index_atom(atom):
-    """Normalize a napari paint history atom to (multi-index, old values, new value).
-
-    napari 0.8 added ``_MaskedPaintAtom`` for the mask-based tools. Expand that back
-    into explicit indices, so the paint and undo handling only hves to deal with one
-    shape.
-
-    Args:
-        atom: a paint "atom" from the labels layer's undo history.
-
-    Returns:
-        tuple: the multi-index of the changed elements (a tuple with len ndims),
-            their values before the change, and the value after the change.
-    """
-
-    if len(atom) == 3:  # a data_setitem atom, already index based
-        return atom
-
-    slice_key, mask, old_values, new_value = atom
-    if mask is None:
-        # every pixel in the bounding box changed, so napari dropped the mask
-        # and stored a snapshot of the whole box instead
-        mask = np.ones(np.shape(old_values), dtype=bool)
-        old_values = np.asarray(old_values).reshape(-1)
-
-    # mask is relative to the bounding box, so shift it back into data coordinates
-    indices = tuple(
-        axis_indices + (0 if sl.start is None else sl.start)
-        for axis_indices, sl in zip(np.nonzero(mask), slice_key, strict=True)
-    )
-    return indices, old_values, new_value
-
-
 def left_only_draw(layer, event):
     if event.button != 1:
         return  # skip non‑left
@@ -347,30 +314,36 @@ class ContourLabels(napari.layers.Labels):
         triggers the same paint-event callbacks that initiated the undo in the
         first place, causing a recursive loop and a TypeError.
 
-        This override breaks the loop by restoring the display buffer directly
-        from the undo history atoms, without going through data_setitem or
-        emitting any paint event.
+        This override breaks the loop by dropping the display buffer and
+        re-slicing, without going through data_setitem or emitting any paint
+        event. Only the display buffer was ever updated, the underlying array
+        still holds the pre-stroke segmentation.
 
         This method is called (via super().undo()) from TrackLabels in three
         situations: reverting a failed paint on the main layer, reverting a
         failed paint on an ortho-view copy of the layer, and rolling back an
         invalid action inside _on_paint error handling.
+
+        The undone item is dropped rather than handed to the redo queue: a paint
+        that never reached the data cannot be re-applied by this layer, and what
+        the user redoes is the funtracks action. Leaving the redo queue empty is also what
+          keeps napari's own Labels.redo(), bound to Ctrl+Shift+Z, harmless here.
         """
         if not hasattr(self.data, "__setitem__"):
             if not self._undo_history:
                 return
-            item = self._undo_history.pop()
-            self._redo_history.append(item)
-            pt_not_disp = self._get_pt_not_disp()
-            for indices, old_values, _new_value in map(as_index_atom, item):
-                displayed_indices = index_in_slice(
-                    indices, pt_not_disp, self._slice.slice_input.order
-                )
-                if isinstance(old_values, np.ndarray):
-                    vis_vals = old_values[elements_in_slice(indices, pt_not_disp)]
-                else:
-                    vis_vals = np.intp(old_values)
-                self._slice.image.raw[displayed_indices] = vis_vals
+            self._undo_history.pop()
+            self._updated_slice = None  # the whole slice is about to be reloaded
             self.refresh()
         else:
             super().undo()
+
+    def redo(self):
+        """Override redo for read-only data (e.g. GraphArrayView).
+        There is nothing to do here in our use case, since we have our own history logic,
+        but because napari binds Ctrl+Shift+Z to Labels.redo() we should override here
+        in case the user tries to redo on an ortho-view, triggering the TypeError:
+        'LazyArrayWrapper' object does not support item assignment error.
+        """
+        if hasattr(self.data, "__setitem__"):
+            super().redo()
