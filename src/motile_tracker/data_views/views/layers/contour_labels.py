@@ -290,3 +290,8 @@ class ContourLabels(napari.layers.Labels):
             self.refresh()
         else:
             super().undo()
+
+
+# Block napari's default "m" (new label) shortcut, getting a new label goes through
+# TracksViewer.request_new_track instead.
+ContourLabels.bind_key("m", ..., overwrite=True)

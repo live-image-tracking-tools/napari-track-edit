@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 
-from motile_tracker.data_views.views.layers.track_labels import new_label
 from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
@@ -83,7 +82,7 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
     )  # ensure this is active when testing undo
 
     # Test selecting a new label
-    new_label(tracks_viewer.tracking_layers.seg_layer)
+    tracks_viewer.tracking_layers.seg_layer.new_label()
     assert tracks_viewer.tracking_layers.seg_layer.selected_label == 5
     assert tracks_viewer.selected_track == 4  # new track id
 
@@ -176,7 +175,6 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
 
 
 def test_ensure_valid_label(viewer, solution_tracks_3d_with_division):
-
     # Create example tracks
     tracks_viewer = TracksViewer.get_instance(viewer)
     tracks_viewer.update_tracks(tracks=solution_tracks_3d_with_division, name="test")
@@ -223,7 +221,7 @@ def test_ensure_valid_label(viewer, solution_tracks_3d_with_division):
     assert tracks_viewer.selected_track == 1  # updated to 1, matching label 2
 
     # Verify starting a new track via the new_label function
-    new_label(tracks_viewer.tracking_layers.seg_layer)
+    tracks_viewer.tracking_layers.seg_layer.new_label()
     assert tracks_viewer.tracking_layers.seg_layer.selected_label == 5  # next available
     # value
     assert tracks_viewer.selected_track == 4  # new track id (still unused)
@@ -298,7 +296,7 @@ def test_paint_with_preserve_labels_paints_into_background(
     step[0] = 0  # node 1 lives at t=0, bbox 45-54^3
     viewer.dims.current_step = step
 
-    new_label(seg_layer)
+    seg_layer.new_label()
     new_value = seg_layer.selected_label
 
     seg_layer.preserve_labels = True
@@ -333,7 +331,7 @@ def test_paint_with_preserve_labels_does_not_overwrite_existing(
     step[0] = 0
     viewer.dims.current_step = step
 
-    new_label(seg_layer)
+    seg_layer.new_label()
     new_value = seg_layer.selected_label
 
     seg_layer.preserve_labels = True
