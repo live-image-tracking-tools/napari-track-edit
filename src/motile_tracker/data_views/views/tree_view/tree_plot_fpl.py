@@ -131,6 +131,7 @@ class TreePlot(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
 
         self._closed = False  # set by close_figure(); the canvas is gone after that
+        self._scrolled = False  # set by the wheel handler, read via `scrolled`
         self.view_direction = "vertical"
         self.plot_type = "tree"
         self.feature = None
@@ -255,18 +256,39 @@ class TreePlot(QWidget):
         )
         self._subplot.add_animations(*self._animations)
 
-        # canvas mouse handling: right-click reset + shift-drag box-select
-        self._pointer_handlers = (
+        # canvas mouse handling: right-click reset + shift-drag box-select, plus
+        # scroll bookkeeping so a zoom modifier key can be told apart from a plain
+        # keyboard shortcut (see `scrolled`)
+        self._canvas_handlers = (
             (self._on_canvas_pointer_down, "pointer_down"),
             (self._on_canvas_pointer_move, "pointer_move"),
             (self._on_canvas_pointer_up, "pointer_up"),
+            (self._on_canvas_wheel, "wheel"),
         )
-        for handler, event_type in self._pointer_handlers:
+        for handler, event_type in self._canvas_handlers:
             self._figure.renderer.add_event_handler(handler, event_type)
 
     # ------------------------------------------------------------------ #
     # pan/zoom + X/Y axis lock
     # ------------------------------------------------------------------ #
+    @property
+    def scrolled(self) -> bool:
+        """Whether the user scrolled since the last `reset_scrolled` call.
+
+        X and Y double as zoom modifiers (held down while scrolling) and as plain
+        keyboard shortcuts, so TreeWidget resets this when such a key goes down and
+        checks it when the key comes back up.
+        """
+        return self._scrolled
+
+    def reset_scrolled(self) -> None:
+        """Forget any scrolling seen so far."""
+        self._scrolled = False
+
+    def _on_canvas_wheel(self, ev) -> None:
+        """Record that the user scrolled over the canvas."""
+        self._scrolled = True
+
     def setMouseEnabled(self, x: bool, y: bool) -> None:  # noqa: N802 (Qt-style name)
         """Restrict zoom/pan to the given axes (X or Y key held). Reconfigures the
         subplot's own PanZoomController so it stays correctly event-registered."""
@@ -296,7 +318,7 @@ class TreePlot(QWidget):
         for animation in self._animations:
             with contextlib.suppress(Exception):
                 self._subplot.remove_animation(animation)
-        for handler, event_type in self._pointer_handlers:
+        for handler, event_type in self._canvas_handlers:
             with contextlib.suppress(Exception):
                 self._figure.renderer.remove_event_handler(handler, event_type)
         with contextlib.suppress(Exception):
@@ -738,6 +760,14 @@ class TreePlot(QWidget):
             self._id_to_row = {}
             self._base_sizes = np.empty(0, dtype=np.float32)
             self._lane_track_ids = {}
+            # the per-row arrays describe the data that just went away; leaving
+            # them in place makes _reset_view frame the camera on coordinates
+            # that are no longer drawn
+            self._positions = np.empty((0, 3), dtype=np.float32)
+            self._base_colors = np.empty((0, 4), dtype=np.float32)
+            self._row_track_ids = np.empty(0, dtype=np.int64)
+            self._row_times = np.empty(0, dtype=np.float32)
+            self._row_lineage_ids = None
             return
 
         self._node_ids = df["node_id"].to_numpy()

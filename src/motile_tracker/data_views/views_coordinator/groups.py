@@ -241,6 +241,10 @@ class CollectionWidget(QWidget):
         self.collection_list.clear()
         self.selected_collection = None  # set back to None
 
+        if self.tracks_viewer.tracks is None:
+            # nothing is loaded, so the cleared list above is the whole answer
+            return
+
         # find existing group features on Tracks
         group_features = [
             (group_name, group_dict)

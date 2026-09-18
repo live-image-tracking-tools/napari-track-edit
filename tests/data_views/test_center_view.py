@@ -393,3 +393,86 @@ class TestCenterViewWithScale:
         )
 
         ortho_manager.cleanup()
+
+
+class TestCenterViewInEditingMode:
+    """Test that the restriction on centering while a tracking layer is in an editing
+    mode only applies to interactions in the napari canvas.
+
+    Centering while painting is annoying, but requests coming from the tree view, the
+    table or the menus should still center, whatever mode the layers are in.
+    """
+
+    node_point = (0, 5, 10, 10)  # the location of node 1
+    away_point = (1, 15, 15, 15)  # somewhere else, to center away from
+
+    def _make_tracks_viewer(self, viewer, tmp_path, segmentation: bool) -> TracksViewer:
+        """Set up a tracks viewer with a single node at world position [5, 10, 10]."""
+
+        if segmentation:
+            graph = _make_single_node_graph(
+                tmp_path,
+                pos=[5, 10, 10],
+                seg_bbox=[4, 9, 9, 6, 11, 11],
+                seg_shape=(2, 20, 20, 20),
+            )
+        else:
+            # without a segmentation, an image layer is needed to give the viewer a
+            # dims range: with only a single point, the range is degenerate and
+            # dims.point cannot be moved off the node
+            viewer.add_image(np.zeros((2, 20, 20, 20)), name="raw_image")
+            graph = _make_single_node_graph(tmp_path, pos=[5, 10, 10])
+
+        tracks = SolutionTracks(
+            graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t"
+        )
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(tracks=tracks, name="test")
+        return tracks_viewer
+
+    def test_seg_layer_mode_only_restricts_the_canvas(self, viewer, tmp_path):
+        """With a segmentation layer, its mode decides whether canvas interactions
+        center, and requests from the other views center regardless."""
+
+        tracks_viewer = self._make_tracks_viewer(viewer, tmp_path, segmentation=True)
+        seg_layer = tracks_viewer.tracking_layers.seg_layer
+        seg_layer.mode = "paint"
+
+        # a request from another view (tree view, table, menus) centers in paint mode
+        viewer.dims.point = self.away_point
+        tracks_viewer.center_on_node(1)
+        assert viewer.dims.point == self.node_point
+
+        # the same request from the canvas does not
+        viewer.dims.point = self.away_point
+        with tracks_viewer.viewer_interaction():
+            tracks_viewer.center_on_node(1)
+        assert viewer.dims.point == self.away_point
+
+        # ... but it does once the layer is back in pan_zoom mode
+        seg_layer.mode = "pan_zoom"
+        with tracks_viewer.viewer_interaction():
+            tracks_viewer.center_on_node(1)
+        assert viewer.dims.point == self.node_point
+
+    def test_points_layer_mode_restricts_the_canvas_without_seg_layer(
+        self, viewer, tmp_path
+    ):
+        """Without a segmentation layer, the points layer mode decides.
+
+        Selecting a point with the select tool goes through _update_selection (not
+        process_click), so that path has to be marked as a canvas interaction too.
+        """
+
+        tracks_viewer = self._make_tracks_viewer(viewer, tmp_path, segmentation=False)
+        points_layer = tracks_viewer.tracking_layers.points_layer
+        points_layer.mode = "select"
+
+        # selecting a point in the canvas fires items_changed -> _update_selection
+        viewer.dims.point = self.away_point
+        points_layer.selected_data = {points_layer.node_index_dict[1]}
+        assert viewer.dims.point == self.away_point
+
+        # a request from another view still centers, whatever the points layer mode is
+        tracks_viewer.center_on_node(1)
+        assert viewer.dims.point == self.node_point
