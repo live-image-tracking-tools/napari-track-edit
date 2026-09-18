@@ -14,6 +14,7 @@ from napari.utils._indexing import elements_in_slice, index_in_slice
 from napari.utils.events import Event
 from scipy import ndimage as ndi
 
+from motile_tracker.data_views.keybindings_config import KEYBINDINGS
 from motile_tracker.data_views.lazy_array_wrapper import LazyArrayWrapper
 
 
@@ -292,6 +293,7 @@ class ContourLabels(napari.layers.Labels):
             super().undo()
 
 
-# Block napari's default "m" (new label) shortcut, getting a new label goes through
-# TracksViewer.request_new_track instead.
-ContourLabels.bind_key("m", ..., overwrite=True)
+# Block napari's default new label shortcut on the key(s) that start a new track,
+# getting a new label goes through TracksViewer.request_new_track instead.
+for _key in KEYBINDINGS["request_new_track"]["napari_keys"]:
+    ContourLabels.bind_key(_key, ..., overwrite=True)

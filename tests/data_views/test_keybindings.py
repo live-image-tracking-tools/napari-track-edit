@@ -49,15 +49,18 @@ def test_m_is_not_naparis_new_label(viewer, solution_tracks_3d_with_division):
     tracks_viewer.update_tracks(tracks=solution_tracks_3d_with_division, name="test")
     seg_layer = tracks_viewer.tracking_layers.seg_layer
 
+    seg_layer.selected_label = 2  # an existing label, so track 1 is the current track
+    assert tracks_viewer.selected_track == 1
+
     seg_layer.keymap[M](seg_layer)
 
     # a new label to paint with, and a track id to go with it
-    assert not tracks_viewer.tracks.graph.has_node(seg_layer.selected_label)
-    assert tracks_viewer.selected_track not in tracks_viewer.tracks.track_id_to_node
+    assert seg_layer.selected_label == 5  # next available label
+    assert tracks_viewer.selected_track == 4  # next available track id
 
 
 def test_m_without_segmentation_only_starts_a_new_track_id(
-    viewer, solution_tracks_3d_without_segmentation
+    viewer, solution_tracks_3d_without_segmentation, click_node
 ):
     """Without a labels layer there is no label to hand out, but [M] should still be
     bound on the points layer and give a fresh track id to place points in."""
@@ -70,6 +73,9 @@ def test_m_without_segmentation_only_starts_a_new_track_id(
 
     assert tracks_viewer.tracking_layers.seg_layer is None
     assert _binds_new_track(points_layer, tracks_viewer)
+
+    click_node(tracks_viewer, 1)  # selects the track this node belongs to
+    assert tracks_viewer.selected_track in tracks_viewer.tracks.track_id_to_node
 
     points_layer.keymap[M](points_layer)
 
