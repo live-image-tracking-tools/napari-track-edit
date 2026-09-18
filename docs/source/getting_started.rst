@@ -116,7 +116,7 @@ Instead of automatic tracking, it is also possible to manually track from scratc
 
 Displaying feature measurements
 *******************************
-If you are tracking with a segmentation layer, you can select size and shape features to measure in the ``Features`` widget.
+If you are tracking with a segmentation layer, you can select size, shape, and intensity features to measure in the ``Features`` widget.
 Once selected, the measurements for these features will appear in the ``Lineage View`` (select ``Plot`` > ``Feature`` to display them), and in the ``Table`` widget.
 
 .. _save-load-vs-import-export:
