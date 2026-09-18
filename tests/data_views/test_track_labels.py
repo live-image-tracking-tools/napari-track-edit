@@ -174,6 +174,41 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
     )  # back at 5
 
 
+def test_paint_after_undoing_a_painted_node(viewer, solution_tracks_3d_with_division):
+    """Painting again after undoing a painted node should make a new node.
+
+    Undo soft-deletes the node: it leaves the solution but keeps its id in the full
+    graph, and funtracks cannot paint onto such an id (revive-by-paint). So the layer
+    must hand out a label that is unused in the full graph, not just in the solution.
+    """
+
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_3d_with_division, name="test")
+    seg_layer = tracks_viewer.tracking_layers.seg_layer
+    seg_layer.mode = "paint"
+
+    step = list(viewer.dims.current_step)
+    step[0] = 3
+    viewer.dims.current_step = step
+
+    seg_layer.new_label()
+    event_val = create_event_val(
+        tp=3, z=(15, 20), y=(45, 50), x=(75, 80), old_val=0, target_val=60
+    )
+    seg_layer._on_paint(MockEvent(event_val))
+    assert 5 in tracks_viewer.tracks.graph_solution.node_ids()
+
+    tracks_viewer.undo()
+    # node 5 is soft-deleted: gone from the solution, still present in the full graph
+    assert 5 not in tracks_viewer.tracks.graph_solution.node_ids()
+    assert tracks_viewer.tracks.graph_full.has_node(5)
+
+    # painting again makes a new node instead of reviving the soft-deleted one
+    seg_layer._on_paint(MockEvent(event_val))
+    assert seg_layer.selected_label == 6
+    assert 6 in tracks_viewer.tracks.graph_solution.node_ids()
+
+
 def test_ensure_valid_label(viewer, solution_tracks_3d_with_division):
     # Create example tracks
     tracks_viewer = TracksViewer.get_instance(viewer)

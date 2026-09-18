@@ -44,7 +44,16 @@ def _new_label(layer: TrackLabels, new_track_id=True):
             it to the selected_track attribute. Defaults to True.
     """
 
-    new_selected_label = max(layer.tracks_viewer.tracks.graph.node_ids(), default=0) + 1
+    tracks = layer.tracks_viewer.tracks
+    if hasattr(tracks, "get_next_node_id"):
+        # funtracks caches the highest id in use, so this does not scan the graph
+        new_selected_label = tracks.get_next_node_id()
+    else:
+        # TODO: drop once the funtracks pin includes get_next_node_id (funtracks #299).
+        # Scan graph_full, not the solution: a soft-deleted node (e.g. one that was
+        # undone) keeps its id, and painting onto such an id is not supported. This is
+        # O(number of nodes), and a full table query on a database-backed graph.
+        new_selected_label = max(tracks.graph_full.node_ids(), default=0) + 1
     if new_track_id or layer.tracks_viewer.selected_track is None:
         layer.tracks_viewer.set_new_track_id()
     layer.selected_label = new_selected_label
@@ -474,6 +483,7 @@ class TrackLabels(ContourLabels):
             else:
                 # if there is already a node in that track in this frame, edit that
                 # instead
+                edit = False
                 if (
                     self.tracks_viewer.selected_track
                     in self.tracks_viewer.tracks.track_id_to_node
@@ -486,6 +496,7 @@ class TrackLabels(ContourLabels):
                             == current_timepoint
                         ):
                             self.selected_label = int(node)
+                            edit = True
                             break
 
                 elif self.tracks_viewer.selected_track is None:
@@ -493,6 +504,15 @@ class TrackLabels(ContourLabels):
                         self.tracks_viewer.tracks.get_next_track_id()
                     )
                     update_colormap = True
+
+                if not edit and self.tracks_viewer.tracks.graph_full.has_node(
+                    int(self.selected_label)
+                ):
+                    # the label names a soft-deleted node (for example one that was
+                    # just undone). Painting onto it is not supported, so get a fresh
+                    # label, keeping the current track id.
+                    _new_label(self, new_track_id=False)
+                    update_colormap = False
 
         # update color and emit signal
         self.tracks_viewer.set_track_id_color(self.tracks_viewer.selected_track)
