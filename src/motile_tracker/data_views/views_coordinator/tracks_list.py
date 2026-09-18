@@ -139,6 +139,10 @@ class TracksList(QGroupBox):
     view_tracks = Signal(Tracks, str)
     request_colormap = Signal()
 
+    tracks_cleared = Signal()
+    """Emitted when the last tracks are removed from the list, so that the views
+    can stop showing a tracks object the application no longer holds."""
+
     tracks_saved = Signal(object, Path)
     """Emitted after tracks are saved to disk. Arguments: (tracks, path).
     Dependent applications can connect to this signal to save additional
@@ -397,6 +401,12 @@ class TracksList(QGroupBox):
         """
         row = self.tracks_list.indexFromItem(item).row()
         self.tracks_list.takeItem(row)
+        if self.tracks_list.count() == 0:
+            # An empty selection and an empty list are different states, and only
+            # the second one means there is nothing left to show. Qt also drives
+            # _selection_changed only when the removed row happened to be the
+            # selected one, so the emptying cannot be picked up from there.
+            self.tracks_cleared.emit()
 
     def load_tracks(self):
         """Load tracks from disk, depending on the choice in the dropdown menu.

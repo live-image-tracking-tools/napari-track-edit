@@ -6,6 +6,7 @@ segmentation inclusion.
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -21,6 +22,7 @@ from funtracks.import_export import (
 )
 
 from motile_tracker.import_export.menus.import_dialog import ImportDialog
+from motile_tracker.import_export.menus.prop_map_widget import StandardFieldMapWidget
 from motile_tracker.motile.backend.motile_run import MotileRun
 from motile_tracker.motile.backend.solver_params import SolverParams
 
@@ -130,6 +132,93 @@ def test_import_dialog_csv(qtbot, small_csv, dim_3d, include_seg):
             assert optional["area"]["recompute"].isEnabled() is True
         else:
             assert optional["area"]["recompute"].isEnabled() is False
+
+
+class TestInitialFieldMapping:
+    """Guessing which column is which, before the user corrects it."""
+
+    PROPS = [
+        "parent_id",
+        "area",
+        "solution",
+        "z",
+        "mask",
+        "t",
+        "frontier",
+        "bbox",
+        "y",
+        "x",
+    ]
+
+    # What the CSV importer asks for, which the geff one does not: an id column
+    # per node and a parent pointer to build edges from.
+    CSV_FIELDS = [
+        "id",
+        "parent_id",
+        "time",
+        "y",
+        "x",
+        "tracklet_id",
+        "lineage_id",
+        "seg_id",
+    ]
+
+    def _mapping(
+        self, props: list[str], standard_fields: list[str] | None = None
+    ) -> dict[str, str]:
+        """Call the guesser without building a widget (it needs no Qt)."""
+        state = SimpleNamespace(
+            node_attrs=props,
+            metadata={},
+            standard_fields=standard_fields
+            or [
+                "time",
+                "z",
+                "y",
+                "x",
+                "seg_id",
+                "tracklet_id",
+                "lineage_id",
+            ],
+        )
+        return StandardFieldMapWidget._get_initial_mapping(state)
+
+    def test_time_is_taken_from_t(self):
+        """ "t" is what every funtracks graph calls time, and fuzzy matching misses it.
+
+        "time" scores 0.50 against "frontier" and only 0.40 against "t", so
+        without the alias the guess lands on an unrelated float column and the
+        import fails on the -1.0 values in it.
+        """
+        assert self._mapping(self.PROPS)["time"] == "t"
+
+    def test_parent_id_is_not_guessed_as_a_track_id(self):
+        """It points at another node, but scores 0.60 against "tracklet_id"."""
+        mapping = self._mapping(self.PROPS)
+
+        assert mapping["tracklet_id"] == "None"
+        assert mapping["lineage_id"] == "None"
+
+    def test_a_reserved_column_still_fills_its_own_field(self):
+        """Keeping "id" away from other fields must not keep it from "id".
+
+        A CSV writing its columns in capitals is ordinary, and the exact pass is
+        case-sensitive, so this is the common way an id column arrives.
+        """
+        mapping = self._mapping(["ID", "PARENT_ID", "TIME", "Y", "X"], self.CSV_FIELDS)
+
+        assert mapping["id"] == "ID"
+        assert mapping["parent_id"] == "PARENT_ID"
+        assert mapping["time"] == "TIME"
+
+    def test_node_id_fills_the_id_field(self):
+        mapping = self._mapping(["node_id", "t", "y", "x"], self.CSV_FIELDS)
+
+        assert mapping["id"] == "node_id"
+        assert mapping["time"] == "t"
+
+    def test_a_real_track_id_is_still_found(self):
+        assert self._mapping([*self.PROPS, "track_id"])["tracklet_id"] == "track_id"
 
 
 class TestPropMapWidgetKeys:
