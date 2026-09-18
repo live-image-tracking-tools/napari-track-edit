@@ -6,7 +6,7 @@ on its trailing dimensions, so the tracks occupy the last ``ndim_tracks`` world 
 the viewer. All additional leading dimensions are for visualization only.
 
 ``dims.order`` only permutes how axes are *displayed*. ``dims.point``,
-``dims.current_step`` and ``dims.range`` stay indexed by world axis, and``roll()`` and
+``dims.current_step`` and ``dims.range`` stay indexed by world axis, and ``roll()`` and
 ``transpose()`` touch nothing but ``order``. So rolling or transposing with the napari
 buttons never moves an axis from one world index to another, and the map between tracks
 axes and world axes does not have to be remembered across a roll. A roll can put an extra
@@ -26,8 +26,8 @@ def world_to_layer_axis(
     """Map a viewer (world) axis onto a layer's own axis, or None if it has none.
 
     A layer with fewer dimensions than the viewer has no axis at all corresponding to the
-    leading world axes, and subtracting the ndim_offset there gives a negative index
-    that numpy would silently wrap to the wrong end of the array instead of raising.
+    leading world axes, and subtracting the offset there gives a negative index that
+    numpy would silently wrap to the wrong end of the array instead of raising.
 
     Args:
         world_axis (int): Axis index in the viewer's world coordinate system.
@@ -50,8 +50,9 @@ class TracksDims:
     """Where a Tracks object's axes sit among the viewer's world axes.
 
     The tracks take the last ``ndim_tracks`` world axes; ``ndim_offset`` counts the
-    extra ones in front. Meant to be built at the point of use rather than stored,
-    because ``ndim_world`` changes when layers are added or removed.
+    extra ones in front, which are for visualization only. Meant to be built at the
+    point of use rather than stored, because ``ndim_world`` changes when layers are
+    added or removed.
 
     To know where a layer sits with respect to the viewer, use layer.ndim as ndim_world.
 
@@ -78,57 +79,20 @@ class TracksDims:
 
     @property
     def ndim_offset(self) -> int:
-        """Number of extra world axes in front of the tracks' own axes."""
+        """Number of extra world axes in front of the tracks' own axes.
+
+        Also the index of the first tracks axis, so ``values[dims.ndim_offset:]`` is
+        the tracks' part of anything indexed by world axis (``dims.point``,
+        ``dims.current_step``, ``dims.range``, the axis labels).
+        """
 
         return self.ndim_world - self.ndim_tracks
-
-    @property
-    def extra_axes(self) -> tuple[int, ...]:
-        """World axes that are not tracks axes, for visualization only."""
-
-        return tuple(range(self.ndim_offset))
-
-    @property
-    def world_axes(self) -> tuple[int, ...]:
-        """World axes the tracks span, in tracks order (time first)."""
-
-        return tuple(range(self.ndim_offset, self.ndim_world))
 
     @property
     def time_axis(self) -> int:
         """World axis carrying time, which is the tracks' first axis."""
 
         return self.ndim_offset
-
-    @property
-    def spatial_axes(self) -> tuple[int, ...]:
-        """World axes carrying the spatial dimensions ((z,) y, x)."""
-
-        return tuple(range(self.ndim_offset + 1, self.ndim_world))
-
-    def is_tracks_axis(self, world_axis: int) -> bool:
-        """Whether a world axis is one of the tracks' own axes."""
-
-        return self.ndim_offset <= world_axis < self.ndim_world
-
-    def to_world(self, tracks_axis: int) -> int:
-        """World axis for a tracks axis (0 being time).
-
-        Raises:
-            IndexError: If ``tracks_axis`` is not an axis of the tracks.
-        """
-
-        if not 0 <= tracks_axis < self.ndim_tracks:
-            raise IndexError(
-                f"Tracks axis {tracks_axis} out of range for "
-                f"{self.ndim_tracks}-dimensional tracks"
-            )
-        return tracks_axis + self.ndim_offset
-
-    def to_tracks(self, world_axis: int) -> int | None:
-        """Tracks axis for a world axis, or None if it is an extra axis."""
-
-        return world_to_layer_axis(world_axis, self.ndim_world, self.ndim_tracks)
 
     def embed_point(
         self, location: Sequence[float], point: Sequence[float]
@@ -145,6 +109,10 @@ class TracksDims:
         Returns:
             list[float]: A point of length ``ndim_world``, ready to assign to
                 ``viewer.dims.point``.
+
+        Raises:
+            ValueError: If either sequence has the wrong length, which would
+                otherwise silently produce a point napari cannot use.
         """
 
         if len(location) != self.ndim_tracks:
@@ -160,14 +128,3 @@ class TracksDims:
         embedded = list(point)
         embedded[self.ndim_offset :] = list(location)
         return embedded
-
-    def take(self, values: Sequence) -> tuple:
-        """The tracks-axis part of a world-indexed sequence.
-
-        For pulling the tracks' own values out of ``dims.point``,
-        ``dims.current_step``, ``dims.range`` etc.
-        """
-
-        if len(values) != self.ndim_world:
-            raise ValueError(f"Expected {self.ndim_world} values, got {len(values)}")
-        return tuple(values[self.ndim_offset :])

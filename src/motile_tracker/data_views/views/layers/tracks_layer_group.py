@@ -160,11 +160,6 @@ class TracksLayerGroup:
         dims = TracksDims(self.viewer.dims.ndim, self.tracks.ndim)
 
         location = self.tracks.get_position(node, incl_time=True)
-        if len(location) != dims.ndim_tracks:
-            raise ValueError(
-                f"Location {location} does not match the number of dimensions of the "
-                f"tracks ({dims.ndim_tracks})"
-            )
 
         # Retrieve the tracks point in the viewer dimensions.
         # Set dims.point directly with world coordinates, napari will convert the step

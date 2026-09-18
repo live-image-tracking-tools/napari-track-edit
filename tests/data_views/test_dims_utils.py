@@ -105,35 +105,17 @@ class TestWorldToLayerAxis:
 
 class TestTracksDims:
     @pytest.mark.parametrize(
-        ("ndim_world", "ndim_offset", "extra", "world_axes", "time", "spatial"),
-        [
-            (3, 0, (), (0, 1, 2), 0, (1, 2)),
-            (4, 1, (0,), (1, 2, 3), 1, (2, 3)),
-            (5, 2, (0, 1), (2, 3, 4), 2, (3, 4)),
-        ],
+        ("ndim_world", "ndim_offset"),
+        [(3, 0), (4, 1), (5, 2)],
     )
-    def test_axis_bookkeeping(
-        self, ndim_world, ndim_offset, extra, world_axes, time, spatial
-    ):
+    def test_the_tracks_take_the_trailing_axes(self, ndim_world, ndim_offset):
+        """The extra axes sit in front, so the tracks start at ``ndim_offset``."""
+
         dims = TracksDims(ndim_world=ndim_world, ndim_tracks=3)
 
         assert dims.ndim_offset == ndim_offset
-        assert dims.extra_axes == extra
-        assert dims.world_axes == world_axes
-        assert dims.time_axis == time
-        assert dims.spatial_axes == spatial
-        assert not any(dims.is_tracks_axis(axis) for axis in extra)
-        assert all(dims.is_tracks_axis(axis) for axis in world_axes)
-        assert not dims.is_tracks_axis(ndim_world)
-
-    def test_axes_round_trip(self):
-        dims = TracksDims(ndim_world=5, ndim_tracks=4)
-
-        for tracks_axis in range(4):
-            assert dims.to_tracks(dims.to_world(tracks_axis)) == tracks_axis
-        assert dims.to_tracks(0) is None
-        with pytest.raises(IndexError):
-            dims.to_world(4)
+        # time is the tracks' first axis, so it lands on the first non-extra axis
+        assert dims.time_axis == ndim_offset
 
     @pytest.mark.parametrize(
         ("ndim_world", "ndim_tracks", "match"),
@@ -168,10 +150,3 @@ class TestTracksDims:
             dims.embed_point([5.0, 60.0], [0.0] * 4)
         with pytest.raises(ValueError, match="expected 4"):
             dims.embed_point([5.0, 60.0, 70.0], [0.0] * 3)
-
-    def test_take_reads_the_tracks_part_of_a_world_indexed_sequence(self):
-        dims = TracksDims(ndim_world=4, ndim_tracks=3)
-
-        assert dims.take([1, 5, 60, 70]) == (5, 60, 70)
-        with pytest.raises(ValueError, match="Expected 4 values"):
-            dims.take([1, 2, 3])

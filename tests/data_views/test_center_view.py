@@ -427,7 +427,7 @@ class TestExtraViewerDims:
         assert viewer.dims.ndim == 5
         assert tracks_viewer.tracks.ndim == 4
         assert tracks_viewer.tracks_dims.time_axis == 1
-        assert tracks_viewer.tracks_dims.extra_axes == (0,)
+        assert tracks_viewer.tracks_dims.ndim_offset == 1
 
         # the user is looking at channel 2; centering must not move them off it
         point = list(viewer.dims.point)
@@ -554,7 +554,7 @@ class TestAxisLabels:
         # the labelling and the axis map agree, or a slider would say one thing
         # while centering did another
         assert labels[dims.time_axis] == "t"
-        assert tuple(labels[axis] for axis in dims.spatial_axes) == ("z", "y", "x")
+        assert tuple(labels[dims.time_axis + 1 :]) == ("z", "y", "x")
 
     def test_2d_tracks_are_labelled_without_a_z(self, viewer, tmp_path):
         """The old hardcoded suffix gave 2D+time tracks ('z','y','x'), naming the
