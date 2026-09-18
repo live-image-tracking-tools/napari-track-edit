@@ -181,7 +181,7 @@ class VisualizationWidget(QWidget):
         self.show_ortho_views.stateChanged.connect(self.initialize_ortho_views)
         self.show_ortho_views.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-        self.show_viewer_overlay = QCheckBox("Display canvas keybinds")
+        self.show_viewer_overlay = QCheckBox("Display keybinds on canvas")
         self.show_viewer_overlay.setChecked(True)
         self.show_viewer_overlay.toggled.connect(self.toggle_viewer_text_overlay)
 
