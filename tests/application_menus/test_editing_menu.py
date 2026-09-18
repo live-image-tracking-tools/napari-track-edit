@@ -23,6 +23,7 @@ def test_button_states(make_napari_viewer, solution_tracks_2d, click_node):
     assert not editing_menu.delete_node_btn.isEnabled()
     assert not editing_menu.swap_nodes_btn.isEnabled()
     assert not editing_menu.connect_nodes_btn.isEnabled()
+    assert not editing_menu.set_division_btn.isEnabled()
 
     # Test 2: Verify update_buttons() disables all buttons when selection is cleared
     # First select nodes to enable buttons
@@ -39,6 +40,7 @@ def test_button_states(make_napari_viewer, solution_tracks_2d, click_node):
     assert not editing_menu.delete_node_btn.isEnabled()
     assert not editing_menu.swap_nodes_btn.isEnabled()
     assert not editing_menu.connect_nodes_btn.isEnabled()
+    assert not editing_menu.set_division_btn.isEnabled()
 
     # Test 3: Verify only delete button enabled with single node selection
     click_node(tracks_viewer, 1)
@@ -47,6 +49,7 @@ def test_button_states(make_napari_viewer, solution_tracks_2d, click_node):
     # Verify only delete is enabled, others disabled
     assert editing_menu.delete_node_btn.isEnabled()
     assert not editing_menu.connect_nodes_btn.isEnabled()
+    assert not editing_menu.set_division_btn.isEnabled()
 
     # Test 4: Verify all buttons enabled when two nodes selected
     click_node(tracks_viewer, 1)
@@ -57,8 +60,9 @@ def test_button_states(make_napari_viewer, solution_tracks_2d, click_node):
     assert editing_menu.delete_node_btn.isEnabled()
     assert editing_menu.swap_nodes_btn.isEnabled()
     assert editing_menu.connect_nodes_btn.isEnabled()
+    assert not editing_menu.set_division_btn.isEnabled()
 
-    # Test 5: Verify delete and connect are enabled with 3+ nodes selected
+    # Test 5: Verify delete, connect, and division buttons enabled with 3 nodes selected
     click_node(tracks_viewer, 1)
     click_node(tracks_viewer, 2, append=True)
     click_node(tracks_viewer, 3, append=True)
@@ -66,7 +70,13 @@ def test_button_states(make_napari_viewer, solution_tracks_2d, click_node):
 
     assert editing_menu.delete_node_btn.isEnabled()
     assert editing_menu.connect_nodes_btn.isEnabled()
+    assert editing_menu.set_division_btn.isEnabled()
     assert not editing_menu.swap_nodes_btn.isEnabled()
+
+    # Test 6: Verify division button is disabled again with 4 nodes selected
+    click_node(tracks_viewer, 4, append=True)
+    editing_menu.update_buttons()
+    assert not editing_menu.set_division_btn.isEnabled()
 
 
 def test_button_interactions(make_napari_viewer, solution_tracks_2d, qtbot, click_node):
@@ -82,6 +92,10 @@ def test_button_interactions(make_napari_viewer, solution_tracks_2d, qtbot, clic
     tracks_viewer.connect_nodes = connect_nodes_mock
     swap_mock = MagicMock()
     tracks_viewer.swap_nodes = swap_mock
+
+    set_division_mock = MagicMock()
+    tracks_viewer.set_division = set_division_mock
+
     new_track_mock = MagicMock()
     tracks_viewer.request_new_track = new_track_mock
     undo_mock = MagicMock()
@@ -107,6 +121,12 @@ def test_button_interactions(make_napari_viewer, solution_tracks_2d, qtbot, clic
     # Test 3: Swap Nodes button calls tracks_viewer.swap_nodes()
     qtbot.mouseClick(editing_menu.swap_nodes_btn, Qt.MouseButton.LeftButton)
     swap_mock.assert_called_once()
+
+    # Test 4: Make/break division button calls tracks_viewer.set_division()
+    click_node(tracks_viewer, 3, append=True)
+    editing_menu.update_buttons()
+    qtbot.mouseClick(editing_menu.set_division_btn, Qt.MouseButton.LeftButton)
+    set_division_mock.assert_called_once()
 
     # Test 5: Start New Track button calls tracks_viewer.request_new_track()
     qtbot.mouseClick(editing_menu.new_track_btn, Qt.MouseButton.LeftButton)
