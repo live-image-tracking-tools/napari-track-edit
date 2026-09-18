@@ -163,8 +163,8 @@ def test_table_widget_keybinds(colored_table_widget, qtbot):
 
     The table widget supports keybinds that are delegated to tracks_viewer:
     - D / Delete: delete_node
-    - A: create_edge
-    - B: delete_edge
+    - C: connect_nodes_with_divisions
+    - Shift+C: connect_nodes_linearly
     - S: swap_nodes
     - Z: undo
     - R: redo
@@ -185,11 +185,11 @@ def test_table_widget_keybinds(colored_table_widget, qtbot):
     delete_mock = MagicMock()
     tracks_viewer.delete_node = delete_mock
 
-    create_edge_mock = MagicMock()
-    tracks_viewer.create_edge = create_edge_mock
+    connect_divisions_mock = MagicMock()
+    tracks_viewer.connect_nodes_with_divisions = connect_divisions_mock
 
-    delete_edge_mock = MagicMock()
-    tracks_viewer.delete_edge = delete_edge_mock
+    connect_linear_mock = MagicMock()
+    tracks_viewer.connect_nodes_linearly = connect_linear_mock
 
     swap_mock = MagicMock()
     tracks_viewer.swap_nodes = swap_mock
@@ -215,13 +215,15 @@ def test_table_widget_keybinds(colored_table_widget, qtbot):
     qtbot.keyPress(table_widget, Qt.Key_Delete)
     delete_mock.assert_called_once()
 
-    # Test A key calls create_edge
-    qtbot.keyPress(table_widget, Qt.Key_A)
-    create_edge_mock.assert_called_once()
+    # Test C key calls connect_nodes_with_divisions
+    qtbot.keyPress(table_widget, Qt.Key_C)
+    connect_divisions_mock.assert_called_once()
+    connect_linear_mock.assert_not_called()
 
-    # Test B key calls delete_edge
-    qtbot.keyPress(table_widget, Qt.Key_B)
-    delete_edge_mock.assert_called_once()
+    # Test Shift+C key calls connect_nodes_linearly instead
+    qtbot.keyPress(table_widget, Qt.Key_C, modifier=Qt.ShiftModifier)
+    connect_linear_mock.assert_called_once()
+    connect_divisions_mock.assert_called_once()  # still only the one call
 
     # Test S key calls swap_nodes
     qtbot.keyPress(table_widget, Qt.Key_S)
