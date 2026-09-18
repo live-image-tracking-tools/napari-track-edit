@@ -88,7 +88,12 @@ class RunEditor(QGroupBox):
 
     def _update_max_frames(self) -> None:
         """Update the max frame constraint from viewer dims."""
-        max_frame = self.viewer.dims.range[0].stop
+
+        # Obtain the time axis from the layer, not the viewer (since it may carry extra
+        # dims)
+        layer = self.get_input_layer()
+        time_axis = 0 if layer is None else self.viewer.dims.ndim - layer.ndim
+        max_frame = self.viewer.dims.range[time_axis].stop
         self.solver_params_widget.set_max_frames(int(max_frame))
 
     def _labels_layer_widget(self) -> QWidget:

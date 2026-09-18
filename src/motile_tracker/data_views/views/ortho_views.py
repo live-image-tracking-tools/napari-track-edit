@@ -241,7 +241,7 @@ def paint_event_hook(
     def sync_paint(orig_layer: TrackLabels, copied_layer: Labels, event: Event):
         """Process paint event on original TrackLabels instance."""
 
-        if copied_layer.data.ndim > 3:
+        if orig_layer.tracks_viewer.tracks.ndim > 3:
             orig_layer._on_paint(event)
         else:
             show_info("Painting in the time dimension is not supported")
