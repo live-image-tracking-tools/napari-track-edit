@@ -26,7 +26,7 @@ def world_to_layer_axis(
     """Map a viewer (world) axis onto a layer's own axis, or None if it has none.
 
     A layer with fewer dimensions than the viewer has no axis at all corresponding to the
-    leading world axes, and subtracting the offset there gives a negative index
+    leading world axes, and subtracting the ndim_offset there gives a negative index
     that numpy would silently wrap to the wrong end of the array instead of raising.
 
     Args:
@@ -49,7 +49,7 @@ def world_to_layer_axis(
 class TracksDims:
     """Where a Tracks object's axes sit among the viewer's world axes.
 
-    The tracks take the last ``ndim_tracks`` world axes; ``offset`` counts the
+    The tracks take the last ``ndim_tracks`` world axes; ``ndim_offset`` counts the
     extra ones in front. Meant to be built at the point of use rather than stored,
     because ``ndim_world`` changes when layers are added or removed.
 
@@ -77,7 +77,7 @@ class TracksDims:
             )
 
     @property
-    def offset(self) -> int:
+    def ndim_offset(self) -> int:
         """Number of extra world axes in front of the tracks' own axes."""
 
         return self.ndim_world - self.ndim_tracks
@@ -86,30 +86,30 @@ class TracksDims:
     def extra_axes(self) -> tuple[int, ...]:
         """World axes that are not tracks axes, for visualization only."""
 
-        return tuple(range(self.offset))
+        return tuple(range(self.ndim_offset))
 
     @property
     def world_axes(self) -> tuple[int, ...]:
         """World axes the tracks span, in tracks order (time first)."""
 
-        return tuple(range(self.offset, self.ndim_world))
+        return tuple(range(self.ndim_offset, self.ndim_world))
 
     @property
     def time_axis(self) -> int:
         """World axis carrying time, which is the tracks' first axis."""
 
-        return self.offset
+        return self.ndim_offset
 
     @property
     def spatial_axes(self) -> tuple[int, ...]:
         """World axes carrying the spatial dimensions ((z,) y, x)."""
 
-        return tuple(range(self.offset + 1, self.ndim_world))
+        return tuple(range(self.ndim_offset + 1, self.ndim_world))
 
     def is_tracks_axis(self, world_axis: int) -> bool:
         """Whether a world axis is one of the tracks' own axes."""
 
-        return self.offset <= world_axis < self.ndim_world
+        return self.ndim_offset <= world_axis < self.ndim_world
 
     def to_world(self, tracks_axis: int) -> int:
         """World axis for a tracks axis (0 being time).
@@ -123,7 +123,7 @@ class TracksDims:
                 f"Tracks axis {tracks_axis} out of range for "
                 f"{self.ndim_tracks}-dimensional tracks"
             )
-        return tracks_axis + self.offset
+        return tracks_axis + self.ndim_offset
 
     def to_tracks(self, world_axis: int) -> int | None:
         """Tracks axis for a world axis, or None if it is an extra axis."""
@@ -158,7 +158,7 @@ class TracksDims:
             )
 
         embedded = list(point)
-        embedded[self.offset :] = list(location)
+        embedded[self.ndim_offset :] = list(location)
         return embedded
 
     def take(self, values: Sequence) -> tuple:
@@ -170,4 +170,4 @@ class TracksDims:
 
         if len(values) != self.ndim_world:
             raise ValueError(f"Expected {self.ndim_world} values, got {len(values)}")
-        return tuple(values[self.offset :])
+        return tuple(values[self.ndim_offset :])

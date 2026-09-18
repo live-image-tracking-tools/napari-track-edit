@@ -105,7 +105,7 @@ class TestWorldToLayerAxis:
 
 class TestTracksDims:
     @pytest.mark.parametrize(
-        ("ndim_world", "offset", "extra", "world_axes", "time", "spatial"),
+        ("ndim_world", "ndim_offset", "extra", "world_axes", "time", "spatial"),
         [
             (3, 0, (), (0, 1, 2), 0, (1, 2)),
             (4, 1, (0,), (1, 2, 3), 1, (2, 3)),
@@ -113,11 +113,11 @@ class TestTracksDims:
         ],
     )
     def test_axis_bookkeeping(
-        self, ndim_world, offset, extra, world_axes, time, spatial
+        self, ndim_world, ndim_offset, extra, world_axes, time, spatial
     ):
         dims = TracksDims(ndim_world=ndim_world, ndim_tracks=3)
 
-        assert dims.offset == offset
+        assert dims.ndim_offset == ndim_offset
         assert dims.extra_axes == extra
         assert dims.world_axes == world_axes
         assert dims.time_axis == time

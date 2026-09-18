@@ -152,7 +152,7 @@ class TracksViewer:
         dims = self.tracks_dims
         labels = list(self.viewer.dims.axis_labels)
         # any 'extra' dims just keep the name they had already
-        labels[dims.offset :] = ["t", *self.tracks.axis_names]
+        labels[dims.ndim_offset :] = ["t", *self.tracks.axis_names]
         self.viewer.dims.axis_labels = labels
 
     def get_collection_widget(self) -> CollectionWidget:
