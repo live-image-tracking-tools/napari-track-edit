@@ -150,30 +150,34 @@ class TrackLabels(ContourLabels):
                 If provided, it is used to check label visibility in that layer's colormap.
         """
 
-        # Intercept mouse side button navigation (back/forward)
-        if side_button is not None:
-            self.tracks_viewer.select_node_set_from_history(previous=side_button == 4)
-            return
-
-        if value is not None and value != 0:
-            # check visibility in the respective colormap. If a label is not visible, it
-            # is not allowed to be selected from this view
-            if layer is not None:
-                is_visible = layer.colormap.color_dict.get(value)[3] > 0
-            else:
-                is_visible = self.colormap.color_dict.get(value)[3] > 0
-            if is_visible:
-                append = "Shift" in event.modifiers
-                jump = "Control" in event.modifiers
-                if jump:
-                    self.tracks_viewer.center_on_node(value)
-                else:
-                    self.tracks_viewer.selected_nodes.add(int(value), append)
-            else:
-                warnings.warn(
-                    f"Node {value} is not visible in this view and cannot be selected.",
-                    stacklevel=2,
+        # Communicate that the click comes from the napari canvas
+        with self.tracks_viewer.viewer_interaction():
+            # Intercept mouse side button navigation (back/forward)
+            if side_button is not None:
+                self.tracks_viewer.select_node_set_from_history(
+                    previous=side_button == 4
                 )
+                return
+
+            if value is not None and value != 0:
+                # check visibility in the respective colormap. If a label is not visible, it
+                # is not allowed to be selected from this view
+                if layer is not None:
+                    is_visible = layer.colormap.color_dict.get(value)[3] > 0
+                else:
+                    is_visible = self.colormap.color_dict.get(value)[3] > 0
+                if is_visible:
+                    append = "Shift" in event.modifiers
+                    jump = "Control" in event.modifiers
+                    if jump:
+                        self.tracks_viewer.center_on_node(value)
+                    else:
+                        self.tracks_viewer.selected_nodes.add(int(value), append)
+                else:
+                    warnings.warn(
+                        f"Node {value} is not visible in this view and cannot be selected.",
+                        stacklevel=2,
+                    )
 
     def _get_colormap(self) -> DirectLabelColormap:
         """Get a DirectLabelColormap that maps node ids to their track ids, and then
@@ -289,50 +293,52 @@ class TrackLabels(ContourLabels):
     def _on_paint(self, event):
         """Listen to the paint event and check which track_ids have changed"""
 
-        # make sure that 0 (in the case or erasing) or a valid label (in the case of
-        # painting) is selected.
-        if (
-            self.mode == "erase"
-            or (self.mode == "fill" and self.selected_label == 0)
-            or (self.mode == "paint" and self.selected_label == 0)
-        ):
-            target_value = 0
-        else:
-            self._ensure_valid_label()
-            target_value = self.selected_label
+        # painting happens on the canvas, so specify with tracks_viewer.viewer_interaction
+        with self.tracks_viewer.viewer_interaction():
+            # make sure that 0 (in the case or erasing) or a valid label (in the case of
+            # painting) is selected.
+            if (
+                self.mode == "erase"
+                or (self.mode == "fill" and self.selected_label == 0)
+                or (self.mode == "paint" and self.selected_label == 0)
+            ):
+                target_value = 0
+            else:
+                self._ensure_valid_label()
+                target_value = self.selected_label
 
-        with self.events.selected_label.blocker():
-            try:
-                _, updated_pixels = self._parse_paint_event(event.value)
-                UserUpdateSegmentation(
-                    tracks=self.tracks_viewer.tracks,
-                    new_value=target_value,
-                    updated_pixels=updated_pixels,
-                    current_track_id=self.tracks_viewer.selected_track,
-                    force=self.tracks_viewer.force,
-                )  # paint with the updated self.selected_label, not with the value from the
-                # event, to ensure it is a valid label.
-            except InvalidActionError as e:
-                if e.forceable:
-                    # If the action is invalid, ask the user if they want to force it anyway
-                    force, always_force = confirm_force_operation(message=str(e))
-                    self.tracks_viewer.force = always_force
-                    super().undo()
-                    if not force:
-                        self._refresh()  # to trigger refresh on orthoviews, if present
+            with self.events.selected_label.blocker():
+                try:
+                    _, updated_pixels = self._parse_paint_event(event.value)
+                    UserUpdateSegmentation(
+                        tracks=self.tracks_viewer.tracks,
+                        new_value=target_value,
+                        updated_pixels=updated_pixels,
+                        current_track_id=self.tracks_viewer.selected_track,
+                        force=self.tracks_viewer.force,
+                    )  # paint with the updated self.selected_label, not with the value from the
+                    # event, to ensure it is a valid label.
+                except InvalidActionError as e:
+                    if e.forceable:
+                        # If the action is invalid, ask the user if they want to force it anyway
+                        force, always_force = confirm_force_operation(message=str(e))
+                        self.tracks_viewer.force = always_force
+                        super().undo()
+                        if not force:
+                            self._refresh()  # to trigger refresh on orthoviews, if present
+                        else:
+                            # try again with force enabled
+                            UserUpdateSegmentation(
+                                tracks=self.tracks_viewer.tracks,
+                                new_value=target_value,
+                                updated_pixels=updated_pixels,
+                                current_track_id=self.tracks_viewer.selected_track,
+                                force=True,
+                            )
                     else:
-                        # try again with force enabled
-                        UserUpdateSegmentation(
-                            tracks=self.tracks_viewer.tracks,
-                            new_value=target_value,
-                            updated_pixels=updated_pixels,
-                            current_track_id=self.tracks_viewer.selected_track,
-                            force=True,
-                        )
-                else:
-                    warnings.warn(str(e), stacklevel=2)
-                    super().undo()
-                    self._refresh()
+                        warnings.warn(str(e), stacklevel=2)
+                        super().undo()
+                        self._refresh()
 
     def _refresh(self):
         """Refresh the data in the labels layer"""

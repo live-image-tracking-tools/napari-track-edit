@@ -139,9 +139,20 @@ class TracksLayerGroup:
 
     def center_view(self, node):
         """Adjust the current_step and camera center of the viewer to jump to the node
-        location, if the node is not already in the field of view"""
+        location, if the node is not already in the field of view.
 
-        if self.seg_layer is not None and self.seg_layer.mode != "pan_zoom":
+        Centering is skipped while the segmentation (or points) layer is not in pan_zoom
+        mode, but only for requests coming from the napari canvas itself.
+        Requests from the other views (tree view, table, menus) always center.
+        """
+
+        interaction_layer = (
+            self.seg_layer if self.seg_layer is not None else self.points_layer
+        )
+        if (
+            self.tracks_viewer.interacting_with_canvas
+            and interaction_layer.mode != "pan_zoom"
+        ):
             return
 
         # The viewer may carry more dimensions than the tracks do. The tracks own the
