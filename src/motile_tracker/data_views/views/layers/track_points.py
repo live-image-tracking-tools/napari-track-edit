@@ -169,12 +169,16 @@ class TrackPoints(ZOnlyPoints):
             return
 
         if value is None:
-            self.tracks_viewer.selected_nodes.reset()
+            if "Alt" not in event.modifiers:
+                self.tracks_viewer.selected_nodes.reset()
         else:
             node_id = self.nodes[value]
             append = "Shift" in event.modifiers
             jump = "Control" in event.modifiers
-            if jump:
+            pick_track = "Alt" in event.modifiers
+            if pick_track:
+                self.tracks_viewer.select_track_id_from_node(int(node_id))
+            elif jump:
                 self.tracks_viewer.center_on_node(node_id)
             else:
                 self.tracks_viewer.selected_nodes.add(node_id, append)
