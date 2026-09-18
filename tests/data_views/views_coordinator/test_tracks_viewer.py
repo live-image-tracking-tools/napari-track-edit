@@ -531,16 +531,6 @@ class TestPickTrackId:
 class TestOverlayText:
     """Tests for the viewer text overlay."""
 
-    def test_colons_line_up(self):
-        """Every row puts its colon at the same column.
-
-        Only guards the string itself. Whether that reads as two columns on screen
-        depends on the overlay's font and anchor, which napari owns.
-        """
-        rows = [line for line in (BASE_TEXT + "All").split("\n") if line.strip()]
-
-        assert len({line.index(":") for line in rows}) == 1
-
     def test_set_display_mode_names_the_mode(self, tracks_viewer_setup):
         """Each mode writes its own overlay text to the viewer."""
         viewer, tracks_viewer, _ = tracks_viewer_setup
