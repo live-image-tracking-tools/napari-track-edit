@@ -181,27 +181,6 @@ class TrackLabels(ContourLabels):
                         f"Node {value} is not visible in this view and cannot be selected.",
                         stacklevel=2,
                     )
-                    return
-
-                if value is not None and value != 0:
-                    # check visibility in the respective colormap. If a label is not visible, it
-                    # is not allowed to be selected from this view
-                    if layer is not None:
-                        is_visible = layer.colormap.color_dict.get(value)[3] > 0
-                    else:
-                        is_visible = self.colormap.color_dict.get(value)[3] > 0
-                    if is_visible:
-                        append = "Shift" in event.modifiers
-                        jump = "Control" in event.modifiers
-                        if jump:
-                            self.tracks_viewer.center_on_node(value)
-                        else:
-                            self.tracks_viewer.selected_nodes.add(int(value), append)
-                    else:
-                        warnings.warn(
-                            f"Node {value} is not visible in this view and cannot be selected.",
-                            stacklevel=2,
-                        )
 
     def _get_colormap(self) -> DirectLabelColormap:
         """Get a DirectLabelColormap that maps node ids to their track ids, and then
