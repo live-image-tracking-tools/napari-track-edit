@@ -12,7 +12,10 @@ from funtracks.data_model import SolutionTracks
 from motile_tracker.data_views.views.layers.track_graph import TrackGraph
 from motile_tracker.data_views.views.layers.track_labels import TrackLabels
 from motile_tracker.data_views.views.layers.track_points import TrackPoints
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from motile_tracker.data_views.views_coordinator.tracks_viewer import (
+    BASE_TEXT,
+    TracksViewer,
+)
 from motile_tracker.motile.backend.motile_run import MotileRun
 
 
@@ -437,6 +440,104 @@ class TestSelectionManagement:
 
         # selected_track should be None
         assert tracks_viewer.selected_track is None
+
+
+class TestPickTrackId:
+    """Tests for select_track_id_from_node (ALT/OPTION + click)."""
+
+    def test_picks_track_id_without_selecting_or_moving(self, tracks_viewer_setup):
+        """Picking a node in another frame adopts its track id and nothing else."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        # node 6 is the only node of track 5 and lives at t=4
+        viewer.dims.set_point(0, 0)
+        assert viewer.dims.current_step[0] == 0
+
+        with patch.object(tracks_viewer, "center_on_node") as center_mock:
+            tracks_viewer.select_track_id_from_node(6)
+            center_mock.assert_not_called()
+
+        assert tracks_viewer.selected_track == tracks.get_track_id(6)
+        assert len(tracks_viewer.selected_nodes) == 0
+        assert viewer.dims.current_step[0] == 0
+
+        # track 5 has no node in frame 0, so a fresh label is offered to paint with
+        seg_layer = tracks_viewer.tracking_layers.seg_layer
+        assert seg_layer.selected_label != 6
+        assert not tracks.graph.has_node(seg_layer.selected_label)
+
+    def test_picks_the_node_itself_in_the_current_frame(self, tracks_viewer_setup):
+        """A node in the current frame becomes the label to paint with directly."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        # node 2 is at t=1
+        viewer.dims.set_point(0, 1)
+        tracks_viewer.select_track_id_from_node(2)
+
+        assert tracks_viewer.selected_track == tracks.get_track_id(2)
+        assert tracks_viewer.tracking_layers.seg_layer.selected_label == 2
+        assert len(tracks_viewer.selected_nodes) == 0
+
+    def test_revalidates_when_the_label_is_already_selected(self, tracks_viewer_setup):
+        """Picking the same node again after a time change re-runs the validation."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+        seg_layer = tracks_viewer.tracking_layers.seg_layer
+
+        viewer.dims.set_point(0, 1)
+        tracks_viewer.select_track_id_from_node(2)
+        assert seg_layer.selected_label == 2
+
+        # node 2 is the only node of track 2, so in frame 0 a new label is needed.
+        # Setting selected_label to 2 emits nothing here, so the pick has to validate
+        # by hand or we would paint frame 0 with an existing node id from frame 1.
+        viewer.dims.set_point(0, 0)
+        tracks_viewer.select_track_id_from_node(2)
+
+        assert tracks_viewer.selected_track == tracks.get_track_id(2)
+        assert seg_layer.selected_label != 2
+        assert not tracks.graph.has_node(seg_layer.selected_label)
+
+    def test_without_segmentation(self, viewer, graph_2d_without_segmentation):
+        """Without a seg layer the track id is set directly and the signal fires."""
+        tracks = MotileRun(
+            graph=graph_2d_without_segmentation,
+            run_name="test",
+            ndim=3,
+            time_attr="t",
+        )
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(tracks=tracks, name="test")
+        assert tracks_viewer.tracking_layers.seg_layer is None
+
+        emitted = []
+        tracks_viewer.update_track_id.connect(lambda: emitted.append(True))
+        tracks_viewer.select_track_id_from_node(6)
+
+        assert tracks_viewer.selected_track == tracks.get_track_id(6)
+        assert len(tracks_viewer.selected_nodes) == 0
+        assert emitted
+
+    def test_unknown_node_is_ignored(self, tracks_viewer_setup):
+        """A node that is not in the graph leaves the current track id alone."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        tracks_viewer.select_track_id_from_node(1)
+        before = tracks_viewer.selected_track
+
+        tracks_viewer.select_track_id_from_node(9999)
+        assert tracks_viewer.selected_track == before
+
+
+class TestOverlayText:
+    """Tests for the viewer text overlay."""
+
+    def test_set_display_mode_names_the_mode(self, tracks_viewer_setup):
+        """Each mode writes its own overlay text to the viewer."""
+        viewer, tracks_viewer, _ = tracks_viewer_setup
+
+        for mode, label in (("lineage", "Lineage"), ("group", "Group"), ("all", "All")):
+            tracks_viewer.set_display_mode(mode)
+            assert viewer.text_overlay.text == BASE_TEXT + label
 
 
 class TestSingletonLifecycle:

@@ -169,7 +169,10 @@ class TrackLabels(ContourLabels):
                 if is_visible:
                     append = "Shift" in event.modifiers
                     jump = "Control" in event.modifiers
-                    if jump:
+                    pick_track = "Alt" in event.modifiers
+                    if pick_track:
+                        self.tracks_viewer.select_track_id_from_node(int(value))
+                    elif jump:
                         self.tracks_viewer.center_on_node(value)
                     else:
                         self.tracks_viewer.selected_nodes.add(int(value), append)
