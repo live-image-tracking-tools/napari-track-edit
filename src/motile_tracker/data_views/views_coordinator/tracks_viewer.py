@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import Optional
 
 import napari
@@ -118,6 +119,10 @@ class TracksViewer:
         self.selected_track = None
         self.track_id_color = [0, 0, 0, 0]
         self.force = False
+        # True while an interaction in the napari canvas (a click or a paint event) is
+        # being processed, so that centering requests know where they came from (see
+        # viewer_interaction and TracksLayerGroup.center_view)
+        self.interacting_with_canvas = False
 
         self.collection_widget = None
 
@@ -431,6 +436,20 @@ class TracksViewer:
                 self.visible = []
         else:
             self.visible = "all"
+
+    @contextmanager
+    def viewer_interaction(self):
+        """Mark everything that happens inside this block as originating from the
+        napari canvas, to suppress node centering when the seg or points layer is not in
+        pan_zoom mode.
+        """
+
+        previous = self.interacting_with_canvas
+        self.interacting_with_canvas = True
+        try:
+            yield
+        finally:
+            self.interacting_with_canvas = previous
 
     def center_on_node(self, node: int) -> None:
         """Request all views to center on the given node.
