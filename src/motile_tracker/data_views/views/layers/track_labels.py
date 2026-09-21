@@ -293,6 +293,16 @@ class TrackLabels(ContourLabels):
     def _on_paint(self, event):
         """Listen to the paint event and check which track_ids have changed"""
 
+        _, updated_pixels = self._parse_paint_event(event.value)
+
+        # Every entry covers exactly one time point, so more than one distinct time
+        # means the brush spanned frames, which is not allowed.
+        if len({u[1] if len(u) == 3 else int(u[0][0][0]) for u in updated_pixels}) > 1:
+            show_info("Painting in the time dimension is not supported")
+            self._revert_paint(event)
+            self._refresh()  # also re-syncs the orthoviews, if present
+            return
+
         # painting happens on the canvas, so specify with tracks_viewer.viewer_interaction
         with self.tracks_viewer.viewer_interaction():
             # make sure that 0 (in the case or erasing) or a valid label (in the case of
@@ -309,7 +319,6 @@ class TrackLabels(ContourLabels):
 
             with self.events.selected_label.blocker():
                 try:
-                    _, updated_pixels = self._parse_paint_event(event.value)
                     UserUpdateSegmentation(
                         tracks=self.tracks_viewer.tracks,
                         new_value=target_value,
