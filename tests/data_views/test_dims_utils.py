@@ -11,7 +11,7 @@ import pytest
 from napari.components import Dims
 from napari.layers import Image
 
-from motile_tracker.data_views.dims_utils import TracksDims, world_to_layer_axis
+from motile_tracker.data_views.dims_utils import TracksDims
 
 
 class TestNapariDimsInvariants:
@@ -64,43 +64,43 @@ class TestNapariDimsInvariants:
         assert tuple(dims.point) == (0.0, 3.0, 50.0, 60.0)
 
 
-class TestWorldToLayerAxis:
+class TestToTracksAxis:
     def test_agrees_with_napari(self):
         """Cross-check the trailing alignment against napari itself.
 
         ``Layer.world_to_data`` keeps the last ``layer.ndim`` entries of a world
-        position and drops the leading ones, which is the rule
-        ``world_to_layer_axis`` encodes. Going through that rather than napari's
-        internal dims mapping keeps this test on public API, so it holds across
-        the napari versions the plugin supports (the internals moved in 0.7).
+        position and drops the leading ones, which is the rule ``to_tracks_axis``
+        encodes. Going through that rather than napari's internal dims mapping
+        keeps this test on public API, so it holds across the napari versions the
+        plugin supports (the internals moved in 0.7).
         """
 
         for ndim_world in range(2, 6):
-            for ndim_layer in range(2, ndim_world + 1):
-                layer = Image(np.zeros((3,) * ndim_layer))
+            for ndim_tracks in range(2, ndim_world + 1):
+                layer = Image(np.zeros((3,) * ndim_tracks))
                 # each slot of the world position names its own world axis, so the
                 # data position reads back as "which world axis landed here"
                 data = [
                     round(float(value))
                     for value in layer.world_to_data(list(range(ndim_world)))
                 ]
+                dims = TracksDims(ndim_world=ndim_world, ndim_tracks=ndim_tracks)
 
                 for world_axis in range(ndim_world):
                     expected = data.index(world_axis) if world_axis in data else None
-                    assert (
-                        world_to_layer_axis(world_axis, ndim_world, ndim_layer)
-                        == expected
-                    )
+                    assert dims.to_tracks_axis(world_axis) == expected
 
     @pytest.mark.parametrize(
         ("world_axis", "expected"),
         [(0, None), (1, 0), (3, 2), (4, None)],
     )
-    def test_is_none_outside_the_layers_own_axes(self, world_axis, expected):
+    def test_is_none_outside_the_tracks_own_axes(self, world_axis, expected):
         """The guard that matters: without it a leading axis gives -1, which numpy
         silently wraps to the wrong end instead of raising."""
 
-        assert world_to_layer_axis(world_axis, 4, 3) == expected
+        dims = TracksDims(ndim_world=4, ndim_tracks=3)
+
+        assert dims.to_tracks_axis(world_axis) == expected
 
 
 class TestTracksDims:
