@@ -57,6 +57,7 @@ class FeatureWidget(QWidget):
 
         tracks = self.tracks_viewer.tracks
         if tracks is None:
+            self.box.setVisible(False)
             return
 
         for feature_key, feature in self._discover_features().items():
