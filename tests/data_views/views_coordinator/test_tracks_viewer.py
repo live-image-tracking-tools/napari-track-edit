@@ -441,7 +441,7 @@ class TestSelectionManagement:
         # Test 3: Selecting another node still moves it
         other = next(
             n
-            for n in tracks.graph.node_ids()
+            for n in tracks.graph_solution.node_ids()
             if tracks.get_track_id(n) != expected_track_id
         )
         click_node(tracks_viewer, other)
