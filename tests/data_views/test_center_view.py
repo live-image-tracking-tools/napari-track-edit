@@ -419,7 +419,7 @@ class TestCenterViewInEditingMode:
             viewer.add_image(np.zeros((2, 20, 20, 20)), name="raw_image")
             graph = _make_single_node_graph(tmp_path, pos=[5, 10, 10])
 
-        tracks = SolutionTracks(
+        tracks = Tracks(
             graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t"
         )
         tracks_viewer = TracksViewer.get_instance(viewer)

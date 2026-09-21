@@ -208,18 +208,18 @@ class TestEdgeOperations:
         click_node(tracks_viewer, 4, append=True)
 
         tracks_viewer.set_division()
-        assert tracks.graph.has_edge(4, 5)
-        assert tracks.graph.has_edge(4, 6)
+        assert tracks.graph_solution.has_edge(4, 5)
+        assert tracks.graph_solution.has_edge(4, 6)
 
         # Running it again on the same trio breaks the division
         tracks_viewer.set_division()
-        assert not tracks.graph.has_edge(4, 5)
-        assert not tracks.graph.has_edge(4, 6)
+        assert not tracks.graph_solution.has_edge(4, 5)
+        assert not tracks.graph_solution.has_edge(4, 6)
 
         # Undo restores the division
         tracks_viewer.undo()
-        assert tracks.graph.has_edge(4, 5)
-        assert tracks.graph.has_edge(4, 6)
+        assert tracks.graph_solution.has_edge(4, 5)
+        assert tracks.graph_solution.has_edge(4, 6)
 
     def test_set_division_invalid_selection_warns(self, viewer, graph_2d, click_node):
         """Test set_division shows a warning instead of raising on a bad selection."""
@@ -239,8 +239,8 @@ class TestEdgeOperations:
 
         warning.assert_called_once()
         assert "exactly one node to be earlier" in warning.call_args[0][2]
-        assert not tracks.graph.has_edge(2, 5)
-        assert not tracks.graph.has_edge(3, 5)
+        assert not tracks.graph_solution.has_edge(2, 5)
+        assert not tracks.graph_solution.has_edge(3, 5)
 
     def test_set_division_without_three_nodes_warns(self, viewer, graph_2d, click_node):
         """Test set_division warns instead of raising when not exactly 3 nodes are selected.
