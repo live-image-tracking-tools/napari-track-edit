@@ -6,7 +6,6 @@ import napari
 from funtracks.data_model import Tracks
 from napari.experimental import link_layers, unlink_layers
 
-from motile_tracker.data_views.dims_utils import TracksDims, world_to_layer_axis
 from motile_tracker.data_views.views.layers.track_graph import TrackGraph
 from motile_tracker.data_views.views.layers.track_labels import TrackLabels
 from motile_tracker.data_views.views.layers.track_points import TrackPoints
@@ -157,7 +156,7 @@ class TracksLayerGroup:
 
         # The viewer may carry more dimensions than the tracks do. The tracks own the
         # trailing axes.
-        dims = TracksDims(self.viewer.dims.ndim, self.tracks.ndim)
+        dims = self.tracks_viewer.tracks_dims
 
         location = self.tracks.get_position(node, incl_time=True)
 
@@ -189,16 +188,13 @@ class TracksLayerGroup:
         y_dim = dims_displayed[-2]
 
         # corner_pixels is indexed by the layer's own axes, while dims_displayed indexes
-        # the viewer's, so the displayed axes have to be translated. Rolling or
-        # transposing with the napari buttons can put an axis the points layer does not
-        # span (a channel, say) on screen; centering on one is meaningless, so leave the
-        # camera alone rather than indexing corner_pixels out of bounds.
-        x_layer_dim = world_to_layer_axis(
-            x_dim, self.viewer.dims.ndim, example_layer.ndim
-        )
-        y_layer_dim = world_to_layer_axis(
-            y_dim, self.viewer.dims.ndim, example_layer.ndim
-        )
+        # the viewer's, so the displayed axes have to be translated. The points layer
+        # spans exactly the tracks' axes. Rolling or transposing with the napari buttons
+        # can put an axis it does not span (a channel, say) on screen; centering on one
+        # is meaningless, so leave the camera alone rather than indexing corner_pixels
+        # out of bounds.
+        x_layer_dim = dims.to_tracks_axis(x_dim)
+        y_layer_dim = dims.to_tracks_axis(y_dim)
         if x_layer_dim is None or y_layer_dim is None:
             return
 

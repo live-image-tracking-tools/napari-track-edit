@@ -20,31 +20,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 
-def world_to_layer_axis(
-    world_axis: int, ndim_world: int, ndim_layer: int
-) -> int | None:
-    """Map a viewer (world) axis onto a layer's own axis, or None if it has none.
-
-    A layer with fewer dimensions than the viewer has no axis at all corresponding to the
-    leading world axes, and subtracting the offset there gives a negative index that
-    numpy would silently wrap to the wrong end of the array instead of raising.
-
-    Args:
-        world_axis (int): Axis index in the viewer's world coordinate system.
-        ndim_world (int): Number of dimensions of the viewer.
-        ndim_layer (int): Number of dimensions of the layer.
-
-    Returns:
-        int | None: The corresponding layer axis, or None if the layer does not
-            span this world axis.
-    """
-
-    layer_axis = world_axis - (ndim_world - ndim_layer)
-    if layer_axis < 0 or layer_axis >= ndim_layer:
-        return None
-    return layer_axis
-
-
 @dataclass(frozen=True)
 class TracksDims:
     """Where a Tracks object's axes sit among the viewer's world axes.
@@ -54,12 +29,11 @@ class TracksDims:
     point of use rather than stored, because ``ndim_world`` changes when layers are
     added or removed.
 
-    To know where a layer sits with respect to the viewer, use layer.ndim as ndim_world.
-
     Attributes:
-        ndim_world (int): Number of dimensions of the viewer (or of the layer the
-            tracks are being related to).
-        ndim_tracks (int): Number of dimensions of the tracks, time included.
+        ndim_world (int): Number of dimensions of the viewer.
+        ndim_tracks (int): Number of dimensions of the tracks, time included. The
+            tracking layers all have exactly this many dimensions, so this doubles as
+            the number of axes any of them spans.
     """
 
     ndim_world: int
@@ -93,6 +67,22 @@ class TracksDims:
         """World axis carrying time, which is the tracks' first axis."""
 
         return self.ndim_offset
+
+    def to_tracks_axis(self, world_axis: int) -> int | None:
+        """Map a viewer (world) axis onto a tracks axis, or None if there is none.
+
+        Args:
+            world_axis (int): Axis index in the viewer's world coordinate system.
+
+        Returns:
+            int | None: The corresponding tracks axis, or None if the tracks do not
+                span this world axis.
+        """
+
+        tracks_axis = world_axis - self.ndim_offset
+        if tracks_axis < 0 or tracks_axis >= self.ndim_tracks:
+            return None
+        return tracks_axis
 
     def embed_point(
         self, location: Sequence[float], point: Sequence[float]
