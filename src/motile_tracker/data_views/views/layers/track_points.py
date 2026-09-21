@@ -163,21 +163,25 @@ class TrackPoints(ZOnlyPoints):
             layer (napari.layers.Points | None): Optional, unused. The (ortho view) layer on which the click occurred, which is forwarded by default.
         """
 
-        # Intercept mouse side button navigation (back/forward)
-        if side_button is not None:
-            self.tracks_viewer.select_node_set_from_history(previous=side_button == 4)
-            return
+        # Communicate that the click comes from the napari canvas
+        with self.tracks_viewer.viewer_interaction():
+            # Intercept mouse side button navigation (back/forward)
+            if side_button is not None:
+                self.tracks_viewer.select_node_set_from_history(
+                    previous=side_button == 4
+                )
+                return
 
-        if value is None:
-            self.tracks_viewer.selected_nodes.reset()
-        else:
-            node_id = self.nodes[value]
-            append = "Shift" in event.modifiers
-            jump = "Control" in event.modifiers
-            if jump:
-                self.tracks_viewer.center_on_node(node_id)
+            if value is None:
+                self.tracks_viewer.selected_nodes.reset()
             else:
-                self.tracks_viewer.selected_nodes.add(node_id, append)
+                node_id = self.nodes[value]
+                append = "Shift" in event.modifiers
+                jump = "Control" in event.modifiers
+                if jump:
+                    self.tracks_viewer.center_on_node(node_id)
+                else:
+                    self.tracks_viewer.selected_nodes.add(node_id, append)
 
     def set_point_size(self, size: int) -> None:
         """Sets a new default point size.
@@ -244,28 +248,16 @@ class TrackPoints(ZOnlyPoints):
         dispatch the update
         """
 
-        if event.action == "added":
-            # we only want to allow this update if there is no seg layer
-            if self.tracks_viewer.tracking_layers.seg_layer is None:
-                new_point = event.value[-1]
-                attributes = self._create_node_attrs(new_point)
-                try:
-                    with self.tracks_viewer.center_node.blocked():
-                        new_node_id = self.tracks_viewer.tracks._get_new_node_ids(1)[0]
-                        UserAddNode(
-                            self.tracks_viewer.tracks,
-                            node=new_node_id,
-                            attributes=attributes,
-                            force=self.tracks_viewer.force,
-                        )
-
-                except InvalidActionError as e:
-                    if e.forceable:
-                        # If the action is invalid but forceable, ask the user if they want to do so
-                        force, always_force = confirm_force_operation(message=str(e))
-                        self.tracks_viewer.force = always_force
-                        self._refresh()
-                        if force:
+        # points are added, removed and moved on the canvas, so specify with
+        # tracks_viewer.viewer_interaction
+        with self.tracks_viewer.viewer_interaction():
+            if event.action == "added":
+                # we only want to allow this update if there is no seg layer
+                if self.tracks_viewer.tracking_layers.seg_layer is None:
+                    new_point = event.value[-1]
+                    attributes = self._create_node_attrs(new_point)
+                    try:
+                        with self.tracks_viewer.center_node.blocked():
                             new_node_id = self.tracks_viewer.tracks._get_new_node_ids(
                                 1
                             )[0]
@@ -273,53 +265,76 @@ class TrackPoints(ZOnlyPoints):
                                 self.tracks_viewer.tracks,
                                 node=new_node_id,
                                 attributes=attributes,
-                                force=True,
+                                force=self.tracks_viewer.force,
                             )
-                    else:
-                        warnings.warn(str(e), stacklevel=2)
-                        self._refresh()
-            else:
-                show_info(
-                    "Mixed point and segmentation nodes not allowed: add points by "
-                    "drawing on segmentation layer"
-                )
-                self._refresh()
 
-        elif event.action == "removed":
-            UserDeleteNodes(
-                self.tracks_viewer.tracks,
-                nodes=self.tracks_viewer.selected_nodes.as_list,
-            )
+                    except InvalidActionError as e:
+                        if e.forceable:
+                            # If the action is invalid but forceable, ask the user if they want to do so
+                            force, always_force = confirm_force_operation(
+                                message=str(e)
+                            )
+                            self.tracks_viewer.force = always_force
+                            self._refresh()
+                            if force:
+                                new_node_id = (
+                                    self.tracks_viewer.tracks._get_new_node_ids(1)[0]
+                                )
+                                UserAddNode(
+                                    self.tracks_viewer.tracks,
+                                    node=new_node_id,
+                                    attributes=attributes,
+                                    force=True,
+                                )
+                        else:
+                            warnings.warn(str(e), stacklevel=2)
+                            self._refresh()
+                else:
+                    show_info(
+                        "Mixed point and segmentation nodes not allowed: add points by "
+                        "drawing on segmentation layer"
+                    )
+                    self._refresh()
 
-        elif event.action == "changed":
-            # we only want to allow this update if there is no seg layer
-            if self.tracks_viewer.tracking_layers.seg_layer is None:
-                position_key = self.tracks_viewer.tracks.features.position_key
-                nodes = [
-                    int(self.properties["node_id"][ind]) for ind in self.selected_data
-                ]
-                attrs = {
-                    position_key: [self.data[ind][1:] for ind in self.selected_data]
-                }
-
-                UserUpdateNodesAttrs(
+            elif event.action == "removed":
+                UserDeleteNodes(
                     self.tracks_viewer.tracks,
-                    nodes=nodes,
-                    attrs=attrs,
+                    nodes=self.tracks_viewer.selected_nodes.as_list,
                 )
 
-            else:
-                self._refresh()  # refresh to move points back where they belong
+            elif event.action == "changed":
+                # we only want to allow this update if there is no seg layer
+                if self.tracks_viewer.tracking_layers.seg_layer is None:
+                    position_key = self.tracks_viewer.tracks.features.position_key
+                    nodes = [
+                        int(self.properties["node_id"][ind])
+                        for ind in self.selected_data
+                    ]
+                    attrs = {
+                        position_key: [self.data[ind][1:] for ind in self.selected_data]
+                    }
+
+                    UserUpdateNodesAttrs(
+                        self.tracks_viewer.tracks,
+                        nodes=nodes,
+                        attrs=attrs,
+                    )
+
+                else:
+                    self._refresh()  # refresh to move points back where they belong
 
     def _update_selection(self):
         """Replaces the list of selected_nodes with the selection provided by the user"""
 
-        if self.mode == "select":
-            selected_points = self.selected_data
-            self.tracks_viewer.selected_nodes.reset()
-            for point in selected_points:
-                node_id = self.nodes[point]
-                self.tracks_viewer.selected_nodes.add(node_id, True)
+        # the select tool is used on the canvas, so specify with
+        # tracks_viewer.viewer_interaction
+        with self.tracks_viewer.viewer_interaction():
+            if self.mode == "select":
+                selected_points = self.selected_data
+                self.tracks_viewer.selected_nodes.reset()
+                for point in selected_points:
+                    node_id = self.nodes[point]
+                    self.tracks_viewer.selected_nodes.add(node_id, True)
 
     def _map_track_colors(self, track_ids: list[int]) -> np.ndarray:
         """Map track ids to an (N, 4) array of face colors in a single colormap call.

@@ -760,6 +760,14 @@ class TreePlot(QWidget):
             self._id_to_row = {}
             self._base_sizes = np.empty(0, dtype=np.float32)
             self._lane_track_ids = {}
+            # the per-row arrays describe the data that just went away; leaving
+            # them in place makes _reset_view frame the camera on coordinates
+            # that are no longer drawn
+            self._positions = np.empty((0, 3), dtype=np.float32)
+            self._base_colors = np.empty((0, 4), dtype=np.float32)
+            self._row_track_ids = np.empty(0, dtype=np.int64)
+            self._row_times = np.empty(0, dtype=np.float32)
+            self._row_lineage_ids = None
             return
 
         self._node_ids = df["node_id"].to_numpy()
