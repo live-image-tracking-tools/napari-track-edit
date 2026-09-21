@@ -405,7 +405,7 @@ def test_label_and_color_stay_usable_after_undo(
     viewer.dims.current_step = step
     seg_layer.brush_size = 30
 
-    new_label(seg_layer)
+    seg_layer.new_label()
     painted = seg_layer.selected_label
     seg_layer.paint(np.array([0, 50, 50, 50]), painted)
     track_before = tracks_viewer.tracks.get_track_id(painted)
