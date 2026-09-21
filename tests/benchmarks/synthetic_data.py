@@ -24,7 +24,7 @@ from dataclasses import dataclass
 import numpy as np
 import tracksdata as td
 from funtracks.data_model import Tracks
-from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
+from funtracks.utils.tracksdata_utils import create_empty_graph
 from tracksdata.nodes._mask import Mask
 
 # Node attributes mirror tests/conftest.py. The TrackAnnotator inside Tracks
@@ -136,7 +136,7 @@ def _bbox_and_mask(
     return bbox, Mask(mask_arr, bbox=bbox)
 
 
-def build_graph(params: SyntheticParams = LARGE) -> td.graph.GraphView:
+def build_graph(params: SyntheticParams = LARGE) -> td.graph.BaseGraph:
     """Build the raw tracksdata GraphView of dividing spheres (no Tracks wrap).
 
     Exposed separately so benchmarks can time ``Tracks`` construction on a
@@ -146,7 +146,7 @@ def build_graph(params: SyntheticParams = LARGE) -> td.graph.GraphView:
     spatial_ndim = len(params.frame_shape)
     shape = np.array(params.frame_shape, dtype=float)
 
-    graph = create_empty_graphview_graph(
+    graph = create_empty_graph(
         node_attributes=_NODE_ATTRS,
         edge_attributes=["iou"],
         ndim=params.ndim,
@@ -246,7 +246,7 @@ def generate_synthetic_tracks(params: SyntheticParams = LARGE) -> Tracks:
 
 def pick_nodes(tracks: Tracks) -> dict:
     """Pick deterministic, distinct nodes/edges to act on."""
-    edges = tracks.graph.edge_attrs(
+    edges = tracks.graph_solution.edge_attrs(
         attr_keys=[td.DEFAULT_ATTR_KEYS.EDGE_SOURCE, td.DEFAULT_ATTR_KEYS.EDGE_TARGET]
     )
     src = edges[td.DEFAULT_ATTR_KEYS.EDGE_SOURCE].to_list()
@@ -262,11 +262,15 @@ def pick_nodes(tracks: Tracks) -> dict:
 def tracklet_nodes(tracks: Tracks, node: int) -> list[int]:
     """All node ids sharing the tracklet (track_id) of ``node`` -- a connected path."""
     tid = tracks.get_track_id(node)
-    return [int(n) for n in tracks.graph.node_ids() if tracks.get_track_id(n) == tid]
+    return [
+        int(n)
+        for n in tracks.graph_solution.node_ids()
+        if tracks.get_track_id(n) == tid
+    ]
 
 
 def _describe(tracks: Tracks) -> dict:
-    graph = tracks.graph
+    graph = tracks.graph_solution
     src = graph.edge_attrs(attr_keys=[td.DEFAULT_ATTR_KEYS.EDGE_SOURCE])[
         td.DEFAULT_ATTR_KEYS.EDGE_SOURCE
     ].to_list()

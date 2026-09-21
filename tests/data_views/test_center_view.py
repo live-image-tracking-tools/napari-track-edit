@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import tracksdata as td
 from funtracks.data_model import Tracks
-from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
+from funtracks.utils.tracksdata_utils import create_empty_graph
 from tracksdata.nodes._mask import Mask
 
 from motile_tracker.data_views.views.ortho_views import initialize_ortho_views
@@ -33,7 +33,7 @@ def _make_single_node_graph(
     if seg_bbox is not None:
         node_attributes += [td.DEFAULT_ATTR_KEYS.MASK, td.DEFAULT_ATTR_KEYS.BBOX]
 
-    graph = create_empty_graphview_graph(
+    graph = create_empty_graph(
         node_attributes=node_attributes,
         ndim=4,
         database=str(tmp_path / "graph.db"),

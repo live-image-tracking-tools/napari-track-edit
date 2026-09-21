@@ -155,11 +155,14 @@ class MotileWidget(QWidget):
             scale=run.scale,
             ndim=run.ndim,
         )
-        if "mask" in run.graph.node_attr_keys():
-            seg_shape = run.graph.metadata.get("shape")
+        if "mask" in run.graph_solution.node_attr_keys():
+            seg_shape = run.graph_solution.metadata.get("shape")
             if seg_shape is not None:
                 run.segmentation = GraphArrayView(
-                    graph=run.graph, shape=seg_shape, attr_key="node_id", offset=0
+                    graph=run.graph_solution,
+                    shape=seg_shape,
+                    attr_key="node_id",
+                    offset=0,
                 )
 
         if run.segmentation is not None:
@@ -167,7 +170,7 @@ class MotileWidget(QWidget):
             # because compute_graph_from_seg computes area during node extraction.
             run.enable_features(["area"], recompute=False)
 
-        if run.graph.num_nodes() == 0:
+        if run.graph_solution.num_nodes() == 0:
             show_warning(
                 "No tracks found - try making your edge selection value more negative"
             )

@@ -133,8 +133,8 @@ class TestTracksListAddRemove:
         assert emitted[0][0] is tracks
         # the views need track ids to actually be on the graph, not merely
         # named by the FeatureDict
-        assert tracks.features.tracklet_key in tracks.graph.node_attr_keys()
-        assert tracks.features.lineage_key in tracks.graph.node_attr_keys()
+        assert tracks.features.tracklet_key in tracks.graph_solution.node_attr_keys()
+        assert tracks.features.lineage_key in tracks.graph_solution.node_attr_keys()
 
     def test_view_tracks_emits_tracks_with_track_ids(self, tracks_list, graph_2d):
         """Tracks built from a graph with no track id column must still reach
@@ -153,8 +153,8 @@ class TestTracksListAddRemove:
         tracks_list.add_tracks(tracks, "plain", select=True)
 
         viewed = emitted[0][0]
-        assert viewed.features.tracklet_key in viewed.graph.node_attr_keys()
-        assert viewed.features.lineage_key in viewed.graph.node_attr_keys()
+        assert viewed.features.tracklet_key in viewed.graph_solution.node_attr_keys()
+        assert viewed.features.lineage_key in viewed.graph_solution.node_attr_keys()
 
     def test_view_tracks_segmentation_follows_edits(self, tracks_list, graph_2d):
         """The emitted tracks must own the segmentation they render.

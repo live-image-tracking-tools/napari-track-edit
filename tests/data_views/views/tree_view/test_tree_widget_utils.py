@@ -4,7 +4,7 @@ import polars as pl
 from funtracks.annotators import TrackAnnotator
 from funtracks.data_model import Tracks
 from funtracks.features import Feature
-from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
+from funtracks.utils.tracksdata_utils import create_empty_graph
 
 from motile_tracker.data_views.views.tree_view.tree_widget_utils import (
     extract_sorted_tracks,
@@ -16,11 +16,13 @@ from motile_tracker.data_views.views.tree_view.tree_widget_utils import (
 def test_track_df(solution_tracks_2d):
     tracks = solution_tracks_2d
     ann = TrackAnnotator(tracks, lineage_key="lineage_id", tracklet_key="track_id")
-    tracks.graph.add_node_attr_key("custom_attr", default_value=0, dtype=pl.Int64)
+    tracks.graph_solution.add_node_attr_key(
+        "custom_attr", default_value=0, dtype=pl.Int64
+    )
 
-    for node in tracks.graph.node_ids():
+    for node in tracks.graph_solution.node_ids():
         if node != 2:
-            tracks.graph.nodes[node]["custom_attr"] = node * 10
+            tracks.graph_solution.nodes[node]["custom_attr"] = node * 10
     tracks.features["custom_attr"] = Feature(
         feature_type="node",
         value_type="int",
@@ -48,7 +50,7 @@ def test_get_features_from_tracks_individual_pos_attrs():
     each axis as a Feature without a display_name key (NotRequired per the TypedDict).
     The function must fall back to the dict key instead of raising KeyError.
     """
-    graph = create_empty_graphview_graph(
+    graph = create_empty_graph(
         node_attributes=["y", "x"],
         ndim=3,
     )
@@ -74,7 +76,7 @@ def test_extract_sorted_tracks_incomplete_lineage():
     With the fix, the BFS stops at the B->C edge (track_id 1 != 2), producing
     separate tracklets {A, B} and {C}.
     """
-    graph = create_empty_graphview_graph(
+    graph = create_empty_graph(
         node_attributes=["pos", "track_id"],
         ndim=3,
     )

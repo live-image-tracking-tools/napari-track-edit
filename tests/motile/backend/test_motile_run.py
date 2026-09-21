@@ -137,9 +137,9 @@ def test_save_load(tmp_path, graph_2d):
     )
     path = run.save(tmp_path / "test.geff")
     newrun = MotileRun.load(path)
-    assert set(run.graph.node_ids()) == set(newrun.graph.node_ids())
-    assert {tuple(e) for e in run.graph.edge_list()} == {
-        tuple(e) for e in newrun.graph.edge_list()
+    assert set(run.graph_solution.node_ids()) == set(newrun.graph_solution.node_ids())
+    assert {tuple(e) for e in run.graph_solution.edge_list()} == {
+        tuple(e) for e in newrun.graph_solution.edge_list()
     }
     assert run.run_name == newrun.run_name
     assert np.array_equal(np.asarray(run.segmentation), np.asarray(newrun.segmentation))
@@ -151,7 +151,7 @@ def test_save_load(tmp_path, graph_2d):
     assert run.solver_params == newrun.solver_params
     # Verify core accessor methods work on the loaded run
     # (regression: time_attr mismatch after load caused KeyError in get_time)
-    node_ids = list(newrun.graph.node_ids())
+    node_ids = list(newrun.graph_solution.node_ids())
     for node_id in node_ids:
         newrun.get_time(node_id)
         newrun.get_position(node_id)

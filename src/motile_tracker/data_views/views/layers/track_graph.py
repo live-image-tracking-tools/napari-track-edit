@@ -39,7 +39,7 @@ def update_napari_tracks(
     """
 
     ndim = tracks.ndim - 1
-    graph = tracks.graph
+    graph = tracks.graph_solution
     napari_edges = {}
 
     time_key = tracks.features.time_key

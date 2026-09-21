@@ -37,7 +37,7 @@ class MotileRun(Tracks):
 
     def __init__(
         self,
-        graph: td.graph.BaseGraph | td.graph.GraphView,
+        graph: td.graph.BaseGraph,
         run_name: str,
         time_attr: str = "t",
         pos_attr: str | tuple[str] | list[str] = "pos",
@@ -54,13 +54,6 @@ class MotileRun(Tracks):
     ):
         if ndim is None and input_segmentation is not None:
             ndim = input_segmentation.ndim
-
-        if isinstance(graph, td.graph.GraphView):
-            # solve() still hands back a solution view. Tracks wants the root base
-            # graph and builds its own solution view, so unwrap here rather than
-            # letting Tracks do it and warn.
-            # TODO: make solve() return the base graph and drop this.
-            graph = graph._root
 
         super().__init__(
             graph,
@@ -230,7 +223,7 @@ class MotileRun(Tracks):
         elif tracks_path.exists():
             tracks = import_from_geff(tracks_path)
         elif (run_dir / "graph.json").exists():
-            tracks = load_v1_tracks(run_dir, solution=True)
+            tracks = load_v1_tracks(run_dir)
         else:
             tracks = import_from_geff(run_dir / "tracks")
         if attrs is not None:
@@ -238,7 +231,7 @@ class MotileRun(Tracks):
             # "segmentation_shape" key for runs saved by older versions.
             seg_shape = attrs.get("shape", attrs.get("segmentation_shape"))
             if seg_shape is not None:
-                tracks.graph._update_metadata(shape=tuple(seg_shape))
+                tracks.graph_full._update_metadata(shape=tuple(seg_shape))
             scale = attrs.get("scale") or tracks.scale
             time_attr = attrs.get("time_attr") or tracks.features.time_key
         else:
@@ -352,7 +345,7 @@ class MotileRun(Tracks):
             directory (Path):  The directory in which to save the attributes
         """
         out_path = directory / ATTRS_FILENAME
-        seg_shape = self.graph.metadata.get("shape")
+        seg_shape = self.graph_full.metadata.get("shape")
         scale = (
             self.scale
             if not isinstance(self.scale, np.ndarray)

@@ -571,7 +571,7 @@ class ColoredTableWidget(QWidget):
         """
         tracks = self.tracks_viewer.tracks
         if tracks is not None:
-            nodes = tracks.graph.node_ids()
+            nodes = tracks.graph_solution.node_ids()
             track_ids = tracks.get_track_ids(nodes)
             # Single vectorized colormap.map call: ~290x faster than per-node
             # calls because colormap.map has a large fixed per-call overhead.

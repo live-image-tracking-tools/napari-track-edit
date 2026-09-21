@@ -29,7 +29,7 @@ def colored_table_widget(qtbot, setup_tracks_viewer):
     viewer, tracks_viewer = setup_tracks_viewer
 
     # Build dataframe from tracks
-    nodes = tracks_viewer.tracks.graph.node_ids()
+    nodes = tracks_viewer.tracks.graph_solution.node_ids()
 
     df = pd.DataFrame(
         {

@@ -100,7 +100,9 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
         tp=3, z=(15, 20), y=(45, 50), x=(75, 80), old_val=0, target_val=60
     )
     event = MockEvent(event_val)
-    assert tracks_viewer.tracks.graph.num_nodes() == 4  # 4 nodes before the paint event
+    assert (
+        tracks_viewer.tracks.graph_solution.num_nodes() == 4
+    )  # 4 nodes before the paint event
     tracks_viewer.tracking_layers.seg_layer._on_paint(event)
 
     # verify the new selected label is now at painted pixels.
@@ -110,8 +112,10 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
     )
     # verfiy that the node is present and has the correct track id.
     assert tracks_viewer.tracks.get_track_id(5) == 4
-    assert tracks_viewer.tracks.graph.num_nodes() == 5  # 5 nodes after paint event
-    assert tracks_viewer.tracks.graph.num_edges() == 3  # no new edges
+    assert (
+        tracks_viewer.tracks.graph_solution.num_nodes() == 5
+    )  # 5 nodes after paint event
+    assert tracks_viewer.tracks.graph_solution.num_edges() == 3  # no new edges
 
     ### 2) Simulate paint event that overwrites an existing node with a new track id. Below
     # event aims to completely replace node 3 with a new label, that has track id 4, since
@@ -128,21 +132,23 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
     viewer.dims.current_step = step
 
     # Run event and evaluate
-    assert tracks_viewer.tracks.graph.num_nodes() == 5  # 5 nodes before paint event
+    assert (
+        tracks_viewer.tracks.graph_solution.num_nodes() == 5
+    )  # 5 nodes before paint event
     tracks_viewer.tracking_layers.seg_layer._on_paint(event)
     assert (
-        tracks_viewer.tracks.graph.num_nodes() == 5
+        tracks_viewer.tracks.graph_solution.num_nodes() == 5
     )  # still 5 nodes after paint event
     # (node 3 has been replaced entirely)
-    assert 3 not in tracks_viewer.tracks.graph.node_ids()  # node 3 is removed
+    assert 3 not in tracks_viewer.tracks.graph_solution.node_ids()  # node 3 is removed
     assert (
         int(np.asarray(tracks_viewer.tracking_layers.seg_layer.data[2, 55, 45, 40]))
         == 6
     )  # next
     # available value
     assert tracks_viewer.tracks.get_track_id(6) == 4  # the selected track id
-    assert not tracks_viewer.tracks.graph.has_edge(2, 3)
-    assert tracks_viewer.tracks.graph.has_edge(6, 5)
+    assert not tracks_viewer.tracks.graph_solution.has_edge(2, 3)
+    assert tracks_viewer.tracks.graph_solution.has_edge(6, 5)
 
     ### 3) simulate an erase event (paint event with label 0) that removes part of label 6
     event_val = create_event_val(
@@ -151,16 +157,18 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
     event = MockEvent(event_val)
 
     # Run event and evaluate
-    assert tracks_viewer.tracks.graph.num_nodes() == 5  # 5 nodes before paint event
+    assert (
+        tracks_viewer.tracks.graph_solution.num_nodes() == 5
+    )  # 5 nodes before paint event
     tracks_viewer.tracking_layers.seg_layer.mode = "erase"  # to correctly interpret
     # painting with 0
 
     tracks_viewer.tracking_layers.seg_layer._on_paint(event)
     assert (
-        tracks_viewer.tracks.graph.num_nodes() == 5
+        tracks_viewer.tracks.graph_solution.num_nodes() == 5
     )  # still 5 nodes after paint event
     # (node 6 is now smaller)
-    assert tracks_viewer.tracks.graph.nodes[6]["area"] < 1000
+    assert tracks_viewer.tracks.graph_solution.nodes[6]["area"] < 1000
     assert (
         int(np.asarray(tracks_viewer.tracking_layers.seg_layer.data[2, 55, 45, 40]))
         == 0
@@ -168,7 +176,7 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
 
     ### 4) Test undoing the last paint event
     tracks_viewer.tracking_layers.seg_layer.undo()
-    assert tracks_viewer.tracks.graph.nodes[6]["area"] == 1000
+    assert tracks_viewer.tracks.graph_solution.nodes[6]["area"] == 1000
     assert (
         int(np.asarray(tracks_viewer.tracking_layers.seg_layer.data[2, 55, 45, 40]))
         == 6
@@ -304,7 +312,7 @@ def test_paint_with_preserve_labels_paints_into_background(
     seg_layer.preserve_labels = True
     seg_layer.brush_size = 3
 
-    nodes_before = tracks_viewer.tracks.graph.num_nodes()
+    nodes_before = tracks_viewer.tracks.graph_solution.num_nodes()
 
     # Pure background: far from node 1
     seg_layer.paint(np.array([0, 50, 80, 80]), new_value)
@@ -314,7 +322,7 @@ def test_paint_with_preserve_labels_paints_into_background(
     # Existing node 1 untouched
     assert int(np.asarray(seg_layer.data[0, 50, 50, 50])) == 1
     # Graph: new node added
-    assert tracks_viewer.tracks.graph.num_nodes() == nodes_before + 1
+    assert tracks_viewer.tracks.graph_solution.num_nodes() == nodes_before + 1
 
 
 def test_paint_with_preserve_labels_does_not_overwrite_existing(
@@ -339,13 +347,13 @@ def test_paint_with_preserve_labels_does_not_overwrite_existing(
     seg_layer.preserve_labels = True
     seg_layer.brush_size = 3
 
-    nodes_before = tracks_viewer.tracks.graph.num_nodes()
+    nodes_before = tracks_viewer.tracks.graph_solution.num_nodes()
 
     # Center of node 1
     seg_layer.paint(np.array([0, 50, 50, 50]), new_value)
 
     assert int(np.asarray(seg_layer.data[0, 50, 50, 50])) == 1
-    assert tracks_viewer.tracks.graph.num_nodes() == nodes_before
+    assert tracks_viewer.tracks.graph_solution.num_nodes() == nodes_before
 
 
 def test_undo_on_readonly_data_does_not_fire_paint_event(
