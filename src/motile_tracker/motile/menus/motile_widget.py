@@ -71,7 +71,7 @@ class MotileWidget(QWidget):
             self.edit_run_widget.hide()
             self.view_run_widget.show()
         else:
-            self.view_run_widget.hide()
+            self.edit_run(None)
 
     def edit_run(self, run: MotileRun | None):
         """Create or edit a new run in the run editor. Also removes solution layers

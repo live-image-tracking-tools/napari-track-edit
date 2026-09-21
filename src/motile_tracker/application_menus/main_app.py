@@ -13,6 +13,7 @@ from motile_tracker.application_menus.feature_widget import FeatureWidget
 from motile_tracker.application_menus.group_widget import GroupWidget
 from motile_tracker.application_menus.menu_manager import MenuManager
 from motile_tracker.application_menus.track_list_widget import TrackListWidget
+from motile_tracker.application_menus.tracking_widget import TrackingWidget
 from motile_tracker.application_menus.visualization_widget import (
     VisualizationWidget,
 )
@@ -22,11 +23,10 @@ from motile_tracker.data_views.views.table.custom_table_widget import (
 )
 from motile_tracker.data_views.views.tree_view.tree_widget import TreeWidget
 from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
-from motile_tracker.motile.menus.motile_widget import MotileWidget
 
 MENU_WIDGETS = {
     "Getting Started": {"widget": WelcomeWidget, "location": "right"},
-    "Tracking": {"widget": MotileWidget, "location": "right"},
+    "Tracking": {"widget": TrackingWidget, "location": "right"},
     "Tracks List": {"widget": TrackListWidget, "location": "right"},
     "Editing && Selection": {"widget": EditingSelectionWidget, "location": "right"},
     "Visualization": {"widget": VisualizationWidget, "location": "right"},
