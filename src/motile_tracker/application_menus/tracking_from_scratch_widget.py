@@ -62,6 +62,8 @@ class TrackingFromScratch(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(create_box)
 
+        layout.addStretch()
+
         self._update_buttons()
 
     def _update_buttons(self, *args) -> None:

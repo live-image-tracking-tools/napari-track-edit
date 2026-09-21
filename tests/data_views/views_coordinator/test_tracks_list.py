@@ -79,6 +79,21 @@ class TestTracksListAddRemove:
         tracks_list.remove_tracks(item)
         assert tracks_list.tracks_list.count() == 0
 
+    def test_remove_last_tracks_emits_cleared(self, tracks_list, motile_run):
+        emitted = []
+        tracks_list.tracks_cleared.connect(lambda: emitted.append(True))
+        tracks_list.add_tracks(motile_run, "run1", select=False)
+        tracks_list.remove_tracks(tracks_list.tracks_list.item(0))
+        assert emitted == [True]
+
+    def test_remove_one_of_two_does_not_emit_cleared(self, tracks_list, motile_run):
+        emitted = []
+        tracks_list.tracks_cleared.connect(lambda: emitted.append(True))
+        tracks_list.add_tracks(motile_run, "run1", select=False)
+        tracks_list.add_tracks(motile_run, "run2", select=False)
+        tracks_list.remove_tracks(tracks_list.tracks_list.item(0))
+        assert emitted == []
+
     def test_selection_changed_emits_signal(self, tracks_list, motile_run):
         emitted = []
         tracks_list.view_tracks.connect(lambda t, n: emitted.append((t, n)))
