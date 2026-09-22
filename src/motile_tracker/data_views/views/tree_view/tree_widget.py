@@ -68,6 +68,9 @@ class TreeWidget(QWidget):
         )
         self.tree_widget.node_clicked.connect(self.selected_nodes.add)
         self.tree_widget.jump_to_node.connect(self.tracks_viewer.center_on_node)
+        self.tree_widget.pick_track_id.connect(
+            self.tracks_viewer.select_track_id_from_node
+        )
         self.tree_widget.nodes_selected.connect(self.selected_nodes.add_list)
         self.tracks_viewer.center_node.connect(self.tree_widget.center_on_node)
 

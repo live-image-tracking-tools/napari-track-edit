@@ -16,6 +16,8 @@ Napari viewer and layer key bindings and mouse functions
      - Add/remove this node to/from selection (does not center view)
    * - CTRL/CMD + click on point or label
      - Center view on this node (does not change selection)
+   * - ALT/OPTION + click on point or label
+     - | Make this node's tracklet id the current one tool (does not change the selection or the time point)
    * - Mouse drag with point layer selection tool active
      - Select multiple nodes at once
    * - ESC
@@ -47,6 +49,8 @@ Tree view key and mouse functions
      - Add/remove this node to/from selection (does not center view)
    * - CTRL/CMD + click on a node
      - Center view on this node (does not change selection)
+   * - ALT/OPTION + click on a node
+     - | Make this node's tracklet id the current one (does not change the selection or the time point)
    * - Scroll
      - Zoom in or out
    * - Scroll + X

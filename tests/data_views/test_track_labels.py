@@ -227,6 +227,31 @@ def test_ensure_valid_label(viewer, solution_tracks_3d_with_division):
     assert tracks_viewer.selected_track == 4  # new track id (still unused)
 
 
+def test_alt_click_picks_track_id(viewer, solution_tracks_2d):
+    """ALT/OPTION + click on a label adopts its track id without selecting the node.
+
+    This is the pipette made available from pan_zoom mode and from any frame: node 6
+    lives at t=4, and clicking it from t=0 must neither select it nor move the viewer.
+    """
+
+    class _Event:
+        def __init__(self, modifiers):
+            self.modifiers = modifiers
+
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
+    seg_layer = tracks_viewer.tracking_layers.seg_layer
+
+    viewer.dims.set_point(0, 0)
+    tracks_viewer.selected_nodes.reset()
+
+    seg_layer.process_click(_Event(["Alt"]), np.int64(6))
+
+    assert tracks_viewer.selected_track == solution_tracks_2d.get_track_id(6)
+    assert len(tracks_viewer.selected_nodes) == 0
+    assert viewer.dims.current_step[0] == 0
+
+
 def test_background_label_does_not_get_a_color(
     viewer, solution_tracks_3d_with_division
 ):
