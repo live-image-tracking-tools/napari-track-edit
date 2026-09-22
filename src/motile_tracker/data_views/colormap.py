@@ -9,6 +9,9 @@ from napari.utils.colormaps import label_colormap
 if TYPE_CHECKING:
     from funtracks.data_model import Tracks
 
+# What a node is painted with while its own color is not known yet - see add_node.
+PENDING_GREY = (0.6, 0.6, 0.6)
+
 
 @runtime_checkable
 class ColorSource(Protocol):
@@ -94,6 +97,9 @@ class TrackColormap:
         # Keys always match self._alpha's.
         self._node_colors: dict[int, np.ndarray] = {}
         self._alpha: dict[int, float] = {}
+        # Nodes colored before `Tracks` knows about them (see add_node), which
+        # set_tracks has to leave alone.
+        self._pending: set[int] = set()
         # (sorted node ids, matching RGB rows) for vectorized lookup
         self._lookup: tuple[np.ndarray, np.ndarray] | None = None
 
@@ -124,6 +130,15 @@ class TrackColormap:
         self._feature_key = feature_key
         self.set_tracks(self._tracks)
 
+    @property
+    def colors_by_track_id(self) -> bool:
+        """Whether the feature being colored by is the track id."""
+        return (
+            self._tracks is None
+            or self._feature_key is None
+            or self._feature_key == self._tracks.features.tracklet_key
+        )
+
     def _feature_values(self, tracks: Tracks, nodes) -> list:
         key = self.feature_key or tracks.features.tracklet_key
         return tracks.get_nodes_attr(nodes, key)
@@ -145,6 +160,9 @@ class TrackColormap:
         feature lookup). Existing per-node alpha overrides for nodes that are
         still present are preserved; overrides for removed nodes are dropped
         and new nodes default to `default_alpha`.
+
+        Nodes added by `add_node` keep the color it gave them until `Tracks`
+        knows about them.
         """
         self._tracks = tracks
         nodes = tracks.graph.node_ids() if tracks is not None else []
@@ -159,29 +177,59 @@ class TrackColormap:
         else:
             colors = {}
 
+        if tracks is None:
+            self._pending.clear()
+        elif self._pending:
+            # a pending node stops being pending as soon as it is in the graph,
+            # where its own feature value gives it a color
+            self._pending -= colors.keys()
+            for node in self._pending:
+                colors[node] = self._node_colors[node]
+
         self._alpha = {
-            node: self._alpha.get(node, self._default_alpha) for node in nodes
+            node: self._alpha.get(node, self._default_alpha) for node in colors
         }
         self._node_colors = colors
         self._lookup = None
 
-    def add_node(self, node: int, feature_value) -> None:
-        """Add a node not yet known to `self._tracks`, colored via
-        `color_source.map(feature_value)`. Alpha defaults to `default_alpha`.
+    def add_node(self, node: int, track_id: int) -> None:
+        """Color a node not yet known to `self._tracks`, so that it can be
+        painted with (`TrackLabels._new_label`). Alpha defaults to
+        `default_alpha`, and `set_tracks` leaves the color alone until the node
+        reaches the graph, where its own feature value takes over.
 
-        `feature_value` must be passed in (rather than looked up via
-        `feature_key`, like `set_tracks` does) because callers need this
-        before the node exists in the `Tracks` graph - e.g.
-        `TrackLabels._new_label`, previewing a color while painting.
+        The node is given the color it will keep wherever the feature's value
+        for it can be worked out in advance, so that what you paint with is
+        what you end up with. A grey color is used when the color cannot be known in
+        advance.
         """
-        rgba = self.color_source.map(np.asarray([feature_value]))[0]
+        tracks = self._tracks
+        if self.colors_by_track_id:
+            # the one value a node is given up front (TracksViewer.set_new_track_id)
+            value = track_id
+        elif tracks is not None and self._feature_key == tracks.features.lineage_key:
+            # UserAddNode takes the lineage from another node of the same track
+            # and only mints a new one when the track has none yet, so both
+            # cases are known before the node exists
+            in_track = tracks.track_id_to_node.get(track_id)
+            value = (
+                tracks.get_lineage_id(next(iter(in_track)))
+                if in_track
+                else tracks.get_next_lineage_id()
+            )
+        else:
+            value = None
+
+        rgba = PENDING_GREY if value is None else self.color_source.map(value)
         self._node_colors[node] = np.asarray(rgba[:3], dtype=float).copy()
         self._alpha[node] = self._default_alpha
+        self._pending.add(node)
         self._lookup = None
 
     def remove_node(self, node: int) -> None:
         self._node_colors.pop(node, None)
         self._alpha.pop(node, None)
+        self._pending.discard(node)
         self._lookup = None
 
     def set_alpha(self, nodes, value: float) -> None:

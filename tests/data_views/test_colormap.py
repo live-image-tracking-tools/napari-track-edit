@@ -1,7 +1,11 @@
 import numpy as np
 import pytest
 
-from motile_tracker.data_views.colormap import CategoricalColorSource, TrackColormap
+from motile_tracker.data_views.colormap import (
+    PENDING_GREY,
+    CategoricalColorSource,
+    TrackColormap,
+)
 
 
 class ConstantColorSource:
@@ -549,3 +553,108 @@ class TestGetColorsIsOpaque:
         colors = cmap.get_colors(np.asarray([1, 2], dtype=float))
 
         assert np.array_equal(colors, cmap.get_colors([1, 2]))
+
+
+class TestColorsByTrackId:
+    def test_true_for_the_tracklet_key_and_the_default(self, solution_tracks_2d):
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        assert cmap.colors_by_track_id
+
+        cmap.feature_key = solution_tracks_2d.features.tracklet_key
+        assert cmap.colors_by_track_id
+
+    def test_false_for_any_other_feature(self, solution_tracks_2d):
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+
+        cmap.feature_key = solution_tracks_2d.features.lineage_key
+
+        assert not cmap.colors_by_track_id
+
+
+class TestPendingNodes:
+    def test_colored_by_track_id_when_that_is_the_feature(self, solution_tracks_2d):
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+
+        cmap.add_node(999, 1)
+
+        assert np.array_equal(cmap.get_color(999)[:3], cmap.map(np.asarray([1]))[0][:3])
+
+    def test_new_lineage_when_the_track_has_no_nodes_yet(self, solution_tracks_2d):
+        # a brand-new track is a new root, so UserAddNode will mint it a new
+        # lineage - which is knowable up front
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        cmap.feature_key = solution_tracks_2d.features.lineage_key
+
+        cmap.add_node(999, solution_tracks_2d.get_next_track_id())
+
+        expected = cmap.map(np.asarray([solution_tracks_2d.get_next_lineage_id()]))[0]
+        assert np.allclose(cmap.get_color(999)[:3], expected[:3])
+
+    def test_lineage_of_the_track_when_it_already_has_nodes(self, solution_tracks_2d):
+        # continuing an existing track: UserAddNode takes the lineage from its
+        # other nodes
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        cmap.feature_key = solution_tracks_2d.features.lineage_key
+        track = solution_tracks_2d.get_track_id(1)
+
+        cmap.add_node(999, track)
+
+        assert np.array_equal(cmap.get_color(999)[:3], cmap.get_color(1)[:3])
+
+    def test_grey_when_the_value_cannot_be_known(self, solution_tracks_2d):
+        # nothing says what area a node that has not been drawn yet will have
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        cmap.feature_key = "area"
+
+        cmap.add_node(999, 1)
+
+        assert np.allclose(cmap.get_color(999)[:3], PENDING_GREY)
+
+    def test_survives_a_refresh_before_the_node_is_committed(self, solution_tracks_2d):
+        # set_tracks runs on every refresh; dropping the pending node there
+        # leaves the label being painted with colorless mid-edit
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        cmap.add_node(999, 1)
+        before = cmap.get_color(999).copy()
+
+        cmap.set_tracks(solution_tracks_2d)
+
+        assert np.array_equal(cmap.get_color(999), before)
+        assert 999 in cmap.to_direct_colormap().color_dict
+
+    def test_real_color_takes_over_once_tracks_has_the_node(self, solution_tracks_2d):
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        cmap.feature_key = "area"  # nothing can be known about it up front
+        cmap.add_node(1, 1)  # node 1 *is* in the graph
+        assert np.allclose(cmap.get_color(1)[:3], PENDING_GREY)
+
+        cmap.set_tracks(solution_tracks_2d)
+
+        assert not np.allclose(cmap.get_color(1)[:3], PENDING_GREY)
+
+    def test_dropped_by_remove_node(self, solution_tracks_2d):
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        cmap.add_node(999, 1)
+
+        cmap.remove_node(999)
+        cmap.set_tracks(solution_tracks_2d)
+
+        assert np.array_equal(cmap.get_color(999), np.zeros(4))
+
+    def test_dropped_when_the_tracks_go_away(self, solution_tracks_2d):
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        cmap.add_node(999, 1)
+
+        cmap.set_tracks(None)
+
+        assert list(cmap.nodes) == []

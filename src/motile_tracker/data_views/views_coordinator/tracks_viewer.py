@@ -199,11 +199,16 @@ class TracksViewer:
         self.update_track_id.emit()
 
     def set_track_id_color(self, track_id: int) -> None:
-        """Update self.track_id color with the rgba color or given track_id, or a list of
-        0 if the provided  track_id is None"""
+        """Update self.track_id_color with the rgba color of the given track_id.
+
+        Shows the tracklet ID color when the colormap feature is set to tracklet ID,
+        transparent otherwise to avoid confusion.
+        """
 
         self.track_id_color = (
-            [0, 0, 0, 0] if track_id is None else self.colormap.map(track_id)
+            self.colormap.map(track_id)
+            if track_id is not None and self.colormap.colors_by_track_id
+            else [0, 0, 0, 0]
         )
 
     def update_track_df(
