@@ -278,13 +278,14 @@ class FeatureWidget(QWidget):
             the user cancelled or there is nothing eligible to measure.
         """
 
-        eligible = self._matching_image_layers()
+        eligible, desired_shape = self._matching_image_layers()
         if not eligible:
             QMessageBox.information(
                 self,
                 "No image layers to measure",
-                "Mean intensity needs an image layer with the same shape as the "
-                "segmentation.",
+                "No image layers have the same shape as the segmentation: "
+                f"{desired_shape}. \n\nIf you have multichannel data, please split the"
+                " stack into the different channels and try again.",
             )
             return None
 
@@ -403,4 +404,4 @@ class FeatureWidget(QWidget):
             for layer in self.viewer.layers
             if isinstance(layer, napari.layers.Image)
             and tuple(getattr(layer.data, "shape", ())) == seg_shape
-        ]
+        ], seg_shape
