@@ -16,13 +16,13 @@ def detect_side_button(event: Event | QMouseEvent) -> int | None:
     """Detect if a mouse side button (back/forward) was pressed.
 
     Args:
-        event: The napari mouse event or QMouseEvent / pyqtgraph MouseClickEvent
+        event: The napari mouse event or a Qt QMouseEvent
 
     Returns:
         MouseButton integer (4: back, 5: forward), or None if not a side button
     """
 
-    # check if the event is a QMouseEvent or a pyqtgrpah MouseClickEvent
+    # check if the event is a QMouseEvent (button is a callable method)
     button_attr = getattr(event, "button", None)
     if callable(button_attr):
         return QT_BUTTON_TO_INT.get(button_attr())

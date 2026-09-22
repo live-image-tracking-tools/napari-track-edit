@@ -164,6 +164,7 @@ class CustomTableWidget(QTableView):
         - Plain click: single selection, toggle if already selected
         - Shift: append to selection.
         - Ctrl/CMD: center node, should not affect selection.
+        - Alt/Option: take over this node's tracklet id, should not affect selection.
         - Side buttons (back/forward): navigate selection history.
         """
         # Intercept mouse side buttons for selection history navigation
@@ -185,9 +186,15 @@ class CustomTableWidget(QTableView):
 
         ctrl = modifiers & Qt.ControlModifier
         shift = modifiers & Qt.ShiftModifier
+        alt = modifiers & Qt.AltModifier
 
         sel_model = self.selectionModel()
         model_index = self.model().index(row, 0)
+
+        if alt:
+            self.parent().pick_track_id(model_index)
+            event.accept()
+            return
 
         if ctrl:
             self.parent().center_node(model_index)
@@ -317,7 +324,7 @@ class ColoredTableWidget(QWidget):
 
         # Instruction label to explain mouse and keyboard functions.
         label = QLabel(
-            "Use left mouse click to select and center a label. Use Ctrl/CMD to center a node, Shift to append to selection. Use mouse drag to select a range."
+            "Use left mouse click to select and center a label. Use Ctrl/CMD to center a node, Alt/Option to take over its Tracklet ID, Shift to append to selection. Use mouse drag to select a range."
         )
         label.setWordWrap(True)
         font = label.font()
@@ -470,6 +477,27 @@ class ColoredTableWidget(QWidget):
             row = index.row()
             node = self._table["ID"][row]
             self.tracks_viewer.center_on_node(node)
+        finally:
+            self._syncing = False
+
+    def pick_track_id(self, index: int) -> None:
+        """Call TracksViewer to adopt the tracklet id of the node of current index.
+
+        The node itself is not selected and the time point is not changed, so this is
+        the table's equivalent of ALT/OPTION + click in the tree view and the layers.
+
+        Args:
+            index (int): the index in the table corresponding to the node whose
+                tracklet id should become the current one.
+        """
+        if self._syncing:
+            return
+
+        self._syncing = True
+        try:
+            row = index.row()
+            node = self._table["ID"][row]
+            self.tracks_viewer.select_track_id_from_node(node)
         finally:
             self._syncing = False
 
