@@ -13,6 +13,9 @@ Clicking on individual nodes in the tree widget or in the napari Points or Label
 highlighting it both in the tree view and in the napari layers. The view is centered on the selected node
 only when a single node is selected. Use ``SHIFT + click`` to add/remove nodes to/from the selection without centering,
 or ``CTRL(/CMD) + click`` to center the view on a node without changing the selection.
+Use ``ALT(/OPTION) + click`` to adopt a node's tracklet id as the current one without selecting the node:
+this works like the pipette tool of the Labels layer, but it can be used on a node in any time point,
+so neither the current time point nor the camera moves.
 When multiple nodes are selected, you can cycle through them using the arrow buttons in the Editing & Selection widget.
 You can jump back/forward to your previous/future selection using the ``P`` (previous) and ``N`` (next) keys.
 You can navigate and select nodes in the tree view using the arrow keys (make sure to click on the tree widget first).
