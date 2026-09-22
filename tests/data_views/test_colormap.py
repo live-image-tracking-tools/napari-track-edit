@@ -69,7 +69,9 @@ class TestTrackColormapSetAlpha:
         cmap.set_tracks(solution_tracks_2d)
 
         calls = []
-        monkeypatch.setattr(cmap.color_source, "map", lambda values: calls.append(values))
+        monkeypatch.setattr(
+            cmap.color_source, "map", lambda values: calls.append(values)
+        )
 
         cmap.set_alpha([1], 0.3)
 
@@ -182,14 +184,18 @@ class TestTrackColormapGetColors:
 
         assert np.array_equal(cmap.get_color(999), [0, 0, 0, 0])
 
-    def test_reflects_alpha_overrides(self, solution_tracks_2d):
+    def test_does_not_reflect_alpha_overrides(self, solution_tracks_2d):
+        # alpha is display state, reachable via get_alpha and folded in by
+        # to_direct_colormap for the labels layer - it is not part of a node's
+        # color, and no get_colors consumer wants it
         cmap = TrackColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.set_alpha([1], 0.4)
 
         colors = cmap.get_colors(np.asarray([1]))
 
-        assert colors[0][3] == 0.4
+        assert colors[0][3] == 1.0
+        assert cmap.get_alpha(1) == 0.4
 
 
 class TestTrackColormapColorAlphaSeparation:
@@ -201,7 +207,7 @@ class TestTrackColormapColorAlphaSeparation:
         cmap.set_alpha([1], 0.2)
 
         assert np.array_equal(cmap.get_color(1)[:3], rgb_before)
-        assert cmap.get_color(1)[3] == 0.2
+        assert cmap.get_alpha(1) == 0.2
 
     def test_set_alpha_ignores_unknown_nodes(self, solution_tracks_2d):
         cmap = TrackColormap()
@@ -232,7 +238,9 @@ class TestTrackColormapColorAlphaSeparation:
 
         assert cmap.get_alpha(999) == 1.0
 
-    def test_recolor_via_color_source_preserves_existing_alpha(self, solution_tracks_2d):
+    def test_recolor_via_color_source_preserves_existing_alpha(
+        self, solution_tracks_2d
+    ):
         # Recoloring is a color_source concern (e.g. shuffle), not a per-node
         # setter - existing alpha must survive a resync after a recolor.
         cmap = TrackColormap()
@@ -470,3 +478,74 @@ class TestTrackColormapEmptyTracks:
         assert list(cmap.nodes) == []
         direct = cmap.to_direct_colormap()
         assert set(direct.color_dict.keys()) == {None}
+
+
+class TestGetColorsIsOpaque:
+    def test_ignores_per_node_alpha(self, solution_tracks_2d):
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        cmap.set_alpha([1], 0.3)
+
+        colors = cmap.get_colors([1])
+
+        assert colors[0][3] == 1.0
+        assert np.array_equal(colors[0][:3], cmap.get_color(1)[:3])
+
+    def test_unknown_node_is_transparent(self, solution_tracks_2d):
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+
+        colors = cmap.get_colors([1, 999])
+
+        assert np.array_equal(colors[1], np.zeros(4))
+        assert colors[0][3] == 1.0
+
+    def test_empty_inputs(self, solution_tracks_2d):
+        cmap = TrackColormap()
+
+        assert cmap.get_colors([]).shape == (0, 4)
+        assert np.array_equal(cmap.get_colors([1])[0], np.zeros(4))
+
+    def test_reflects_nodes_added_and_removed_since_the_last_set_tracks(
+        self, solution_tracks_2d
+    ):
+        # the vectorized lookup caches the node set, so add_node/remove_node
+        # have to invalidate it
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        cmap.get_colors([1])  # populate the cache
+
+        cmap.add_node(999, 1)
+        cmap.remove_node(1)
+
+        assert cmap.get_colors([999])[0][3] == 1.0
+        assert np.array_equal(cmap.get_colors([1])[0], np.zeros(4))
+
+    def test_matches_get_color_per_node(self, solution_tracks_2d):
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        nodes = list(cmap.nodes)
+
+        base = cmap.get_colors(nodes)
+
+        for row, node in zip(base, nodes, strict=True):
+            assert np.array_equal(row[:3], cmap.get_color(node)[:3])
+
+    def test_follows_the_feature_key(self, solution_tracks_2d):
+        # nodes 4 and 5 both have area 16.0, despite different track ids
+        cmap = TrackColormap(feature_key="area")
+        cmap.set_tracks(solution_tracks_2d)
+
+        colors = cmap.get_colors([4, 5])
+
+        assert np.array_equal(colors[0], colors[1])
+
+    def test_accepts_float_node_ids(self, solution_tracks_2d):
+        # the napari Tracks layer maps its vertex colors through get_colors and
+        # hands back whatever dtype its property table holds
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+
+        colors = cmap.get_colors(np.asarray([1, 2], dtype=float))
+
+        assert np.array_equal(colors, cmap.get_colors([1, 2]))

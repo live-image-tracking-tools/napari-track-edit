@@ -157,6 +157,21 @@ class TracksViewer:
         """Set the current colormap on the TracksList, so that it can be exported."""
         self.tracks_list.colormap = self.colormap
 
+    def set_color_feature(self, feature_key: str | None, refresh: bool = True) -> None:
+        """Color every view by the given node feature and trigger refresh so that the
+        update is immediately visible.
+
+        Args:
+            feature_key: A node feature key, or None for the default (the
+                tracklet id - see `TrackColormap.feature_key`).
+            refresh: Set False while tracks are being swapped in, where the
+                caller rebuilds the views itself anyway.
+        """
+
+        self.colormap.feature_key = feature_key
+        if refresh and self.tracks is not None:
+            self._refresh()
+
     def set_keybinds(self):
         bind_keymap(self.viewer, KEYMAP, self)
 

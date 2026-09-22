@@ -94,6 +94,8 @@ class TrackColormap:
         # Keys always match self._alpha's.
         self._node_colors: dict[int, np.ndarray] = {}
         self._alpha: dict[int, float] = {}
+        # (sorted node ids, matching RGB rows) for vectorized lookup
+        self._lookup: tuple[np.ndarray, np.ndarray] | None = None
 
     @property
     def color_source(self) -> ColorSource:
@@ -161,6 +163,7 @@ class TrackColormap:
             node: self._alpha.get(node, self._default_alpha) for node in nodes
         }
         self._node_colors = colors
+        self._lookup = None
 
     def add_node(self, node: int, feature_value) -> None:
         """Add a node not yet known to `self._tracks`, colored via
@@ -174,10 +177,12 @@ class TrackColormap:
         rgba = self.color_source.map(np.asarray([feature_value]))[0]
         self._node_colors[node] = np.asarray(rgba[:3], dtype=float).copy()
         self._alpha[node] = self._default_alpha
+        self._lookup = None
 
     def remove_node(self, node: int) -> None:
         self._node_colors.pop(node, None)
         self._alpha.pop(node, None)
+        self._lookup = None
 
     def set_alpha(self, nodes, value: float) -> None:
         """Set alpha for many nodes at once - the hot path, fired on every
@@ -188,21 +193,63 @@ class TrackColormap:
                 self._alpha[node] = value
 
     def get_alpha(self, node: int, default: float = 0.0) -> float:
+        """A node's display alpha, only needed by labels layers and included via
+        to_direct_colormap.
+        """
         return self._alpha.get(node, default)
 
     def get_color(self, node: int) -> np.ndarray:
-        """RGBA (color + alpha) for a node; transparent black if unknown."""
+        """A node's own RGBA color, fully opaque; transparent black if this
+        colormap doesn't know the node. For its display alpha see `get_alpha`.
+        """
         if node not in self._node_colors:
             return np.zeros(4)
-        return self._colored(node)
+        return np.append(self._node_colors[node], 1.0)
 
     def get_colors(self, nodes: np.ndarray) -> np.ndarray:
-        """Vectorized `get_color`: RGBA per node id in `nodes`, in order.
-        Unknown nodes get transparent black. For napari-independent
-        consumers (e.g. the table widget) that need many colors at once
-        without going through `to_direct_colormap()`.
+        """Vectorized `get_color`: each node's own RGBA color, in order, fully
+        opaque; transparent black for nodes this colormap doesn't know. For
+        napari-independent consumers (the points and tracks layers, the tree,
+        the table, an export) that need many colors at once without going
+        through `to_direct_colormap()`.
+
+        Alpha is left out, since only the labels layers need it, and they get it via
+        to_direct_colormap.
+
+        Vectorized because the points layer, the tree and the tracks layer
+        each ask for every node on every refresh: on a 37k-node graph this is
+        ~2ms against ~50ms for a `get_color` call per node, plus ~13ms on the
+        first call after the node set changes, which rebuilds `_color_lookup`.
         """
-        return np.array([self.get_color(node) for node in nodes])
+        node_ids, rgb = self._color_lookup()
+        nodes = np.asarray(nodes, dtype=np.int64)
+        colors = np.zeros((len(nodes), 4))
+        if len(node_ids) == 0 or len(nodes) == 0:
+            return colors
+
+        # searchsorted + an equality check, rather than a dict lookup per node
+        index = np.clip(np.searchsorted(node_ids, nodes), 0, len(node_ids) - 1)
+        known = node_ids[index] == nodes
+        colors[known, :3] = rgb[index[known]]
+        colors[known, 3] = 1.0
+        return colors
+
+    def _color_lookup(self) -> tuple[np.ndarray, np.ndarray]:
+        """`_node_colors` as (sorted node ids, matching RGB rows), for
+        `get_colors`. Built on demand and kept until the node set changes.
+        """
+        if self._lookup is None:
+            node_ids = np.fromiter(
+                self._node_colors, dtype=np.int64, count=len(self._node_colors)
+            )
+            rgb = (
+                np.stack(list(self._node_colors.values()))
+                if self._node_colors
+                else np.zeros((0, 3))
+            )
+            order = np.argsort(node_ids)
+            self._lookup = (node_ids[order], rgb[order])
+        return self._lookup
 
     @property
     def nodes(self):
@@ -229,4 +276,6 @@ class TrackColormap:
 
     def _colored(self, node: int) -> np.ndarray:
         """RGB from `_node_colors` plus current alpha, as one RGBA array."""
-        return np.append(self._node_colors[node], self._alpha.get(node, self._default_alpha))
+        return np.append(
+            self._node_colors[node], self._alpha.get(node, self._default_alpha)
+        )
