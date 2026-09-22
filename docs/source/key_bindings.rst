@@ -103,6 +103,9 @@ Key bindings for editing the tracks
 
    * - Mouse / Key binding
      - Action
+   * - M
+     - | Start a new track: assigns a new track id, and a new
+       | segmentation label if necessary
    * - D
      - Delete selected nodes
    * - B

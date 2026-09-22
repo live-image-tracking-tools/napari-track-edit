@@ -24,7 +24,6 @@ from motile_tracker.data_views.keybindings_config import (
     bind_keymap,
 )
 from motile_tracker.data_views.node_type import NodeType
-from motile_tracker.data_views.views.layers.track_labels import new_label
 from motile_tracker.data_views.views.layers.tracks_layer_group import TracksLayerGroup
 from motile_tracker.data_views.views.tree_view.tree_widget_utils import (
     extract_lineage_tree,
@@ -189,13 +188,13 @@ class TracksViewer:
     def set_keybinds(self):
         bind_keymap(self.viewer, KEYMAP, self)
 
-    def request_new_track(self) -> None:
+    def request_new_track(self, event=None) -> None:
         """Request a new track id (with new segmentation label if a seg layer is present)"""
 
         if self.tracks is None:
             return
         if self.tracking_layers.seg_layer is not None:
-            new_label(self.tracking_layers.seg_layer)
+            self.tracking_layers.seg_layer.new_label()
         else:
             self.set_new_track_id()
 
