@@ -15,6 +15,24 @@ PINK = (0.75, 0.08, 0.4)
 GREY = (0.7, 0.7, 0.7)  # What every node is colored when no feature is selected at all.
 
 
+def construct_direct_colormap(color_dict: dict) -> DirectLabelColormap:
+    """A `DirectLabelColormap` built without pydantic's per-color validation.
+
+    `transform_color` on every entry is the ~400x-slower path on large graphs,
+    and every color handed over here is already a properly-shaped (4,) float
+    array - napari's validation is there for arbitrary user input (color
+    names, 3-channel colors), not for values built this way.
+
+    napari's models are native pydantic v2 from 0.7 on, where that constructor
+    is `model_construct`. Before that they are built on `pydantic.v1`, which
+    calls it `construct`.
+    """
+    construct = getattr(DirectLabelColormap, "model_construct", None)
+    if construct is None:
+        construct = DirectLabelColormap.construct
+    return construct(color_dict=color_dict, colors=np.zeros(3))
+
+
 @runtime_checkable
 class ColorSource(Protocol):
     """Maps an array of ids/values to an (N, 4) RGBA array.
@@ -166,7 +184,7 @@ class TrackColormap:
     conflates them in one `color_dict`).
 
     `to_direct_colormap()` builds a fresh napari colormap on every call via
-    `DirectLabelColormap.model_construct`, which skips pydantic's per-color
+    `construct_direct_colormap`, which skips pydantic's per-color
     validation entirely (the expensive part of a normal `DirectLabelColormap(
     ...)` call) - see that method. This replaces three copies of a
     mutate-in-place-then-clear-cache trick that used to live in `TrackLabels`,
@@ -434,19 +452,14 @@ class TrackColormap:
         """Build a fresh napari `DirectLabelColormap` for the current
         color/alpha state.
 
-        Uses `model_construct` instead of the normal constructor to skip
-        pydantic's per-color validation (`transform_color` on every entry) -
-        the ~400x-slower path for large graphs. Safe here because every value
-        we hand it is already a properly-shaped (4,) float array; napari's
-        validation exists for arbitrary user input (color names, 3-channel
-        colors, etc.), not for values built this way.
+        Skips pydantic's per-color validation - see
+        `construct_direct_colormap`.
         """
-        return DirectLabelColormap.model_construct(
-            color_dict={
+        return construct_direct_colormap(
+            {
                 **{node: self._colored(node) for node in self._node_colors},
                 None: np.array([0, 0, 0, 0], dtype=float),
-            },
-            colors=np.zeros(3),
+            }
         )
 
     def _colored(self, node: int) -> np.ndarray:

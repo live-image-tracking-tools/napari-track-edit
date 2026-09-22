@@ -5,7 +5,6 @@ from typing import Any
 import numpy as np
 from napari import Viewer
 from napari.layers import Labels, Layer, Points, Shapes
-from napari.utils.colormaps import DirectLabelColormap
 from napari.utils.events import Event
 from napari.utils.notifications import show_info
 from napari_orthogonal_views.layer_sync_hooks import sync_labels_paint
@@ -14,6 +13,7 @@ from napari_orthogonal_views.ortho_view_manager import (  # noqa
     _get_manager,
 )
 
+from motile_tracker.data_views.colormap import construct_direct_colormap
 from motile_tracker.data_views.keybindings_config import KEYMAP, bind_keymap
 from motile_tracker.data_views.views.layers.click_utils import (
     detect_click,
@@ -285,21 +285,20 @@ def needs_own_colormap(orig_layer: TrackLabels, copied_layer: Labels) -> bool:
 def make_own_colormap(orig_layer: TrackLabels, copied_layer: Labels) -> None:
     """Give the copied layer a color dict of its own, holding the original's colors.
 
-    Uses `DirectLabelColormap.model_construct` to skip pydantic's per-color
-    validation, since every color here is already a properly-shaped (4,)
-    float array copied from `orig_layer`'s colormap.
+    Uses `construct_direct_colormap` to skip pydantic's per-color validation,
+    since every color here is already a properly-shaped (4,) float array
+    copied from `orig_layer`'s colormap.
 
     Args:
         orig_layer (TrackLabels): TrackLabels layer from which the copy is derived.
         copied_layer (ContourLabels): ContourLabels equivalent of the TrackLabels layer.
     """
 
-    copied_layer.colormap = DirectLabelColormap.model_construct(
-        color_dict={
+    copied_layer.colormap = construct_direct_colormap(
+        {
             label: np.array(color, copy=True)
             for label, color in orig_layer.colormap.color_dict.items()
-        },
-        colors=np.zeros(3),
+        }
     )
 
 
