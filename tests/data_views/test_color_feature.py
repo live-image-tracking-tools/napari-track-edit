@@ -9,7 +9,12 @@ import numpy as np
 import pytest
 from funtracks.user_actions import UserUpdateSegmentation
 
-from motile_tracker.data_views.colormap import PENDING_GREY
+from motile_tracker.data_views.colormap import (
+    GREY,
+    PINK,
+    BinaryColorSource,
+    CategoricalColorSource,
+)
 from motile_tracker.data_views.views.table.custom_table_widget import (
     ColoredTableWidget,
 )
@@ -210,7 +215,7 @@ class TestNewLabelColor:
 
         _track, pending, swatch, committed = _paint_new_label(tracks_viewer)
 
-        assert not np.allclose(pending, PENDING_GREY)
+        assert not np.allclose(pending, GREY)
         assert np.allclose(pending, committed)
         # the swatch names a track id, which has no colour of its own here
         assert np.array_equal(swatch, [0, 0, 0, 0])
@@ -235,3 +240,120 @@ class TestNewLabelColor:
         tracks_viewer.set_track_id_color(1)
 
         assert np.array_equal(tracks_viewer.track_id_color, [0, 0, 0, 0])
+
+
+GROUP = "my_group"
+IN_GROUP = (1, 2)
+OUT_OF_GROUP = (3,)
+
+
+@pytest.fixture
+def grouped(tracks_viewer):
+    """The same tracks with a group feature on them, nodes 1 and 2 in it."""
+    tracks = tracks_viewer.tracks
+    tracks.add_feature(
+        GROUP,
+        {
+            "feature_type": "node",
+            "value_type": "bool",
+            "num_values": 1,
+            "display_name": GROUP,
+            "default_value": False,
+        },
+    )
+    for node in tracks.graph.node_ids():
+        tracks.graph.nodes[node][GROUP] = node in IN_GROUP
+    return tracks_viewer
+
+
+class TestGroupColoring:
+    def test_does_not_crash(self, grouped):
+        # napari's cyclic colormap rejects a bool dtype outright, so this used
+        # to raise ValueError("Invalid integer data type 'b'")
+        grouped.set_color_feature(GROUP)
+
+        assert isinstance(grouped.colormap.color_source, BinaryColorSource)
+
+    def test_recolors_every_view(self, grouped):
+        before = _view_colors(grouped)
+
+        grouped.set_color_feature(GROUP)
+
+        after = _view_colors(grouped)
+        for view in VIEWS:
+            for node in IN_GROUP:
+                assert np.allclose(after[view][node], PINK), (view, node)
+            for node in OUT_OF_GROUP:
+                assert np.allclose(after[view][node], GREY), (view, node)
+                assert not np.allclose(after[view][node], before[view][node]), (
+                    view,
+                    node,
+                )
+
+    def test_new_colormap_picks_two_new_colors(self, grouped):
+        grouped.set_color_feature(GROUP)
+        before = _view_colors(grouped)
+
+        grouped.tracking_layers.seg_layer.new_colormap()
+
+        after = _view_colors(grouped)
+        for view in VIEWS:
+            # still two colors, but two different ones, in every view
+            assert np.allclose(after[view][1], after[view][2]), view
+            assert not np.allclose(after[view][1], after[view][3]), view
+            assert not np.allclose(after[view][1], before[view][1]), view
+
+    def test_a_new_label_is_painted_as_not_in_the_group(self, grouped):
+        grouped.set_color_feature(GROUP)
+
+        _track, pending, swatch, committed = _paint_new_label(grouped)
+
+        assert np.allclose(pending, GREY)
+        assert np.allclose(pending, committed)
+        assert np.array_equal(swatch, [0, 0, 0, 0])
+
+    def test_deleting_the_feature_falls_back_to_track_ids(self, grouped):
+        grouped.set_color_feature(GROUP)
+
+        del grouped.tracks.features[GROUP]
+        grouped._refresh()  # must not raise
+
+        assert grouped.color_feature_key == grouped.tracks.features.tracklet_key
+        assert isinstance(grouped.colormap.color_source, CategoricalColorSource)
+
+    def test_new_tracks_reset_to_track_ids(self, grouped, solution_tracks_2d):
+        grouped.set_color_feature(GROUP)
+
+        # these tracks have no such group; colouring by it would raise on them
+        grouped.update_tracks(tracks=solution_tracks_2d, name="other")
+
+        assert grouped.color_feature_key == solution_tracks_2d.features.tracklet_key
+        assert isinstance(grouped.colormap.color_source, CategoricalColorSource)
+
+
+def test_switching_to_tracks_that_name_their_track_id_differently(tracks_viewer):
+    """`update_tracks` forgets the outgoing tracks before re-deriving colors
+    for the incoming ones. Without that, setting the incoming track-id feature
+    reads it off the outgoing tracks, which do not have it."""
+
+    from funtracks.data_model import SolutionTracks
+    from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
+
+    graph = create_empty_graphview_graph(node_attributes=["pos", "track_id"], ndim=3)
+    graph.bulk_add_nodes(
+        nodes=[
+            {"t": 0, "pos": [5.0, 5.0], "track_id": 1, "solution": True},
+            {"t": 1, "pos": [6.0, 6.0], "track_id": 1, "solution": True},
+        ],
+        indices=[1, 2],
+    )
+    graph.bulk_add_edges([{"source_id": 1, "target_id": 2, "solution": True}])
+    graph._update_metadata(shape=(3, 10, 10))
+    incoming = SolutionTracks(
+        graph=graph, ndim=3, time_attr="t", tracklet_attr="track_id"
+    )
+    assert incoming.features.tracklet_key != tracks_viewer.tracks.features.tracklet_key
+
+    tracks_viewer.update_tracks(tracks=incoming, name="other")  # must not raise
+
+    assert tracks_viewer.color_feature_key == "track_id"

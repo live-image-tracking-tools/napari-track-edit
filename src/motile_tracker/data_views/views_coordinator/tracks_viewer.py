@@ -18,7 +18,7 @@ from funtracks.user_actions import (
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
-from motile_tracker.data_views.colormap import TrackColormap
+from motile_tracker.data_views.colormap import TrackColormap, make_color_source
 from motile_tracker.data_views.keybindings_config import (
     KEYMAP,
     bind_keymap,
@@ -63,6 +63,7 @@ class TracksViewer:
     tracks_updated = Signal(Optional[bool])  # noqa: UP007 UP045
     update_track_id = Signal()
     mode_updated = Signal()
+    colormap_updated = Signal()
     center_node = Signal(int)  # emitted when any component wants to center on a node
     node_selection_updated = Signal(bool)
 
@@ -99,6 +100,7 @@ class TracksViewer:
 
         viewer.window._qt_window.destroyed.connect(_clear_if_current)
         self.colormap = TrackColormap()
+        self.color_feature_key: str | None = None
 
         self.symbolmap: dict[NodeType, str] = {
             NodeType.END: "x",
@@ -168,9 +170,21 @@ class TracksViewer:
                 caller rebuilds the views itself anyway.
         """
 
-        self.colormap.feature_key = feature_key
+        self.color_feature_key = feature_key
+        self.colormap.set_feature(
+            feature_key, make_color_source(self.tracks, feature_key)
+        )
         if refresh and self.tracks is not None:
             self._refresh()
+        self.colormap_updated.emit()
+
+    def _validate_color_feature(self) -> None:
+        """Fall back to track ids if the feature being colored by is gone."""
+
+        if self.tracks is None or self.color_feature_key is None:
+            return
+        if self.color_feature_key not in self.tracks.features:
+            self.set_color_feature(self.tracks.features.tracklet_key, refresh=False)
 
     def set_keybinds(self):
         bind_keymap(self.viewer, KEYMAP, self)
@@ -274,6 +288,7 @@ class TracksViewer:
         ):
             self.selected_nodes.reset()
 
+        self._validate_color_feature()
         self.colormap.set_tracks(self.tracks)
         self.tracking_layers._refresh()
 
@@ -321,6 +336,10 @@ class TracksViewer:
         self._disconnect_tracks()
 
         self.tracks = tracks
+        # Forget outgoing tracks first, because they might have a different value bound
+        # to tracklet_key
+        self.colormap.set_tracks(None)
+        self.set_color_feature(tracks.features.tracklet_key, refresh=False)
         self.colormap.set_tracks(tracks)
         self.selected_nodes.deleted_items.clear()  # Reset deleted nodes when switching tracks
 

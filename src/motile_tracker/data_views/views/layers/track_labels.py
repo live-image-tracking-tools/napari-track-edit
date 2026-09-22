@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import random
 import warnings
 from typing import TYPE_CHECKING
 
@@ -361,10 +360,7 @@ class TrackLabels(ContourLabels):
         """Override existing function to generate new colormap on tracks_viewer and
         emit refresh signal to update colors in all layers/widgets"""
 
-        self.tracks_viewer.colormap.color_source.shuffle(
-            num_colors=random.randint(49, 69),
-            seed=random.uniform(0, 1),
-        )
+        self.tracks_viewer.colormap.color_source.shuffle()
         self.tracks_viewer._refresh()
 
     def update_selected_label(self):

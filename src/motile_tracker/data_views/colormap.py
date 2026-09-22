@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import numpy as np
@@ -10,7 +11,8 @@ if TYPE_CHECKING:
     from funtracks.data_model import Tracks
 
 # What a node is painted with while its own color is not known yet - see add_node.
-PENDING_GREY = (0.6, 0.6, 0.6)
+PINK = (0.75, 0.08, 0.4)
+GREY = (0.7, 0.7, 0.7)  # What every node is colored when no feature is selected at all.
 
 
 @runtime_checkable
@@ -21,9 +23,14 @@ class ColorSource(Protocol):
     replacement anywhere a napari colormap's `.map()` is used for track-id
     coloring. Swap in a continuous-feature or constant-color source later
     without touching `TrackColormap` or its consumers.
+
+    `shuffle()` re-draws whatever colors the source uses, so the "new colormap"
+    button does the right thing whichever source is installed.
     """
 
     def map(self, values: np.ndarray) -> np.ndarray: ...
+
+    def shuffle(self) -> None: ...
 
 
 class CategoricalColorSource:
@@ -38,13 +45,119 @@ class CategoricalColorSource:
         )
 
     def map(self, values: np.ndarray) -> np.ndarray:
-        return self._cyclic_colormap.map(values)
+        # napari's cyclic colormap only accepts integer dtypes: a bool (group)
+        # feature raises "Invalid integer data type", and a feature whose
+        # default is None (lineage id) arrives as an object array. None becomes
+        # 0, the colormap's transparent background entry.
+        arr = np.asarray(values)
+        if arr.dtype.kind in "OUS":
+            flat = np.array(
+                [0 if v is None else int(v) for v in np.atleast_1d(arr)],
+                dtype=np.int64,
+            )
+            arr = flat if arr.ndim else flat[0]
+        elif arr.dtype.kind in "bf":
+            arr = arr.astype(np.int64)
+        return self._cyclic_colormap.map(arr)
 
-    def shuffle(self, num_colors: int, seed: float) -> None:
-        """Replace the color cycle (see `TrackLabels.new_colormap`)."""
+    def shuffle(self, num_colors: int | None = None, seed: float | None = None) -> None:
+        """Replace the color cycle (see `TrackLabels.new_colormap`). With no
+        arguments a random cycle is drawn, matching the argument-less
+        `ColorSource.shuffle` that the "new colormap" button calls."""
+        if num_colors is None:
+            num_colors = random.randint(49, 69)
+        if seed is None:
+            seed = random.uniform(0, 1)
         self._cyclic_colormap = label_colormap(
             num_colors, seed=seed, background_value=0
         )
+
+
+class BinaryColorSource:
+    """Two colors for a boolean feature - the shape every group has."""
+
+    def __init__(self, false_color=GREY, true_color=PINK):
+        self.false_color = np.append(np.asarray(false_color, dtype=float), 1.0)
+        self.true_color = np.append(np.asarray(true_color, dtype=float), 1.0)
+
+    def map(self, values: np.ndarray) -> np.ndarray:
+        arr = np.atleast_1d(np.asarray(values))
+        # missing values (None) count as "not in the group", as the default does
+        flags = (
+            np.array([bool(v) for v in arr], dtype=bool)
+            if arr.dtype.kind in "OUS"
+            else arr.astype(bool)
+        )
+        colors = np.where(flags[:, np.newaxis], self.true_color, self.false_color)
+        return colors[0] if np.asarray(values).ndim == 0 else colors
+
+    def shuffle(self) -> None:
+        """Get two fresh colors"""
+        self.false_color, self.true_color = CategoricalColorSource(
+            seed=random.uniform(0, 1)
+        ).map(np.asarray([1, 2]))
+
+
+class ConstantColorSource:
+    """One color for every node"""
+
+    def __init__(self, color=GREY):
+        arr = np.asarray(color, dtype=float)
+        self.color = arr if arr.shape == (4,) else np.append(arr, 1.0)
+
+    def map(self, values: np.ndarray) -> np.ndarray:
+        arr = np.asarray(values)
+        if arr.ndim == 0:
+            return self.color.copy()
+        return np.tile(self.color, (len(arr), 1))
+
+    def shuffle(self) -> None:
+        self.color = CategoricalColorSource(seed=random.uniform(0, 1)).map(
+            np.asarray([1])
+        )[0]
+
+
+def make_color_source(tracks: Tracks | None, feature_key: str | None) -> ColorSource:
+    """The `ColorSource` that can render a feature's values.
+
+    A source and a feature have to match: a group's True/False needs two
+    colors, no feature at all means one flat color, categorical features get random
+    colors via CategoricalColorSource. TODO: GradientColorSource for continuous features.
+    """
+    if feature_key is None:
+        return ConstantColorSource()
+    feature = tracks.features.get(feature_key) if tracks is not None else None
+    if feature is not None and feature["value_type"] == "bool":
+        return BinaryColorSource()
+    return CategoricalColorSource()
+
+
+def categorical_feature_keys(tracks: Tracks | None) -> list[str]:
+    """The node features that can currently drive coloring: tracklet id, lineage id, and
+    every group (solution is excluded for now).
+    """
+    if tracks is None:
+        return []
+    features = tracks.features
+    keys: list[str] = [
+        key
+        for key in (features.tracklet_key, features.lineage_key)
+        if key is not None and key in features
+    ]
+    keys += [
+        key
+        for key, feature in features.node_features.items()
+        if feature["value_type"] == "bool" and key != "solution" and key not in keys
+    ]
+    return keys
+
+
+def feature_display_name(tracks: Tracks | None, feature_key: str | None) -> str:
+    """The label to show for a feature in the UI."""
+    if feature_key is None:
+        return "None"
+    feature = tracks.features.get(feature_key) if tracks is not None else None
+    return feature_key if feature is None else feature.get("display_name", feature_key)
 
 
 class TrackColormap:
@@ -130,6 +243,16 @@ class TrackColormap:
         self._feature_key = feature_key
         self.set_tracks(self._tracks)
 
+    def set_feature(
+        self, feature_key: str | None, color_source: ColorSource | None = None
+    ) -> None:
+        """Color by `feature_key`, rendered with `color_source`."""
+        self._feature_key = feature_key
+        self._color_source = color_source or make_color_source(
+            self._tracks, feature_key
+        )
+        self.set_tracks(self._tracks)
+
     @property
     def colors_by_track_id(self) -> bool:
         """Whether the feature being colored by is the track id."""
@@ -204,6 +327,7 @@ class TrackColormap:
         advance.
         """
         tracks = self._tracks
+        feature = tracks.features.get(self._feature_key) if tracks is not None else None
         if self.colors_by_track_id:
             # the one value a node is given up front (TracksViewer.set_new_track_id)
             value = track_id
@@ -217,10 +341,13 @@ class TrackColormap:
                 if in_track
                 else tracks.get_next_lineage_id()
             )
+        elif feature is not None and feature["value_type"] == "bool":
+            # a node that has just been drawn has not been put in any group
+            value = False
         else:
             value = None
 
-        rgba = PENDING_GREY if value is None else self.color_source.map(value)
+        rgba = GREY if value is None else self.color_source.map(value)
         self._node_colors[node] = np.asarray(rgba[:3], dtype=float).copy()
         self._alpha[node] = self._default_alpha
         self._pending.add(node)
