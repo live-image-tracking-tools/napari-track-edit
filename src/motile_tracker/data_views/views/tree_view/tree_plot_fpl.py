@@ -115,7 +115,8 @@ class TreePlot(QWidget):
     """fastplotlib (pygfx/wgpu) canvas for the lineage tree.
 
     Drop-in replacement for the pyqtgraph ``TreePlot``: exposes the same signals
-    (``node_clicked``, ``jump_to_node``, ``nodes_selected``, ``update_selection``)
+    (``node_clicked``, ``jump_to_node``, ``pick_track_id``, ``nodes_selected``,
+    ``update_selection``)
     and the same public methods (``update``, ``set_selection``, ``set_view``,
     ``_update_viewed_data``, ``center_on_node``, ``setMouseEnabled``) so
     ``TreeWidget`` needs no changes beyond which class it instantiates.
@@ -123,6 +124,7 @@ class TreePlot(QWidget):
 
     node_clicked = Signal(Any, bool)  # node_id, append
     jump_to_node = Signal(int)
+    pick_track_id = Signal(int)  # adopt this node's tracklet id, don't select the node
     nodes_selected = Signal(list, bool)
     update_selection = Signal(bool)  # forward/backward in selection history
 
@@ -1147,7 +1149,10 @@ class TreePlot(QWidget):
             return
         node_id = int(self._node_ids[int(idx)])
         mods = set(getattr(ev, "modifiers", ()) or ())
-        if "Control" in mods or "Meta" in mods:
+        if "Alt" in mods:
+            self.pick_track_id.emit(node_id)
+            self.setFocus()
+        elif "Control" in mods or "Meta" in mods:
             self.jump_to_node.emit(node_id)
         else:
             append = "Shift" in mods
