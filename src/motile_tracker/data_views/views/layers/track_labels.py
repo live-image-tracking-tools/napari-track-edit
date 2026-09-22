@@ -56,7 +56,7 @@ def _new_label(layer: TrackLabels, new_track_id=True):
             it to the selected_track attribute. Defaults to True.
     """
 
-    new_selected_label = max(layer.tracks_viewer.tracks.graph.node_ids(), default=0) + 1
+    new_selected_label = layer.tracks_viewer.tracks.get_next_node_id()
     if new_track_id or layer.tracks_viewer.selected_track is None:
         layer.tracks_viewer.set_new_track_id()
     layer.selected_label = new_selected_label
@@ -169,7 +169,10 @@ class TrackLabels(ContourLabels):
                 if is_visible:
                     append = "Shift" in event.modifiers
                     jump = "Control" in event.modifiers
-                    if jump:
+                    pick_track = "Alt" in event.modifiers
+                    if pick_track:
+                        self.tracks_viewer.select_track_id_from_node(int(value))
+                    elif jump:
                         self.tracks_viewer.center_on_node(value)
                     else:
                         self.tracks_viewer.selected_nodes.add(int(value), append)
@@ -453,6 +456,15 @@ class TrackLabels(ContourLabels):
             current_timepoint = self.viewer.dims.current_step[
                 self.tracks_viewer.tracks_dims.time_axis
             ]
+
+            # A label that names a node outside the solution but still present in
+            # graph_full is soft-deleted: the node was removed, or added and then
+            # undone. Select a new label if this is the case.
+            if not self.tracks_viewer.tracks.graph_solution.has_node(
+                self.selected_label
+            ) and self.tracks_viewer.tracks.graph_full.has_node(self.selected_label):
+                _new_label(self, new_track_id=False)
+
             # if a node with the given label is already in the graph
             if self.tracks_viewer.tracks.graph.has_node(self.selected_label):
                 # Update the track id

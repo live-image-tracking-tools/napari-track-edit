@@ -370,6 +370,31 @@ def test_ensure_valid_label(viewer, solution_tracks_3d_with_division):
     assert tracks_viewer.selected_track == 4  # new track id (still unused)
 
 
+def test_alt_click_picks_track_id(viewer, solution_tracks_2d):
+    """ALT/OPTION + click on a label adopts its track id without selecting the node.
+
+    This is the pipette made available from pan_zoom mode and from any frame: node 6
+    lives at t=4, and clicking it from t=0 must neither select it nor move the viewer.
+    """
+
+    class _Event:
+        def __init__(self, modifiers):
+            self.modifiers = modifiers
+
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
+    seg_layer = tracks_viewer.tracking_layers.seg_layer
+
+    viewer.dims.set_point(0, 0)
+    tracks_viewer.selected_nodes.reset()
+
+    seg_layer.process_click(_Event(["Alt"]), np.int64(6))
+
+    assert tracks_viewer.selected_track == solution_tracks_2d.get_track_id(6)
+    assert len(tracks_viewer.selected_nodes) == 0
+    assert viewer.dims.current_step[0] == 0
+
+
 def test_background_label_does_not_get_a_color(
     viewer, solution_tracks_3d_with_division
 ):
@@ -526,4 +551,53 @@ def test_undo_on_readonly_data_does_not_fire_paint_event(
     assert paint_events_fired == [], (
         "undo() on read-only data must restore the display buffer directly "
         "without emitting events.paint"
+    )
+
+
+def test_label_and_color_stay_usable_after_undo(
+    viewer, solution_tracks_3d_with_division
+):
+    """Undoing a paint must leave a label that can be painted with straight away.
+
+    The node the paint created is soft-deleted by the undo: it keeps its id, so a
+    new one has to be handed out. Its track is a different matter - it has no
+    nodes left, so it is free, and painting on should carry on in it rather than
+    jumping to another colour.
+    """
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_3d_with_division, name="test")
+    seg_layer = tracks_viewer.tracking_layers.seg_layer
+
+    step = list(viewer.dims.current_step)
+    step[0] = 0
+    viewer.dims.current_step = step
+    seg_layer.brush_size = 30
+
+    new_label(seg_layer)
+    painted = seg_layer.selected_label
+    seg_layer.paint(np.array([0, 50, 50, 50]), painted)
+    track_before = tracks_viewer.tracks.get_track_id(painted)
+    color_before = np.array(seg_layer.colormap.color_dict[painted])
+    tracks_viewer.undo()
+
+    # the id is taken for good, so a different one must be offered
+    assert tracks_viewer.tracks.graph_full.has_node(painted)
+    assert not tracks_viewer.tracks.graph_solution.has_node(painted)
+    assert seg_layer.selected_label != painted
+
+    # the track it was painting in has no nodes left, so it is free to carry on
+    # with: the new label draws in the same colour (the alpha differs only because
+    # nothing is selected, so the label is drawn at foreground rather than
+    # highlight opacity)
+    new_label_value = seg_layer.selected_label
+    np.testing.assert_array_equal(
+        seg_layer.colormap.color_dict[new_label_value][:3], color_before[:3]
+    )
+
+    # and painting must land in that same track, so the colour does not snap to
+    # another one on mouse release
+    seg_layer.paint(np.array([0, 50, 50, 50]), new_label_value)
+    assert tracks_viewer.tracks.get_track_id(new_label_value) == track_before
+    np.testing.assert_array_equal(
+        seg_layer.colormap.color_dict[new_label_value], color_before
     )
