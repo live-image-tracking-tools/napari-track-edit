@@ -434,8 +434,6 @@ def track_layers_hook(
 
     # Bind keys to original layer TracksViewer
     bind_keymap(copied_layer, KEYMAP, orig_layer.tracks_viewer)
-    if isinstance(orig_layer, TrackLabels):
-        copied_layer.bind_key("m")(orig_layer.assign_new_label)
 
 
 def initialize_ortho_views(viewer: Viewer) -> OrthoViewManager:
