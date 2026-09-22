@@ -1,13 +1,20 @@
 """UI action benchmarks (require a napari GUI / display).
 
 Cover the common interactive actions at scale: loading, selection, display-mode
-switching, tree-view rendering, and editing. Each benchmark builds its own app in
-``setup`` (not timed) and measures a single action with
+switching, tree-view rendering, and editing. Most benchmarks build their own app in
+``setup`` (not timed) and measure a single action with
 ``benchmark.pedantic(..., rounds=ROUNDS, iterations=1)``. Each action triggers a
 full refresh cascade that can take seconds at scale; we collect a few rounds
 (``ROUNDS``) so the report can gate on the median and ignore a single noisy run.
 pytest-benchmark re-runs ``setup`` before every round, so mutating benchmarks
 still start each round from fresh state.
+
+The two bulk benchmarks (test_delete_nodes_bulk, test_undo_bulk_delete) build the app
+once and reuse it across rounds instead: app construction (not the action being
+measured) is what dominates their wall-clock under headless/software rendering, and
+``generate_synthetic_tracks`` is seeded, so loading it fresh via ``add_tracks`` each
+round reproduces the same starting *data* state a full rebuild would, without paying
+for a new napari viewer/tree widget every round.
 
 In CI these run under aganders3/headless-gui (Xvfb-backed GL). They will segfault
 under the ``offscreen`` Qt platform, which lacks a real GL context.
@@ -15,16 +22,25 @@ under the ``offscreen`` Qt platform, which lacks a real GL context.
 
 from __future__ import annotations
 
-from synthetic_data import pick_nodes, tracklet_nodes
+import platform
+
+from synthetic_data import generate_synthetic_tracks, pick_nodes, tracklet_nodes
 
 # Rounds pytest-benchmark collects per measurement. The report gates on the *median*
 # across rounds, so >=3 rounds lets a single transient spike be ignored (see
-# benchmark_pr.py). We run everything with 3 rounds for that noise robustness, except
-# the two ~50s bulk operations -- for them the expensive work is in the action or the
-# setup (which pedantic re-runs every round), so 3 rounds would triple an already
-# minutes-long test. Those stay single-shot to keep CI time bounded.
+# benchmark_pr.py).
 ROUNDS = 3  # default: enough samples for a robust median
-ROUNDS_BULK = 1  # ~50s bulk delete / its undo -- too expensive to repeat
+# The bulk delete/undo benchmarks reuse one app across rounds (see module docstring),
+# so a round only pays for add_tracks + the timed action, not a full app rebuild --
+# ROUNDS_BULK can match ROUNDS instead of the single-shot compromise that used to be
+# needed when every round rebuilt the (slow, under headless rendering) app from scratch.
+ROUNDS_BULK = ROUNDS
+# macOS CI runners are noisier than Linux/Windows; more rounds (not a higher regression
+# ceiling) is what actually reduces spurious failures, since the gate already takes the
+# median. Raise this (rather than the ceiling) if a macOS-only benchmark reads as noisy.
+if platform.system() == "Darwin":
+    ROUNDS = ROUNDS * 2
+    ROUNDS_BULK = ROUNDS_BULK * 2
 
 # ----------------------------------------------------------------------------------
 # Loading
@@ -160,17 +176,24 @@ def test_delete_node(benchmark, build_app, fresh_tracks):
     )
 
 
-def test_delete_nodes_bulk(benchmark, build_app, fresh_tracks):
+def test_delete_nodes_bulk(benchmark, build_app, bench_params):
     """Delete a whole tracklet (many nodes) in a single action.
 
     Exercises the multi-node UserDeleteNodes path. Since the refresh runs once
     regardless of count, this vs test_delete_node shows fixed-refresh overhead vs
     marginal per-node cost, and catches a regression to refresh-per-node.
+
+    The app is built once and reused across rounds -- only its per-round cost
+    (~50s under headless/software rendering) is worth paying once. Each round's
+    *data* state is still fully fresh: ``generate_synthetic_tracks`` is seeded, so
+    ``add_tracks`` loads an identical graph every round, just as a rebuilt app would.
     """
 
+    _, tv, _ = build_app(generate_synthetic_tracks(bench_params))
+
     def setup():
-        _, tv, _ = build_app(fresh_tracks)
-        nodes = tracklet_nodes(fresh_tracks, pick_nodes(fresh_tracks)["del_node"])
+        tv.tracks_list.add_tracks(generate_synthetic_tracks(bench_params), "synthetic")
+        nodes = tracklet_nodes(tv.tracks, pick_nodes(tv.tracks)["del_node"])
         tv.selected_nodes.reset()
         tv.selected_nodes.add_list(nodes)
         return (tv,), {}
@@ -180,12 +203,17 @@ def test_delete_nodes_bulk(benchmark, build_app, fresh_tracks):
     )
 
 
-def test_undo_bulk_delete(benchmark, build_app, fresh_tracks):
-    """Undo a bulk (whole-tracklet) delete -- restores many nodes in one action."""
+def test_undo_bulk_delete(benchmark, build_app, bench_params):
+    """Undo a bulk (whole-tracklet) delete -- restores many nodes in one action.
+
+    See test_delete_nodes_bulk for why the app is built once and reused.
+    """
+
+    _, tv, _ = build_app(generate_synthetic_tracks(bench_params))
 
     def setup():
-        _, tv, _ = build_app(fresh_tracks)
-        nodes = tracklet_nodes(fresh_tracks, pick_nodes(fresh_tracks)["del_node"])
+        tv.tracks_list.add_tracks(generate_synthetic_tracks(bench_params), "synthetic")
+        nodes = tracklet_nodes(tv.tracks, pick_nodes(tv.tracks)["del_node"])
         tv.selected_nodes.reset()
         tv.selected_nodes.add_list(nodes)
         tv.delete_node()

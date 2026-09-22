@@ -48,6 +48,11 @@ KEYBINDINGS = {
         "qt_keys": [Qt.Key_D, Qt.Key_Delete],
         "targets": ["tracks_viewer"],
     },
+    "request_new_track": {
+        "napari_keys": ["m"],
+        "qt_keys": [Qt.Key_M],
+        "targets": ["tracks_viewer"],
+    },
     "create_edge": {
         "napari_keys": ["a"],
         "qt_keys": [Qt.Key_A],
@@ -56,6 +61,11 @@ KEYBINDINGS = {
     "delete_edge": {
         "napari_keys": ["b"],
         "qt_keys": [Qt.Key_B],
+        "targets": ["tracks_viewer"],
+    },
+    "set_division": {
+        "napari_keys": ["y"],
+        "qt_keys": [Qt.Key_Y],
         "targets": ["tracks_viewer"],
     },
     "swap_nodes": {

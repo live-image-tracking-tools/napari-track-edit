@@ -204,6 +204,21 @@ class NodeSelectionHistory:
         self._reset_iterator()
         self.selection_updated.emit()
 
+    def clear(self) -> None:
+        """Forget the selection and its history.
+
+        Unlike reset, which records an empty selection as a new history entry,
+        this drops the history itself: the node ids in it belong to a tracks
+        object that is no longer loaded, so restoring them is meaningless.
+        """
+
+        self._history = []
+        self._pointer = 0
+        self._last_shown_set = set()
+        self.deleted_items.clear()
+        self._reset_iterator()
+        self.selection_updated.emit()
+
     def restore(self) -> None:
         """Restore the previous selection, independent of where you are in history."""
 

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from motile_tracker.data_views.views_coordinator.tracks_viewer import (
         TracksViewer,
     )
+import polars as pl
 
 
 def update_napari_tracks(
@@ -48,9 +49,14 @@ def update_napari_tracks(
     pos_keys = list(position_key) if isinstance(position_key, list) else [position_key]
 
     # One batch query instead of O(N) per-node queries
-    df = graph.node_attrs(
-        attr_keys=[DEFAULT_ATTR_KEYS.NODE_ID, time_key, tracklet_key] + pos_keys
-    )
+    if len(graph.node_ids()) > 0:
+        df = graph.node_attrs(
+            attr_keys=[DEFAULT_ATTR_KEYS.NODE_ID, time_key, tracklet_key] + pos_keys
+        )
+    else:
+        df = pl.DataFrame(
+            schema=[DEFAULT_ATTR_KEYS.NODE_ID, time_key, tracklet_key] + pos_keys
+        )
 
     node_ids = df[DEFAULT_ATTR_KEYS.NODE_ID].to_list()
     track_ids_arr = df[tracklet_key].to_numpy()
@@ -104,6 +110,11 @@ class TrackGraph(napari.layers.Tracks):
             self.tracks_viewer.tracks,
         )
 
+        if len(track_data) == 0:
+            # a single dummy row is needed for the empty layer, but its column count
+            # must match the tracks dimensionality (id, t, [z], y, x).
+            track_data = np.zeros((1, track_data.shape[1]), dtype=float)
+
         super().__init__(
             data=track_data,
             graph=track_edges,
@@ -125,6 +136,12 @@ class TrackGraph(napari.layers.Tracks):
         track_data, track_edges = update_napari_tracks(
             self.tracks_viewer.tracks,
         )
+
+        if len(track_data) == 0:
+            # napari's Tracks layer cannot handle empty data (it indexes the first
+            # timepoint), so keep a single dummy row when the graph becomes empty
+            # (e.g. after undoing the very first action). Same as in __init__.
+            track_data = np.zeros((1, track_data.shape[1]), dtype=float)
 
         self.data = track_data
         self.graph = track_edges

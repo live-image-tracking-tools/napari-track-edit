@@ -44,7 +44,9 @@ def feature_widget_factory(make_napari_viewer, request):
 def test_feature_display_names(feature_widget_factory, expected_names):
     widget, _ = feature_widget_factory
     checkbox_names = {cb.text() for cb in widget._checkboxes.values()}
-    assert checkbox_names == expected_names
+    # Subset check rather than equality: new regionprops features (e.g. intensity)
+    # may be registered by funtracks without this test needing to track every one.
+    assert expected_names <= checkbox_names
 
 
 def test_3d_names_only(make_napari_viewer, solution_tracks_3d):

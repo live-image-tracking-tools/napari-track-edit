@@ -78,7 +78,9 @@ If you press the `/` key, you can hide/show all Tracker widgets.
 
 Running tracking
 ****************
-The ``Tracking`` tab by default opens to the ``Run Editor`` view. In this view,
+The ``Tracking`` tab holds two ways of creating tracks: ``Track with Motile`` for
+automatic tracking, and ``Track from Scratch`` for manual tracking (see below).
+``Track with Motile`` by default opens to the ``Run Editor`` view. In this view,
 you can pick a name for your run, select an input layer, set
 hyperparameters, and start a motile run. Hovering over the title of each
 element in the widget will make a tooltip appear describing the purpose
@@ -109,6 +111,10 @@ Tracks that were saved in previous sessions do not appear here until you load th
 The tracking results can also be visualized as a lineage tree.
 You can open the lineage tree widget via ``Plugins`` > ``Motile Tracker`` > ``Widget - Lineage View``.
 For more details, go to the :doc:`Tree View <tree_view>` documentation.
+
+Tracking from scratch
+*********************
+Instead of automatic tracking, it is also possible to manually track from scratch. The ``Track from Scratch`` tab of the ``Tracking`` widget offers the option to create an empty tree that you can populate yourself by adding nodes as points or as segmentation labels.
 
 Displaying feature measurements
 *******************************

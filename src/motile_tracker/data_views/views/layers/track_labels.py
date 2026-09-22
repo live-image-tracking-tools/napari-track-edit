@@ -9,7 +9,6 @@ import numpy as np
 from funtracks.exceptions import InvalidActionError
 from funtracks.user_actions import UserUpdateSegmentation
 from napari.layers import Labels
-from napari.utils.action_manager import action_manager
 from napari.utils.notifications import show_info
 
 from motile_tracker.data_views.keybindings_config import (
@@ -32,21 +31,10 @@ if TYPE_CHECKING:
     from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
-def new_label(layer: TrackLabels):
-    """A function to override the default napari labels new_label function.
-    Must be registered (see end of this file)"""
-
-    layer.events.selected_label.disconnect(layer._ensure_valid_label)
-    _new_label(layer, new_track_id=True)
-    layer.events.selected_label.connect(layer._ensure_valid_label)
-
-
 def _new_label(layer: TrackLabels, new_track_id=True):
-    """A function to get a new label for a given TrackLabels layer. Should properly
-    go on the class, but needs to be registered to override the default napari function
-    in the action manager. This helper is abstracted out because we want to do the same
-    thing without making a new track id in the layer, and with the new track id in the
-    overriden action.
+    """A function to get a new label for a given TrackLabels layer. This helper is
+    abstracted out because we want to do the same thing both with and without making a
+    new track id for the layer.
 
     Args:
         layer (TrackLabels): A TrackLabels layer from which get a new label for drawing a
@@ -55,11 +43,13 @@ def _new_label(layer: TrackLabels, new_track_id=True):
             it to the selected_track attribute. Defaults to True.
     """
 
-    new_selected_label = max(layer.tracks_viewer.tracks.graph.node_ids(), default=0) + 1
+    new_selected_label = layer.tracks_viewer.tracks.get_next_node_id()
     if new_track_id or layer.tracks_viewer.selected_track is None:
         layer.tracks_viewer.set_new_track_id()
     layer.selected_label = new_selected_label
-    layer.track_colormap.add_node(new_selected_label, layer.tracks_viewer.selected_track)
+    layer.track_colormap.add_node(
+        new_selected_label, layer.tracks_viewer.selected_track
+    )
     # to refresh, otherwise you paint with a transparent label until you
     # release the mouse
     with layer.events.selected_label.blocker():
@@ -130,10 +120,16 @@ class TrackLabels(ContourLabels):
                 value = get_click_value(self, event)
                 self.process_click(event, value=value)
 
-    def assign_new_label(self, event):
-        """Function for orthoviews to connect to so the 'm' event can be processed here"""
+    def new_label(self) -> None:
+        """Select a valid new label to paint a new track with.
 
-        new_label(self)
+        Called by TracksViewer.request_new_track, which owns the "start a new track"
+        action for all views. The label is new by construction, guard can be skipped.
+        """
+
+        self.events.selected_label.disconnect(self._ensure_valid_label)
+        _new_label(self, new_track_id=True)
+        self.events.selected_label.connect(self._ensure_valid_label)
 
     def process_click(
         self,
@@ -152,30 +148,37 @@ class TrackLabels(ContourLabels):
                 If provided, it is used to check label visibility in that layer's colormap.
         """
 
-        # Intercept mouse side button navigation (back/forward)
-        if side_button is not None:
-            self.tracks_viewer.select_node_set_from_history(previous=side_button == 4)
-            return
-
-        if value is not None and value != 0:
-            # check visibility in the respective colormap. If a label is not visible, it
-            # is not allowed to be selected from this view
-            if layer is not None:
-                is_visible = layer.colormap.color_dict.get(value)[3] > 0
-            else:
-                is_visible = self.colormap.color_dict.get(value)[3] > 0
-            if is_visible:
-                append = "Shift" in event.modifiers
-                jump = "Control" in event.modifiers
-                if jump:
-                    self.tracks_viewer.center_on_node(value)
-                else:
-                    self.tracks_viewer.selected_nodes.add(int(value), append)
-            else:
-                warnings.warn(
-                    f"Node {value} is not visible in this view and cannot be selected.",
-                    stacklevel=2,
+        # Communicate that the click comes from the napari canvas
+        with self.tracks_viewer.viewer_interaction():
+            # Intercept mouse side button navigation (back/forward)
+            if side_button is not None:
+                self.tracks_viewer.select_node_set_from_history(
+                    previous=side_button == 4
                 )
+                return
+
+            if value is not None and value != 0:
+                # check visibility in the respective colormap. If a label is not visible, it
+                # is not allowed to be selected from this view
+                if layer is not None:
+                    is_visible = layer.colormap.color_dict.get(value)[3] > 0
+                else:
+                    is_visible = self.colormap.color_dict.get(value)[3] > 0
+                if is_visible:
+                    append = "Shift" in event.modifiers
+                    jump = "Control" in event.modifiers
+                    pick_track = "Alt" in event.modifiers
+                    if pick_track:
+                        self.tracks_viewer.select_track_id_from_node(int(value))
+                    elif jump:
+                        self.tracks_viewer.center_on_node(value)
+                    else:
+                        self.tracks_viewer.selected_nodes.add(int(value), append)
+                else:
+                    warnings.warn(
+                        f"Node {value} is not visible in this view and cannot be selected.",
+                        stacklevel=2,
+                    )
 
     def _check_mode(self):
         """Check if the mode is valid and call the ensure_valid_label function"""
@@ -259,50 +262,52 @@ class TrackLabels(ContourLabels):
     def _on_paint(self, event):
         """Listen to the paint event and check which track_ids have changed"""
 
-        # make sure that 0 (in the case or erasing) or a valid label (in the case of
-        # painting) is selected.
-        if (
-            self.mode == "erase"
-            or (self.mode == "fill" and self.selected_label == 0)
-            or (self.mode == "paint" and self.selected_label == 0)
-        ):
-            target_value = 0
-        else:
-            self._ensure_valid_label()
-            target_value = self.selected_label
+        # painting happens on the canvas, so specify with tracks_viewer.viewer_interaction
+        with self.tracks_viewer.viewer_interaction():
+            # make sure that 0 (in the case or erasing) or a valid label (in the case of
+            # painting) is selected.
+            if (
+                self.mode == "erase"
+                or (self.mode == "fill" and self.selected_label == 0)
+                or (self.mode == "paint" and self.selected_label == 0)
+            ):
+                target_value = 0
+            else:
+                self._ensure_valid_label()
+                target_value = self.selected_label
 
-        with self.events.selected_label.blocker():
-            try:
-                _, updated_pixels = self._parse_paint_event(event.value)
-                UserUpdateSegmentation(
-                    tracks=self.tracks_viewer.tracks,
-                    new_value=target_value,
-                    updated_pixels=updated_pixels,
-                    current_track_id=self.tracks_viewer.selected_track,
-                    force=self.tracks_viewer.force,
-                )  # paint with the updated self.selected_label, not with the value from the
-                # event, to ensure it is a valid label.
-            except InvalidActionError as e:
-                if e.forceable:
-                    # If the action is invalid, ask the user if they want to force it anyway
-                    force, always_force = confirm_force_operation(message=str(e))
-                    self.tracks_viewer.force = always_force
-                    super().undo()
-                    if not force:
-                        self._refresh()  # to trigger refresh on orthoviews, if present
+            with self.events.selected_label.blocker():
+                try:
+                    _, updated_pixels = self._parse_paint_event(event.value)
+                    UserUpdateSegmentation(
+                        tracks=self.tracks_viewer.tracks,
+                        new_value=target_value,
+                        updated_pixels=updated_pixels,
+                        current_track_id=self.tracks_viewer.selected_track,
+                        force=self.tracks_viewer.force,
+                    )  # paint with the updated self.selected_label, not with the value from the
+                    # event, to ensure it is a valid label.
+                except InvalidActionError as e:
+                    if e.forceable:
+                        # If the action is invalid, ask the user if they want to force it anyway
+                        force, always_force = confirm_force_operation(message=str(e))
+                        self.tracks_viewer.force = always_force
+                        super().undo()
+                        if not force:
+                            self._refresh()  # to trigger refresh on orthoviews, if present
+                        else:
+                            # try again with force enabled
+                            UserUpdateSegmentation(
+                                tracks=self.tracks_viewer.tracks,
+                                new_value=target_value,
+                                updated_pixels=updated_pixels,
+                                current_track_id=self.tracks_viewer.selected_track,
+                                force=True,
+                            )
                     else:
-                        # try again with force enabled
-                        UserUpdateSegmentation(
-                            tracks=self.tracks_viewer.tracks,
-                            new_value=target_value,
-                            updated_pixels=updated_pixels,
-                            current_track_id=self.tracks_viewer.selected_track,
-                            force=True,
-                        )
-                else:
-                    warnings.warn(str(e), stacklevel=2)
-                    super().undo()
-                    self._refresh()
+                        warnings.warn(str(e), stacklevel=2)
+                        super().undo()
+                        self._refresh()
 
     def _refresh(self):
         """Refresh the data in the labels layer"""
@@ -323,7 +328,9 @@ class TrackLabels(ContourLabels):
         highlighted = set(self.tracks_viewer.selected_nodes)
         foreground = self.track_colormap.nodes if visible == "all" else visible
         self.background = (
-            [] if visible == "all" else self.track_colormap.nodes - visible - highlighted
+            []
+            if visible == "all"
+            else self.track_colormap.nodes - visible - highlighted
         )
 
         self.filled_labels = []
@@ -400,9 +407,25 @@ class TrackLabels(ContourLabels):
            can be used to update the existing node in a paint event. No action is needed.
         """
 
+        # The background label is never a valid label to paint a node with (painting
+        # with it erases), so it should never get a track id or a color. napari binds
+        # "X" on Labels layers to swap_selected_and_background_labels, which sets
+        # selected_label to the background value: without this guard, that would give
+        # the background an opaque color and make the whole segmentation background
+        # render in the track color (see issue #493).
+        if self.selected_label == self.colormap.background_value:
+            return
+
         update_colormap = False
         if self.tracks_viewer.tracks is not None:
             current_timepoint = self.viewer.dims.current_step[0]
+            # A label that names a node outside the solution but still present in
+            # graph_full is soft-deleted: the node was removed, or added and then
+            # undone. Select a new label if this is the case.
+            if not self.tracks_viewer.tracks.graph_solution.has_node(
+                self.selected_label
+            ) and self.tracks_viewer.tracks.graph_full.has_node(self.selected_label):
+                _new_label(self, new_track_id=False)
             # if a node with the given label is already in the graph
             if self.tracks_viewer.tracks.graph.has_node(self.selected_label):
                 # Update the track id
@@ -480,13 +503,3 @@ class TrackLabels(ContourLabels):
             n_edit_dimensions = self.tracks_viewer.tracks.ndim - 1
         self._n_edit_dimensions = n_edit_dimensions
         self.events.n_edit_dimensions()
-
-
-# This is to override the default napari function to get a new label for the labels layer
-action_manager.register_action(
-    name="napari:new_label",
-    command=new_label,
-    keymapprovider=TrackLabels,
-    description="",
-)
-TrackLabels.bind_key("m", overwrite=True)(new_label)
