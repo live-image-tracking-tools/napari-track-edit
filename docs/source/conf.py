@@ -24,3 +24,24 @@ suppress_warnings = [
 
 html_theme = "sphinx_rtd_theme"
 # html_static_path = ['_static']
+
+
+# -- Generated keybindings table ---------------------------------------------
+# The plugin's shortcuts are defined once, in
+# motile_tracker.data_views.keybindings_config.KEYBINDINGS, and the table
+# included by key_bindings.rst is rendered from it so the two cannot drift.
+KEYBINDINGS_TABLE = "_generated/keybinding_defaults.rst"
+
+
+def _write_keybindings_table(app=None):
+    from pathlib import Path
+
+    from motile_tracker.data_views.keybindings_config import keybindings_rst
+
+    out = Path(__file__).parent / KEYBINDINGS_TABLE
+    out.parent.mkdir(exist_ok=True)
+    out.write_text(keybindings_rst() + "\n")
+
+
+def setup(app):
+    app.connect("builder-inited", _write_keybindings_table)
