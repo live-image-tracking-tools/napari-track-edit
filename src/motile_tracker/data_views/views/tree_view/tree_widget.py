@@ -379,6 +379,9 @@ class TreeWidget(QWidget):
         # also update the navigation widget
         self.navigation_widget.track_df = self.tracks_viewer.track_df
         self.navigation_widget.lineage_df = self.lineage_df
+        self.navigation_widget.view_direction = self.view_direction
+        self.navigation_widget.plot_type = self.plot_type
+        self.navigation_widget.feature = self.plot_type_widget.get_current_feature()
 
         # check which view to set
         if self.mode == "lineage":
