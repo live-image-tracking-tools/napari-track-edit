@@ -235,7 +235,7 @@ class TestPaintingAcrossTime:
             tracks=solution_tracks_3d_with_division, name="test"
         )
         seg_layer = tracks_viewer.tracking_layers.seg_layer
-        new_label(seg_layer)
+        seg_layer.new_label()
         seg_layer.mode = "paint"
 
         nodes_before = tracks_viewer.tracks.graph.num_nodes()
@@ -297,7 +297,7 @@ class TestPaintingAcrossTime:
             tracks=solution_tracks_3d_with_division, name="test"
         )
         seg_layer = tracks_viewer.tracking_layers.seg_layer
-        new_label(seg_layer)
+        seg_layer.new_label()
         seg_layer.mode = "paint"
 
         step = list(viewer.dims.current_step)
