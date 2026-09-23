@@ -19,7 +19,11 @@ from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
 from motile_tracker.data_views.keybindings_config import (
-    register_napari_actions,
+    SHORTCUTS,
+    bind_keymap,
+    refresh_napari_keymaps,
+    shortcut_text,
+    sync_blocked_napari_keys,
 )
 from motile_tracker.data_views.node_type import NodeType
 from motile_tracker.data_views.views.layers.tracks_layer_group import TracksLayerGroup
@@ -38,15 +42,19 @@ from motile_tracker.data_views.views_coordinator.user_dialogs import (
     confirm_force_operation,
 )
 
-BASE_TEXT = (
-    "Click : select node\n"
-    "Shift + Click : add to selection\n"
-    "Ctrl (/CMD) + Click : center node\n"
-    "Alt (/Option) + Click : pick tracklet ID\n"
-    "[Q] : toggle display\n"
-    "\n"
-    "Current display mode : "
-)
+
+def base_overlay_text() -> str:
+    """Canvas overlay legend. Built per call rather than kept as a module
+    constant so the display-mode key reflects the current binding."""
+    return (
+        "Click : select node\n"
+        "Shift + Click : add to selection\n"
+        "Ctrl (/CMD) + Click : center node\n"
+        "Alt (/Option) + Click : pick tracklet ID\n"
+        f"[{shortcut_text('toggle_display_mode')}] : toggle display\n"
+        "\n"
+        "Current display mode : "
+    )
 
 
 class TracksViewer:
@@ -160,7 +168,22 @@ class TracksViewer:
         self.tracks_list.colormap = self.colormap
 
     def set_keybinds(self):
-        register_napari_actions(napari.Viewer, self)
+        """Put the current shortcuts on the viewer and follow later rebinds.
+
+        The layers bind themselves the same way as they are created; see
+        `keybindings_config.bind_keymap` for why the instance keymap is the
+        only place this works.
+        """
+        bind_keymap(self.viewer, self)
+        sync_blocked_napari_keys()
+        # A bound method, so psygnal keeps only a weak reference to this
+        # TracksViewer: SHORTCUTS lives for the whole process, and a strong
+        # connection would accumulate one more listener per viewer opened.
+        SHORTCUTS.changed.connect(self._refresh_keymaps)
+
+    def _refresh_keymaps(self) -> None:
+        """Re-apply the current shortcuts to this viewer and its layers."""
+        refresh_napari_keymaps(self)
 
     def request_new_track(self, event=None) -> None:
         """Request a new track id (with new segmentation label if a seg layer is present)"""
@@ -390,13 +413,13 @@ class TracksViewer:
 
         if mode == "lineage":
             self.mode = "lineage"
-            self.viewer.text_overlay.text = BASE_TEXT + "Lineage"
+            self.viewer.text_overlay.text = base_overlay_text() + "Lineage"
         elif mode == "group":
             self.mode = "group"
-            self.viewer.text_overlay.text = BASE_TEXT + "Group"
+            self.viewer.text_overlay.text = base_overlay_text() + "Group"
         else:
             self.mode = "all"
-            self.viewer.text_overlay.text = BASE_TEXT + "All"
+            self.viewer.text_overlay.text = base_overlay_text() + "All"
 
         self.viewer.text_overlay.visible = True
         self.viewer.text_overlay.font_size = 8

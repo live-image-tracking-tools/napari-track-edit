@@ -20,7 +20,6 @@ from motile_tracker.data_views.keybindings_config import (
     current_general_key_actions,
     current_tree_widget_specific_actions,
     qt_event_key,
-    register_napari_actions,
 )
 from motile_tracker.data_views.views.tree_view.flip_axes_widget import FlipTreeWidget
 from motile_tracker.data_views.views.tree_view.navigation_widget import NavigationWidget
@@ -57,12 +56,6 @@ class TreeWidget(QWidget):
             initialization=True, refresh_view=True
         )  # make sure tracks_viewer initializes/updates the track df
         self.tracks_viewer.tree_widget_present = True
-        # Registers tree_widget-only actions (toggle_feature_mode, flip_axes)
-        # with napari's action_manager so they're visible/conflict-checked in
-        # napari's Preferences dialog. Re-registers tracks_viewer actions too
-        # (harmless/idempotent) since this is the only point with access to
-        # both objects.
-        register_napari_actions(napari.Viewer, self.tracks_viewer, tree_widget=self)
         self.selected_nodes = self.tracks_viewer.selected_nodes
         self.tracks_viewer.node_selection_updated.connect(self._update_selected)
         self.tracks_viewer.tracks_updated.connect(self._update_track_data)
@@ -136,7 +129,7 @@ class TreeWidget(QWidget):
 
         panel = QWidget()
         panel.setLayout(panel_layout)
-        panel.setMaximumWidth(1060)  # 930 + room for the options checkboxes
+        panel.setMaximumWidth(1140)
         panel.setMaximumHeight(82)
 
         # Make a collapsible for TreeView widgets

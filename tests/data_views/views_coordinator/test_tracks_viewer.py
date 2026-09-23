@@ -13,8 +13,8 @@ from motile_tracker.data_views.views.layers.track_graph import TrackGraph
 from motile_tracker.data_views.views.layers.track_labels import TrackLabels
 from motile_tracker.data_views.views.layers.track_points import TrackPoints
 from motile_tracker.data_views.views_coordinator.tracks_viewer import (
-    BASE_TEXT,
     TracksViewer,
+    base_overlay_text,
 )
 from motile_tracker.motile.backend.motile_run import MotileRun
 
@@ -550,7 +550,7 @@ class TestOverlayText:
 
         for mode, label in (("lineage", "Lineage"), ("group", "Group"), ("all", "All")):
             tracks_viewer.set_display_mode(mode)
-            assert viewer.text_overlay.text == BASE_TEXT + label
+            assert viewer.text_overlay.text == base_overlay_text() + label
 
 
 class TestSingletonLifecycle:

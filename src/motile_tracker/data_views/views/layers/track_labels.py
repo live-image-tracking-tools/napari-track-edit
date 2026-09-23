@@ -12,6 +12,7 @@ from napari.layers import Labels
 from napari.utils import DirectLabelColormap
 from napari.utils.notifications import show_info
 
+from motile_tracker.data_views.keybindings_config import bind_keymap
 from motile_tracker.data_views.views.layers.click_utils import (
     detect_click,
     detect_side_button,
@@ -86,9 +87,12 @@ class TrackLabels(ContourLabels):
         self.highlight_contour = False
         self.foreground_contour = False
 
-        # PROTOTYPE: tracks_viewer-targeted keybinds are registered once on
-        # napari.Viewer via `register_napari_actions` (see tracks_viewer.py
-        # set_keybinds), so no per-layer bind_keymap call is needed here.
+        # Bind the current tracks_viewer shortcuts on this layer *instance*.
+        # Needed in addition to the viewer-level binding in
+        # tracks_viewer.set_keybinds: the active layer's own keymap is the
+        # only place that outranks napari's built-in layer actions, and
+        # bind_keymap keeps it in sync when the user rebinds.
+        bind_keymap(self, self.tracks_viewer)
 
         # Listen to paint events and changing the selected label
         self.mouse_drag_callbacks.append(self.click)

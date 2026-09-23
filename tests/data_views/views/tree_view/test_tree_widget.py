@@ -294,8 +294,8 @@ def test_keyboard_shortcuts_all(mock_move, viewer, solution_tracks_2d, qtbot):
     qtbot.keyPress(tree_widget, Qt.Key_D)
     delete_mock.assert_called_once()
 
-    # Test 2: Shift+A key calls create_edge
-    qtbot.keyPress(tree_widget, Qt.Key_A, Qt.KeyboardModifier.ShiftModifier)
+    # Test 2: A key calls create_edge
+    qtbot.keyPress(tree_widget, Qt.Key_A)
     create_edge_mock.assert_called_once()
 
     # Test 3: B key calls delete_edge

@@ -264,8 +264,8 @@ def test_table_widget_keybinds(colored_table_widget, qtbot):
     qtbot.keyPress(table_widget, Qt.Key_Delete)
     delete_mock.assert_called_once()
 
-    # Test Shift+A key calls create_edge
-    qtbot.keyPress(table_widget, Qt.Key_A, Qt.KeyboardModifier.ShiftModifier)
+    # Test A key calls create_edge
+    qtbot.keyPress(table_widget, Qt.Key_A)
     create_edge_mock.assert_called_once()
 
     # Test B key calls delete_edge

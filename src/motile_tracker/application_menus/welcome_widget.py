@@ -1,5 +1,6 @@
 import napari
 from qtpy.QtCore import Qt
+from qtpy.QtGui import QDesktopServices
 from qtpy.QtWidgets import (
     QLabel,
     QTextBrowser,
@@ -7,16 +8,24 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from motile_tracker.application_menus.keybindings_widget import (
+    open_keybindings_panel,
+)
+from motile_tracker.data_views.keybindings_config import shortcut_text
+
 DOCS_URL = "https://funkelab.github.io/motile_tracker"
-KEYBINDINGS_URL = f"{DOCS_URL}/key_bindings.html"
 TUTORIAL_URL = "https://github.com/funkelab/motile_tracker/blob/main/assets/motile-tracker_tutorial.pdf"
+# Not a real address, used to keep the formatting consistent
+KEYBINDINGS_LINK = "motile-tracker:keybindings"
+DOCS_ICON = "\U0001f4d6"  # open book
+KEYBINDINGS_ICON = "\u2328\ufe0f"  # keyboard
+TUTORIAL_ICON = "\U0001f393"  # graduation cap
 
 
 class WelcomeWidget(QWidget):
     """Getting started widget with links and basic information to get started with the tool."""
 
     def __init__(self, _viewer: napari.Viewer):
-
         super().__init__()  # viewer is actually not used for this widget, but kept in to
         # match the expected signature for menu widgets.
 
@@ -33,24 +42,25 @@ class WelcomeWidget(QWidget):
         title.setFont(font)
         layout.addWidget(title)
 
-        # Top links
+        # Top links.
         links_html = f"""
         <p style="margin: 8px 0; line-height: 1.8;">
-            <a href="{DOCS_URL}"><b>📖 Documentation</b></a>&nbsp;&nbsp;
-            <a href="{KEYBINDINGS_URL}"><b>🖱️ Keybindings</b></a>&nbsp;&nbsp;
-            <a href="{TUTORIAL_URL}"><b>🎓 Tutorial</b></a>
+            <a href="{DOCS_URL}"><b>{DOCS_ICON} Documentation</b></a>&nbsp;&nbsp;
+            <a href="{KEYBINDINGS_LINK}"><b>{KEYBINDINGS_ICON} Keybindings</b></a>&nbsp;&nbsp;
+            <a href="{TUTORIAL_URL}"><b>{TUTORIAL_ICON} Tutorial</b></a>
         </p>
         """
-        links = QTextBrowser()
-        links.setOpenExternalLinks(True)
-        links.setHtml(links_html)
-        links.setMaximumHeight(50)
-        links.setStyleSheet(
+        self.links = QTextBrowser()
+        self.links.setOpenLinks(False)
+        self.links.anchorClicked.connect(self._open_link)
+        self.links.setHtml(links_html)
+        self.links.setMaximumHeight(50)
+        self.links.setStyleSheet(
             "QTextBrowser { border: none; background: transparent; margin: 0px; padding: 0px; }"
         )
-        links.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        links.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        layout.addWidget(links)
+        self.links.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.links.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        layout.addWidget(self.links)
 
         # Content
         content = QTextBrowser()
@@ -60,7 +70,7 @@ class WelcomeWidget(QWidget):
         content.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         content.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        content.setMarkdown("""
+        content.setMarkdown(f"""
 ### Quick Start
 
 1. **Load Data**: Drag and drop your label or points data in the napari viewer.
@@ -73,12 +83,20 @@ class WelcomeWidget(QWidget):
 ### Tips
 
 - Right-click on the 'eye' icon (middle) at the top of the docked widgets to set menu visibility.
-- Toggle panels with the `/` key to maximize viewing space.
-- View individual lineages by changing the display mode in Visualization tab and in the Lineage View (press [Q])
-- If you have segmentation data, you can view additional features (e.g. area/volume) in the Lineage View (press [W])
+- Toggle panels with the `{shortcut_text("hide_panels")}` key to maximize viewing space.
+- View individual lineages by changing the display mode in Visualization tab and in the Lineage View (press [{shortcut_text("toggle_display_mode")}])
+- If you have segmentation data, you can view additional features (e.g. area/volume) in the Lineage View (press [{shortcut_text("toggle_feature_mode")}])
 - Assign objects to custom groups to keep track of different cell populations or conditions ('Groups' menu).
 - Import data from external tracks from CSV or GEFF in the Tracks List menu.
         """)
 
         layout.addWidget(content)
+
         self.setLayout(layout)
+
+    def _open_link(self, url) -> None:
+        """Open the keybindings panel for our own scheme, the browser otherwise."""
+        if url.toString() == KEYBINDINGS_LINK:
+            open_keybindings_panel(self)
+        else:
+            QDesktopServices.openUrl(url)

@@ -1,52 +1,42 @@
-"""Unified keybindings configuration for both napari layers and Qt widgets.
+"""Where every Napari Track Edit keyboard shortcut is defined, stored and dispatched.
 
-This module defines all keybindings in a unified way, specifying:
-- The action to perform (method name)
-- Keys for napari layers (string format)
-- Keys for Qt widgets (Qt.Key constants)
-- The target(s) for the action: "tracks_viewer", "tree_widget", or both
+``KEYBINDINGS`` is the single source of truth: each entry names the method to
+call, its default shortcut, a one-line description and which targets it
+reaches. From this, we derive the napari and Qt dispatch tables, the button captions,
+the keybindings panel and the documentation table, so a key is only ever written down in
+one place.
 
-An action can target multiple objects. It will be available in the following ways:
-- napari layers: if "tracks_viewer" is in targets
-- Qt table_widget: if "tracks_viewer" is in targets
-- Qt tree_widget: if "tree_widget" is in targets
+Keybindings are stored in shortcuts.json in the user's config directory.
+The actions are deliberately *not* registered with napari's ``action_manager``.
+napari offers no plugin hooks for this.
 
-PROTOTYPE: all actions (both "tracks_viewer" and "tree_widget" targets) are
-registered with napari's ``action_manager`` and seeded into
-``napari.settings.get_settings().shortcuts``. This means:
-- they persist across sessions in napari's own settings YAML
-- they are rebindable/resettable via napari's built-in
-  Preferences -> Shortcuts dialog, with napari's own conflict warnings -
-  including cross-checking a "tracks_viewer" rebind against a
-  "tree_widget"-only default and vice versa (e.g. rebinding something to
-  "w" now warns about colliding with toggle_feature_mode)
-- the Qt-side dispatch tables (``current_general_key_actions`` /
-  ``current_tree_widget_specific_actions``) are rebuilt from the *current*
-  napari settings/action_manager state, so a rebind made in the
-  Preferences dialog also updates Qt widget dispatch, not just napari
-  layers/viewer.
-
-"tree_widget"-only actions have no real napari keymap to bind to (their
-"keymapprovider" would have to be a Qt widget class with `bind_key`, which
-napari's `action_manager` doesn't support). They're registered against
-`_TreeWidgetKeymapProvider`, a bare `KeymapProvider` subclass that exists
-only so `action_manager` has somewhere to park the binding - this makes the
-action visible and conflict-checked in napari's Preferences dialog (which
-otherwise skips any action with `keymapprovider=None`), without ever
-actually being triggered through napari's own keymap dispatch. The real
-dispatch stays in `TreeWidget.keyPressEvent`, reading the same
-settings-backed source.
+Dispatch is instance-level: ``bind_keymap`` puts the current shortcuts on the
+*instance* keymap of the viewer and of each tracking layer. napari resolves a
+key press through the global user keymap, then the active layer's instance
+keymap, then its class keymap, then the viewer's instance keymap, and last
+``Viewer.class_keymap``. Most of our defaults collide with a built-in napari
+action, so only an instance binding reliably wins: shadowing napari while a
+tracking layer is active is the intended behaviour. Qt widgets that are not
+napari layers (the tree view, the table) dispatch from
+``current_general_key_actions`` / ``current_tree_widget_specific_actions``.
 """
 
 from __future__ import annotations
 
+import contextlib
+import json
+import sys
+import weakref
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from napari.settings import get_settings
+import platformdirs
+from app_model.backends.qt import QKeyBindingSequence
+from app_model.types import KeyBinding
 from napari.utils.action_manager import action_manager
-from napari.utils.key_bindings import KeymapProvider, coerce_keybinding
+from napari.utils.key_bindings import coerce_keybinding
+from psygnal import Signal
 from qtpy.QtCore import Qt
-from qtpy.QtGui import QKeySequence
 
 if TYPE_CHECKING:
     from napari.layers import Labels, Points
@@ -55,296 +45,505 @@ if TYPE_CHECKING:
     from motile_tracker.data_views.views.layers.track_points import TrackPoints
     from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
 
-ACTION_PREFIX = "motile-tracker"
-# Shown as a prefix on the "Action" column in napari's Preferences ->
-# Shortcuts dialog, so our actions are visually grouped/identifiable among
-# napari's own and other plugins'. Update when the package is renamed
-# (napari-track-edit / NTE).
-DESCRIPTION_PREFIX = "Motile Tracker"
+
+# The platform's command modifier, as napari spells it: Ctrl on Windows and
+# Linux, Cmd (which napari calls "Meta") on macOS.
+CMD = "meta" if sys.platform == "darwin" else "ctrl"
+
+# The table
+# - "key": the default shortcut, and the one the panel lets you change.
+# - "also": extra shortcuts that are always bound and are not editable, for
+#   keys that are conventional rather than chosen.
+# - "description": shown in the panel and in the generated docs table.
+# - "group": section heading in the panel and the docs.
+# - "targets": "tracks_viewer" (napari layers, viewer and the table widget),
+#   "tree_widget", or both.
+KEYBINDINGS = {
+    "request_new_track": {
+        "key": "m",
+        "description": (
+            "Start a new track: assign a new track id, and a new segmentation "
+            "label if necessary"
+        ),
+        "group": "Editing",
+        "targets": ["tracks_viewer"],
+    },
+    "delete_node": {
+        "key": "d",
+        "also": ["Delete"],
+        "description": "Delete the selected nodes",
+        "group": "Editing",
+        "targets": ["tracks_viewer"],
+    },
+    "swap_nodes": {
+        "key": "s",
+        "description": "Swap the incoming edges of two nodes at the same time point",
+        "group": "Editing",
+        "targets": ["tracks_viewer"],
+    },
+    "create_edge": {
+        "key": "a",
+        "description": "Create an edge between two selected nodes, if valid",
+        "group": "Editing",
+        "targets": ["tracks_viewer"],
+    },
+    "delete_edge": {
+        "key": "b",
+        "description": "Break the edge between two selected nodes, if it exists",
+        "group": "Editing",
+        "targets": ["tracks_viewer"],
+    },
+    "set_division": {
+        "key": "y",
+        "description": (
+            "Make or break a division between a parent node and its two children"
+        ),
+        "group": "Editing",
+        "targets": ["tracks_viewer"],
+    },
+    "undo": {
+        "key": "z",
+        "description": "Undo the last editing action",
+        "group": "Editing",
+        "targets": ["tracks_viewer"],
+    },
+    "redo": {
+        "key": "r",
+        "also": [f"{CMD}+shift+z"],
+        "description": "Redo the last undone editing action",
+        "group": "Editing",
+        "targets": ["tracks_viewer"],
+    },
+    "deselect": {
+        "key": "Escape",
+        "description": "Clear the selection",
+        "group": "Selection",
+        "targets": ["tracks_viewer"],
+    },
+    "restore_selection": {
+        "key": "e",
+        "description": "Restore the last selection",
+        "group": "Selection",
+        "targets": ["tracks_viewer"],
+    },
+    "select_previous": {
+        "key": "p",
+        "description": "Select the previous node set from the selection history",
+        "group": "Selection",
+        "targets": ["tracks_viewer"],
+    },
+    "select_next": {
+        "key": "n",
+        "description": "Select the next node set from the selection history",
+        "group": "Selection",
+        "targets": ["tracks_viewer"],
+    },
+    "hide_panels": {
+        "key": "/",
+        "description": "Hide or show all currently active widgets",
+        "group": "View",
+        "targets": ["tracks_viewer"],
+    },
+    "toggle_display_mode": {
+        "key": "q",
+        "description": (
+            "Cycle the display mode: All to Lineage to Group. Skips Group when no "
+            "groups exist"
+        ),
+        "group": "View",
+        # Bound in both places, but to a different method on each.
+        "targets": ["tracks_viewer", "tree_widget"],
+    },
+    "toggle_feature_mode": {
+        "key": "w",
+        "description": (
+            "Switch the lineage view between the tree plot and a feature plot"
+        ),
+        "group": "Lineage view",
+        "targets": ["tree_widget"],
+    },
+    "flip_axes": {
+        "key": "f",
+        "description": "Flip the axes of the lineage view",
+        "group": "Lineage view",
+        "targets": ["tree_widget"],
+    },
+}
+
+# Section order for the keybindings panel and the generated docs table.
+KEYBINDING_GROUPS = ("Editing", "Selection", "View", "Lineage view")
+
+# Keys the tree view handles itself. Not rebindable.
+TREE_WIDGET_MODIFIER_ACTIONS = {
+    Qt.Key_X: (True, False),  # (x_enabled, y_enabled) mouse zoom constraint
+    Qt.Key_Y: (False, True),
+}
+TREE_WIDGET_NAVIGATION_KEYS = {
+    Qt.Key_Left: "left",
+    Qt.Key_Right: "right",
+    Qt.Key_Up: "up",
+    Qt.Key_Down: "down",
+}
 
 
-class _TreeWidgetKeymapProvider(KeymapProvider):
-    """Dummy keymapprovider so tree-widget-only actions show up in napari's
-    Preferences -> Shortcuts dialog and get conflict-checked there, even
-    though no real napari keymap dispatch ever reads `class_keymap` here -
-    `TreeWidget.keyPressEvent` is the actual executor.
+# Storage
+class _Shortcuts:
+    """The user's shortcut overrides, and a signal for when they change.
+
+    Stored as ``{action: shortcut}``. Only overrides are written, so an action
+    left alone follows its default even if that default later changes; an
+    action the user cleared is stored as "".
     """
 
+    changed = Signal()
 
-def _action_id(name: str) -> str:
-    return f"{ACTION_PREFIX}:{name}"
+    def __init__(self) -> None:
+        self._overrides: dict[str, str] | None = None
+
+    @property
+    def path(self) -> Path:
+        return Path(platformdirs.user_config_dir("motile-tracker")) / "shortcuts.json"
+
+    @property
+    def overrides(self) -> dict[str, str]:
+        if self._overrides is None:
+            self._overrides = {}
+            with contextlib.suppress(OSError, ValueError):
+                loaded = json.loads(self.path.read_text())
+                if isinstance(loaded, dict):
+                    self._overrides = {
+                        k: str(v) for k, v in loaded.items() if k in KEYBINDINGS
+                    }
+        return self._overrides
+
+    def set(self, action: str, shortcut: str) -> None:
+        """Override `action` (or "" to unbind it), save and notify."""
+        self.overrides[action] = shortcut
+        self.save()
+
+    def reset(self, actions: list[str] | None = None) -> None:
+        """Drop overrides so `actions` (default: all) follow their defaults."""
+        for action in KEYBINDINGS if actions is None else actions:
+            self.overrides.pop(action, None)
+        self.save()
+
+    def save(self) -> None:
+        with contextlib.suppress(OSError):
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(self.overrides, indent=2, sort_keys=True))
+        self.changed.emit()
+
+
+SHORTCUTS = _Shortcuts()
+
+
+def current_shortcuts(action: str) -> list[str]:
+    """Every shortcut `action` answers to now: the user's choice (or the
+    default) plus any fixed extras. Empty if the user cleared it."""
+    config = KEYBINDINGS.get(action)
+    if config is None:
+        return []
+    chosen = SHORTCUTS.overrides.get(action, config["key"])
+    return _normalize(([chosen] if chosen else []) + list(config.get("also", ())))
+
+
+def default_shortcut(action: str) -> str:
+    """The editable default for `action`, normalized."""
+    return _normalize([KEYBINDINGS[action]["key"]])[0]
+
+
+def set_shortcut(action: str, shortcut: str) -> None:
+    """Bind `action` to `shortcut` ("" to unbind) and persist it."""
+    SHORTCUTS.set(action, _normalize([shortcut])[0] if shortcut else "")
+
+
+def restore_default_shortcuts(actions: list[str] | None = None) -> None:
+    """Put `actions` (default: all of ours) back on their defaults."""
+    SHORTCUTS.reset(actions)
+
+
+def _normalize(shortcuts) -> list[str]:
+    """Canonical napari spelling for each, e.g. "ctrl+u" -> "Ctrl+U".
+
+    De-duplicated, since a user can pick the key that is already one of the
+    action's fixed extras.
+    """
+    return list(dict.fromkeys(str(coerce_keybinding(str(s))) for s in shortcuts))
+
+
+# Dispatch: napari layers and the viewer
+# Instances whose keymap we keep in sync, and the TracksViewer each dispatches
+# to. Weak, so a closed viewer or a removed layer is not kept alive.
+_KEY_TARGETS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+# What we last bound on each, so a rebind removes exactly our own keys and
+# leaves anything the layer bound for other reasons alone. Kept here rather
+# than on the target: a napari Viewer is a pydantic model and rejects unknown
+# attributes.
+_BOUND_KEYS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 def bind_keymap(
     target: TrackPoints | Points | TrackLabels | Labels,
-    keymap: dict[str, str],
     tracks_viewer: TracksViewer,
-):
-    """Bind all keys in `keymap` to the corresponding methods on `tracks_viewer` to the
-    target layer. This should be an instance of (Track)Labels or (Track)Points"""
-
-    for method_name, keys in keymap.items():
-        handler = getattr(tracks_viewer, method_name, None)
-        if handler is not None:
-            for key in keys:
-                target.bind_key(key)(handler)
-
-
-def register_napari_actions(
-    keymap_provider: type,
-    tracks_viewer: TracksViewer,
-    tree_widget: object | None = None,
 ) -> None:
-    """Register all actions with napari's action_manager, scoped by target.
+    """Bind the "tracks_viewer" shortcuts onto `target`'s *instance* keymap and
+    keep them there as the user rebinds. The module docstring says why it has
+    to be the instance keymap."""
+    _KEY_TARGETS[target] = tracks_viewer
+    _apply_instance_keymap(target, tracks_viewer)
 
-    "tracks_viewer"-targeted actions are registered against `keymap_provider`
-    (a real napari `Viewer`/layer class), so a shortcut actually triggers
-    the napari-level keymap dispatch. "tree_widget"-targeted actions are
-    registered against `_TreeWidgetKeymapProvider` (a dummy `KeymapProvider`
-    with no real dispatch reading it) purely so they're visible and
-    conflict-checked in napari's Preferences -> Shortcuts dialog; the real
-    trigger stays `TreeWidget.keyPressEvent`, which is why `tree_widget` is
-    only needed to resolve the handler method, not for real key binding.
 
-    Seeds napari's persisted shortcut settings with our defaults the first
-    time an action is seen, then binds from whatever is currently in
-    settings (so a previously user-rebound shortcut is honored on restart).
-    """
-    settings = get_settings().shortcuts.shortcuts
-    seeded_new_defaults = False
+def _apply_instance_keymap(target, tracks_viewer: TracksViewer) -> None:
+    for key in _BOUND_KEYS.get(target, ()):
+        target.keymap.pop(key, None)
+
+    bound = []
     for action, config in KEYBINDINGS.items():
-        targets = config["targets"]
-        if "tracks_viewer" in targets:
-            provider, handler_obj, description_prefix = (
-                keymap_provider,
-                tracks_viewer,
-                DESCRIPTION_PREFIX,
-            )
-        elif "tree_widget" in targets:
-            provider, handler_obj, description_prefix = (
-                _TreeWidgetKeymapProvider,
-                tree_widget,
-                f"{DESCRIPTION_PREFIX} (Tree Widget)",
-            )
-        else:
+        handler = getattr(tracks_viewer, action, None)
+        if "tracks_viewer" not in config["targets"] or handler is None:
             continue
-        if not config["napari_keys"] or handler_obj is None:
-            continue
-
-        action_id = _action_id(action)
-        handler = getattr(handler_obj, action, None)
-        if handler is None:
-            continue
-
-        action_manager.register_action(
-            name=action_id,
-            command=handler,
-            description=f"{description_prefix}: {action.replace('_', ' ')}",
-            keymapprovider=provider,
-        )
-
-        if action_id not in settings:
-            settings[action_id] = [
-                coerce_keybinding(key) for key in config["napari_keys"]
-            ]
-            seeded_new_defaults = True
-        for shortcut in settings[action_id]:
-            action_manager.bind_shortcut(action_id, str(shortcut))
-
-    if seeded_new_defaults:
-        # Assigning triggers the evented model's changed signal (and
-        # therefore autosave) only when the value differs from what's
-        # already set; re-assigning an unchanged dict is a no-op for
-        # persistence. Force a save so first-run defaults actually land in
-        # napari's settings file, not just in memory for this session.
-        get_settings().shortcuts.shortcuts = settings
-        get_settings().save()
-
-    get_settings().shortcuts.shortcuts = settings
+        for shortcut in current_shortcuts(action):
+            key = coerce_keybinding(shortcut)
+            target.bind_key(key, handler, overwrite=True)
+            bound.append(key)
+    _BOUND_KEYS[target] = bound
 
 
-def qt_event_key(event) -> tuple[int, int]:
-    """Build the (key, modifiers) lookup tuple for a QKeyEvent.
+def refresh_napari_keymaps(tracks_viewer: TracksViewer) -> None:
+    """Re-apply the current shortcuts to everything bound to `tracks_viewer`.
 
-    Use this on the receiving end (e.g. `event.key()`/`event.modifiers()`
-    in a `keyPressEvent` override) to look up `current_general_key_actions()`.
+    Scoped to one TracksViewer, because a session can hold several and
+    refreshing all of them from each of their listeners would be quadratic.
     """
+    sync_blocked_napari_keys()
+    for target, owner in list(_KEY_TARGETS.items()):
+        if owner is not tracks_viewer:
+            continue
+        with contextlib.suppress(RuntimeError, ReferenceError):
+            _apply_instance_keymap(target, tracks_viewer)
+
+
+def blocked_napari_binding(_layer=None) -> None:
+    """No-op stand-in for a napari binding we deliberately swallow."""
+
+
+# Keys currently blocked on ContourLabels, so a rebind can lift the old block
+# instead of leaving napari's action unreachable on a key we no longer use.
+_BLOCKED_KEYS: list = []
+
+
+def sync_blocked_napari_keys() -> None:
+    """Keep napari's "new label" blocked on whatever key starts a new track.
+
+    napari's Labels layer binds [M] to `new_label`, which hands out a label
+    with no track id behind it. The block lives on the class keymap so it also
+    covers a ContourLabels that is not showing tracks and so has no instance
+    binding of ours. It follows the current shortcut: after a rebind the old
+    key goes back to napari and the new one is covered.
+    """
+    from motile_tracker.data_views.views.layers.contour_labels import ContourLabels
+
+    global _BLOCKED_KEYS
+    for key in _BLOCKED_KEYS:
+        if ContourLabels.class_keymap.get(key) is blocked_napari_binding:
+            del ContourLabels.class_keymap[key]
+
+    keys = [coerce_keybinding(s) for s in current_shortcuts("request_new_track")]
+    for key in keys:
+        ContourLabels.bind_key(key, blocked_napari_binding, overwrite=True)
+    _BLOCKED_KEYS = keys
+
+
+def napari_conflicts(shortcut: str) -> list[str]:
+    """Descriptions of napari's own actions already using `shortcut`.
+
+    Informational only: a plugin shortcut deliberately shadows a built-in layer
+    action while a tracking layer is active, so a collision is something to
+    tell the user about, not to refuse. Read-only - we register nothing with
+    `action_manager`.
+    """
+    key = str(coerce_keybinding(str(shortcut)))
+    found = []
+    # Snapshot: `_shortcuts` is a defaultdict napari writes to lazily.
+    for action_id, bound in list(action_manager._shortcuts.items()):
+        registered = action_manager._actions.get(action_id)
+        if registered is not None and key in _normalize(bound):
+            found.append(registered.description)
+    return found
+
+
+# Dispatch: Qt widgets that are not napari layers
+def qt_event_key(event) -> tuple[int, int]:
+    """The (key, modifiers) lookup tuple for a QKeyEvent."""
     return (int(event.key()), int(event.modifiers().value))
 
 
-def _current_key_actions_for_target(target: str) -> dict[tuple[int, int], str]:
-    """(Qt.Key_*, modifiers) -> method name, for all actions with `target`
-    in their "targets", reflecting live napari settings.
-
-    Rebuilt from napari's settings/action_manager state (rather than a
-    static dict) so a rebind made via napari's Preferences dialog is picked
-    up by the Qt-side keyPressEvent dispatch too. Keys are (key, modifiers)
-    tuples so e.g. "d" and "ctrl+d" don't collide.
-    """
-    shortcuts = get_settings().shortcuts.shortcuts
-    result: dict[tuple[int, int], str] = {}
-    for action, config in KEYBINDINGS.items():
-        if target not in config["targets"]:
-            continue
-        action_id = _action_id(action)
-        bound = shortcuts.get(action_id)
-        if not bound:
-            # not yet registered/seeded (e.g. called before viewer init) -
-            # fall back to the static defaults so Qt widgets still work.
-            bound = [coerce_keybinding(key) for key in config["napari_keys"]]
-        for shortcut in bound:
-            qt_combo = _napari_shortcut_to_qt_key(str(shortcut))
-            if qt_combo is not None:
-                result[qt_combo] = action
-    return result
+def _key_actions_for_target(target: str) -> dict[tuple[int, int], str]:
+    return {
+        combo: action
+        for action, config in KEYBINDINGS.items()
+        if target in config["targets"]
+        for shortcut in current_shortcuts(action)
+        if (combo := _qt_combo(shortcut)) is not None
+    }
 
 
 def current_general_key_actions() -> dict[tuple[int, int], str]:
-    """(Qt.Key_*, modifiers) -> tracks_viewer method name, reflecting live
-    napari settings. See `_current_key_actions_for_target`.
-    """
-    return _current_key_actions_for_target("tracks_viewer")
+    """(Qt.Key_*, modifiers) -> tracks_viewer method name."""
+    return _key_actions_for_target("tracks_viewer")
 
 
 def current_tree_widget_specific_actions() -> dict[tuple[int, int], str]:
-    """(Qt.Key_*, modifiers) -> tree_widget method name, reflecting live
-    napari settings. See `_current_key_actions_for_target`.
+    """(Qt.Key_*, modifiers) -> tree_widget method name."""
+    return _key_actions_for_target("tree_widget")
+
+
+def _qt_combo(shortcut: str) -> tuple[int, int] | None:
+    """A napari shortcut as a (Qt.Key_*, modifiers) tuple, None for a chord.
+
+    Goes through app_model rather than `QKeySequence(shortcut)`, which reads
+    the string as Qt spells it, not as napari does. The two disagree on macOS:
+    Qt's "Ctrl" is the Command key, napari's is literal Control. Parsing it the
+    Qt way bound the *other* modifier, so a chord fired on Cmd in the tree view
+    and table while firing on Control in the canvas - the same shortcut needing
+    two different keys depending on where the focus was.
     """
-    return _current_key_actions_for_target("tree_widget")
-
-
-def _napari_shortcut_to_qt_key(shortcut: str) -> tuple[int, int] | None:
-    """Convert a napari shortcut string to a (Qt.Key_*, modifiers) tuple.
-
-    Handles a single key plus any combination of modifiers (e.g. "d",
-    "ctrl+d", "ctrl+shift+d"). Does NOT handle chords (multi-key sequences
-    like "ctrl+k p") - `QKeySequence` doesn't model those as a single combo,
-    and none of today's actions need them.
-    """
-    qt_seq = QKeySequence(shortcut)
-    if qt_seq.count() != 1:
+    sequence = QKeyBindingSequence(KeyBinding.from_str(shortcut))
+    if sequence.count() != 1:
         return None
-    combo = qt_seq[0]
+    combo = sequence[0]
     return (int(combo.key()), int(combo.keyboardModifiers().value))
 
 
-KEYBINDINGS = {
-    # General actions: apply to both napari layers and tree_widget (via tracks_viewer)
-    # PROTOTYPE NOTE: "tracks_viewer"-only actions no longer need "qt_keys" -
-    # Qt dispatch for these is derived from "napari_keys" at runtime via
-    # `current_general_key_actions()`/`_napari_shortcut_to_qt_key`, so there
-    # is exactly one place a key is specified (removes a duplication that
-    # was a latent bug source: editing one list and forgetting the other).
-    "delete_node": {
-        "napari_keys": ["d", "Delete"],
-        "targets": ["tracks_viewer"],
-    },
-    "request_new_track": {
-        "napari_keys": ["m"],
-        "qt_keys": [Qt.Key_M],
-        "targets": ["tracks_viewer"],
-    },
-    "create_edge": {
-        # plain "a" collides with napari's built-in
-        # "napari:select_all_in_slice" (Points-layer action); use a
-        # modifier combo to avoid the conflict.
-        "napari_keys": ["shift+a"],
-        "targets": ["tracks_viewer"],
-    },
-    "delete_edge": {
-        "napari_keys": ["b"],
-        "targets": ["tracks_viewer"],
-    },
-    "set_division": {
-        "napari_keys": ["y"],
-        "qt_keys": [Qt.Key_Y],
-        "targets": ["tracks_viewer"],
-    },
-    "swap_nodes": {
-        "napari_keys": ["s"],
-        "targets": ["tracks_viewer"],
-    },
-    "undo": {
-        "napari_keys": ["z"],
-        "targets": ["tracks_viewer"],
-    },
-    "redo": {
-        # "ctrl+shift+z" demonstrates a modifier-combo default binding.
-        "napari_keys": ["r", "ctrl+shift+z"],
-        "targets": ["tracks_viewer"],
-    },
-    "deselect": {
-        "napari_keys": ["Escape"],
-        "targets": ["tracks_viewer"],
-    },
-    "restore_selection": {
-        "napari_keys": ["e"],
-        "targets": ["tracks_viewer"],
-    },
-    "hide_panels": {
-        "napari_keys": ["/"],
-        "targets": ["tracks_viewer"],
-    },
-    "select_previous": {
-        "napari_keys": ["p"],  # Previous: Navigate backwards in selection history
-        "targets": ["tracks_viewer"],
-    },
-    "select_next": {
-        "napari_keys": ["n"],  # Next: Navigate forwards in selection history
-        "targets": ["tracks_viewer"],
-    },
-    # Actions available in both napari and tree_widget (but connected to different functions)
-    "toggle_display_mode": {
-        "napari_keys": ["q"],
-        "targets": ["tracks_viewer", "tree_widget"],
-    },
-    # Tree-widget-specific actions
-    "toggle_feature_mode": {
-        "napari_keys": ["w"],
-        "targets": ["tree_widget"],
-    },
-    "flip_axes": {
-        "napari_keys": ["f"],
-        "targets": ["tree_widget"],
-    },
-}
+# Display
+# Spelled out rather than shown as the platform glyph.
+_KEY_ALIASES = {"Escape": "Esc", "Delete": "Del"}
+# napari names modifiers by what they are, not where they sit: "Ctrl" is always
+# Control and "Meta" is the Command key. Spell those the way this keyboard does.
+_MODIFIER_ALIASES = {"Meta": "Cmd", "Alt": "Option"} if sys.platform == "darwin" else {}
+# Conventional reading order for a chord, as printed on keyboards and in menus.
+_MODIFIER_ORDER = ["Ctrl", "Meta", "Alt", "Shift"]
 
-# Special treeview keybinds that don't call simple methods
-SPECIAL_KEYBINDS = {
-    "qt_modifier_zoom": {
-        # Mouse zoom constraints (Qt only)
-        Qt.Key_X: (True, False),  # (x_enabled, y_enabled)
-        Qt.Key_Y: (False, True),
-    },
-    "qt_navigation": {
-        # Arrow keys for navigation (Qt only)
-        Qt.Key_Left: "left",
-        Qt.Key_Right: "right",
-        Qt.Key_Up: "up",
-        Qt.Key_Down: "down",
-    },
-}
 
-# Napari KEYMAP: action -> list of napari key strings.
-# PROTOTYPE NOTE: kept only as the static fallback/seed default; the live
-# napari-side bindings for "tracks_viewer" actions now go through
-# `register_napari_actions` / `action_manager` instead of `bind_keymap`, so
-# they can be persisted and rebound via napari's settings.
-KEYMAP = {
-    action: config["napari_keys"]
-    for action, config in KEYBINDINGS.items()
-    if config["napari_keys"] and "tracks_viewer" in config["targets"]
-}
+def format_shortcut(shortcut: str, platform_names: bool = True) -> str:
+    """One shortcut as display text, e.g. "ctrl+shift+z" -> "Ctrl+Shift+Z".
 
-# PROTOTYPE NOTE: the old static "Qt General Key Actions" and "Qt
-# Tree-Widget Specific Actions" dicts (built once at import time) are gone.
-# Both are now functions - `current_general_key_actions()` and
-# `current_tree_widget_specific_actions()` - that read live napari settings
-# so Qt dispatch reflects user rebinds made in napari's Preferences dialog.
-# Callers should call the function instead of importing a module-level dict.
+    `platform_names` renames modifiers to what this keyboard calls them. Pass
+    False where the text is not for this machine - the generated documentation
+    is read on every platform and must not bake in the one that built it.
+    """
+    parts = str(coerce_keybinding(str(shortcut))).split("+")
+    key = _KEY_ALIASES.get(parts[-1], parts[-1])
+    # napari canonicalizes to alphabetical order ("Shift+Meta+Z"); show the
+    # modifiers the way keyboards label them instead.
+    modifiers = sorted(parts[:-1], key=_MODIFIER_ORDER.index)
+    if platform_names:
+        modifiers = [_MODIFIER_ALIASES.get(m, m) for m in modifiers]
+    return "+".join([*modifiers, key])
 
-# Qt Modifier Actions: for mouse zoom constraints
-TREE_WIDGET_MODIFIER_ACTIONS = SPECIAL_KEYBINDS["qt_modifier_zoom"]
 
-# Qt Navigation Actions: arrow keys
-TREE_WIDGET_NAVIGATION_KEYS = SPECIAL_KEYBINDS["qt_navigation"]
+def shortcut_text(action: str) -> str:
+    """The action's current shortcut as text, or "" if it is unbound."""
+    shortcuts = current_shortcuts(action)
+    return format_shortcut(shortcuts[0]) if shortcuts else ""
+
+
+def shortcut_label(action: str, text: str) -> str:
+    """ "<text> [<key>]", or just `text` when the action is unbound."""
+    key = shortcut_text(action)
+    return f"{text} [{key}]" if key else text
+
+
+class _ShortcutCaption:
+    """Keeps one widget's caption in sync with an action's current shortcut.
+
+    Holds the widget by weakref and connects by *bound method*, so psygnal
+    keeps only a weak reference to this object: `SHORTCUTS.changed` lives for
+    the whole process, and a strong closure over the widget would pin it - and,
+    since a Qt child wrapper keeps its parent alive, the whole widget tree
+    around it.
+    """
+
+    def __init__(self, widget, action: str, text: str, setter: str) -> None:
+        self._widget = weakref.ref(widget)
+        self._action = action
+        self._text = text
+        self._setter = setter
+
+    def render(self) -> None:
+        widget = self._widget()
+        if widget is None:
+            return
+        # RuntimeError: the C++ side is already gone.
+        with contextlib.suppress(RuntimeError):
+            getattr(widget, self._setter)(shortcut_label(self._action, self._text))
+
+
+def bind_shortcut_label(widget, action: str, text: str, setter: str = "") -> None:
+    """Keep `widget`'s caption showing `action`'s *current* shortcut.
+
+    Replaces hand-written captions like `QPushButton("Delete [D]")`, which go
+    stale as soon as the user rebinds - and were already stale for `create_edge`
+    while its default differed from the "[A]" printed on the button.
+
+    `setter` defaults to `setTitle` for a QGroupBox and `setText` otherwise.
+    """
+    if not setter:
+        setter = "setTitle" if hasattr(widget, "setTitle") else "setText"
+    caption = _ShortcutCaption(widget, action, text, setter)
+    # The widget is the only strong owner, so the connection lasts exactly as
+    # long as it does.
+    widget._motile_shortcut_caption = caption
+    caption.render()
+    SHORTCUTS.changed.connect(caption.render)
+
+
+def _doc_shortcut(shortcut: str) -> str:
+    """Display text for the docs, which are read on every platform.
+
+    The command modifier is written "Ctrl/Cmd" rather than resolved to
+    whichever machine built the docs.
+    """
+    command = format_shortcut(CMD + "+a", platform_names=False).split("+")[0]
+    return format_shortcut(shortcut, platform_names=False).replace(
+        f"{command}+", "Ctrl/Cmd+"
+    )
+
+
+def keybindings_rst() -> str:
+    """The rebindable actions as reStructuredText, grouped, for the docs.
+
+    Generated so the documentation cannot drift from the code the way the
+    hand-written table did - it said "A" for create_edge and omitted
+    set_division entirely. Reports the *defaults*, since this renders at docs
+    build time, where the reader's own choices are neither available nor
+    relevant.
+    """
+    lines = [
+        ".. This file is generated from motile_tracker's KEYBINDINGS table by",
+        ".. docs/source/conf.py. Edit the descriptions and defaults there.",
+        "",
+    ]
+    for group in KEYBINDING_GROUPS:
+        actions = [a for a, c in KEYBINDINGS.items() if c["group"] == group]
+        if not actions:
+            continue
+        lines += [
+            group,
+            "-" * len(group),
+            "",
+            ".. list-table::",
+            "   :widths: 25 75",
+            "   :header-rows: 1",
+            "",
+            "   * - Default key binding",
+            "     - Action",
+        ]
+        for action in actions:
+            config = KEYBINDINGS[action]
+            keys = " or ".join(
+                _doc_shortcut(key) for key in [config["key"], *config.get("also", ())]
+            )
+            lines += [f"   * - {keys}", f"     - {config['description']}"]
+        lines.append("")
+    return "\n".join(lines)
