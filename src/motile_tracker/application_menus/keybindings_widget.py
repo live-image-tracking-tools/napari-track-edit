@@ -34,7 +34,7 @@ from motile_tracker.data_views.keybindings_config import (
     shortcut_text,
 )
 
-DOCS_URL = "https://funkelab.github.io/motile_tracker/key_bindings.html"
+DOCS_URL = "https://liveimagetrackingtools.org/napari-track-edit/key_bindings.html"
 
 
 def _shadows_napari(action: str) -> bool:

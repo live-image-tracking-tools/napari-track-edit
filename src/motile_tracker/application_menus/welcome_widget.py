@@ -13,7 +13,7 @@ from motile_tracker.application_menus.keybindings_widget import (
 )
 from motile_tracker.data_views.keybindings_config import shortcut_text
 
-DOCS_URL = "https://funkelab.github.io/motile_tracker"
+DOCS_URL = "https://liveimagetrackingtools.org/napari-track-edit"
 TUTORIAL_URL = "https://github.com/funkelab/motile_tracker/blob/main/assets/motile-tracker_tutorial.pdf"
 # Not a real address, used to keep the formatting consistent
 KEYBINDINGS_LINK = "motile-tracker:keybindings"
