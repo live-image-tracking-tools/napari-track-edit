@@ -40,7 +40,7 @@ def _write_keybindings_table(app=None):
 
     out = Path(__file__).parent / KEYBINDINGS_TABLE
     out.parent.mkdir(exist_ok=True)
-    out.write_text(keybindings_rst() + "\n")
+    out.write_text(keybindings_rst().rstrip("\n") + "\n")
 
 
 def setup(app):

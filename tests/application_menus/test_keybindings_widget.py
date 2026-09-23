@@ -292,7 +292,12 @@ def test_panel_is_reused_rather_than_stacked(loaded):
 def test_committed_docs_table_is_up_to_date():
     """The docs table is generated from KEYBINDINGS and committed, so it reads
     correctly on GitHub and in a PR diff rather than only after a docs build.
-    Regenerate it with `just docs-build` when the table changes."""
+    Regenerate it with `just docs-build` when the table changes.
+
+    Compares the content rather than the exact bytes: the end-of-file-fixer
+    pre-commit hook normalizes trailing newlines, so a byte-for-byte check
+    fails in CI on a file the hook has touched.
+    """
 
     generated = (
         Path(__file__).parents[2]
@@ -302,7 +307,7 @@ def test_committed_docs_table_is_up_to_date():
         / "keybinding_defaults.rst"
     )
 
-    assert generated.read_text() == keybindings_rst() + "\n"
+    assert generated.read_text().rstrip("\n") == keybindings_rst().rstrip("\n")
 
 
 def test_keybindings_is_a_link_that_opens_the_panel(qtbot):
