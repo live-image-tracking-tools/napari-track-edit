@@ -475,7 +475,7 @@ class TestPickTrackId:
         # track 5 has no node in frame 0, so a fresh label is offered to paint with
         seg_layer = tracks_viewer.tracking_layers.seg_layer
         assert seg_layer.selected_label != 6
-        assert not tracks.solution_graph.has_node(seg_layer.selected_label)
+        assert not tracks.graph_solution.has_node(seg_layer.selected_label)
 
     def test_picks_the_node_itself_in_the_current_frame(self, tracks_viewer_setup):
         """A node in the current frame becomes the label to paint with directly."""
@@ -506,7 +506,7 @@ class TestPickTrackId:
 
         assert tracks_viewer.selected_track == tracks.get_track_id(2)
         assert seg_layer.selected_label != 2
-        assert not tracks.solution_graph.has_node(seg_layer.selected_label)
+        assert not tracks.graph_solution.has_node(seg_layer.selected_label)
 
     def test_without_segmentation(self, viewer, graph_2d_without_segmentation):
         """Without a seg layer the track id is set directly and the signal fires."""

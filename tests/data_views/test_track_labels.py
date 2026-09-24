@@ -246,7 +246,7 @@ class TestPaintingAcrossTime:
         seg_layer.new_label()
         seg_layer.mode = "paint"
 
-        nodes_before = tracks_viewer.tracks.solution_graph.num_nodes()
+        nodes_before = tracks_viewer.tracks.graph_solution.num_nodes()
         event = MockEvent(
             create_cross_time_event_val(
                 tps=(2, 3), z=(15, 20), y=(45, 50), x=(75, 80), old_val=0, target_val=60
@@ -255,7 +255,7 @@ class TestPaintingAcrossTime:
 
         seg_layer._on_paint(event)
 
-        assert tracks_viewer.tracks.solution_graph.num_nodes() == nodes_before
+        assert tracks_viewer.tracks.graph_solution.num_nodes() == nodes_before
         for tp in (2, 3):
             assert int(np.asarray(seg_layer.data[tp, 15, 45, 75])) == 0
 
@@ -277,8 +277,8 @@ class TestPaintingAcrossTime:
         # nodes 3 and 4 are the two children of the division, in frames 2 and 2;
         # take the areas of every node so any cross-frame shrink shows up
         areas_before = {
-            node: tracks_viewer.tracks.solution_graph.nodes[node]["area"]
-            for node in tracks_viewer.tracks.solution_graph.node_ids()
+            node: tracks_viewer.tracks.graph_solution.nodes[node]["area"]
+            for node in tracks_viewer.tracks.graph_solution.node_ids()
         }
         event = MockEvent(
             create_cross_time_event_val(
@@ -289,8 +289,8 @@ class TestPaintingAcrossTime:
         seg_layer._on_paint(event)
 
         assert {
-            node: tracks_viewer.tracks.solution_graph.nodes[node]["area"]
-            for node in tracks_viewer.tracks.solution_graph.node_ids()
+            node: tracks_viewer.tracks.graph_solution.nodes[node]["area"]
+            for node in tracks_viewer.tracks.graph_solution.node_ids()
         } == areas_before
 
     def test_a_single_frame_stroke_still_paints(
@@ -311,7 +311,7 @@ class TestPaintingAcrossTime:
         step = list(viewer.dims.current_step)
         step[0] = 3
         viewer.dims.current_step = step
-        nodes_before = tracks_viewer.tracks.solution_graph.num_nodes()
+        nodes_before = tracks_viewer.tracks.graph_solution.num_nodes()
 
         seg_layer._on_paint(
             MockEvent(
@@ -321,7 +321,7 @@ class TestPaintingAcrossTime:
             )
         )
 
-        assert tracks_viewer.tracks.solution_graph.num_nodes() == nodes_before + 1
+        assert tracks_viewer.tracks.graph_solution.num_nodes() == nodes_before + 1
 
 
 def test_ensure_valid_label(viewer, solution_tracks_3d_with_division):
