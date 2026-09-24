@@ -3,14 +3,12 @@ import math
 
 import numpy as np
 import pytest
+from napari.utils.key_bindings import coerce_keybinding
 from napari_orthogonal_views.ortho_view_widget import OrthoViewWidget
 
 from motile_tracker.data_views.views.layers.contour_labels import ContourLabels
 from motile_tracker.data_views.views.layers.out_of_slice_points import ZOnlyPoints
-from motile_tracker.data_views.views.layers.track_labels import (
-    TrackLabels,
-    new_label,
-)
+from motile_tracker.data_views.views.layers.track_labels import TrackLabels
 from motile_tracker.data_views.views.layers.track_points import TrackPoints
 from motile_tracker.data_views.views.ortho_views import (
     initialize_ortho_views,
@@ -59,6 +57,15 @@ def test_ortho_views(viewer, qtbot, solution_tracks_3d_with_division):
     )
     assert isinstance(m.right_widget.vm_container.viewer_model.layers[-2], ZOnlyPoints)
     assert isinstance(m.bottom_widget.vm_container.viewer_model.layers[-2], ZOnlyPoints)
+
+    # the copies get the shared key bindings, so [M] starts a new track from them too
+    for copy in (
+        m.right_widget.vm_container.viewer_model.layers[-1],
+        m.bottom_widget.vm_container.viewer_model.layers[-1],
+        m.right_widget.vm_container.viewer_model.layers[-2],
+        m.bottom_widget.vm_container.viewer_model.layers[-2],
+    ):
+        assert copy.keymap[coerce_keybinding("m")] == tracks_viewer.request_new_track
     assert (
         m.right_widget.vm_container.viewer_model.layers[-1].contour
         == viewer.layers[-1].contour
@@ -174,7 +181,7 @@ def test_colormap_shared_with_ortho_views(
     seg_layer.contour = 1
     check_shared("after enabling contours")
 
-    new_label(seg_layer)  # adds a label, so a new entry in the color dict
+    seg_layer.new_label()  # adds a label, so a new entry in the color dict
     check_shared("after a new label")
 
     # Rendering the main viewer in 3D with contours on is the one case where the copies

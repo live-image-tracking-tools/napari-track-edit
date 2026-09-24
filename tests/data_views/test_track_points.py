@@ -132,6 +132,19 @@ def test_process_click(viewer, solution_tracks_2d, click_node):
         points_layer.process_click(event_ctrl, 0)
         mock_center.assert_called_once_with(points_layer.nodes[0])
 
+    # Test 5: Alt-click picks the node's track id and leaves the selection alone
+    selection_before = set(tracks_viewer.selected_nodes.as_list)
+    with patch.object(tracks_viewer, "select_track_id_from_node") as mock_pick:
+        event_alt = MockEvent(modifiers=["Alt"])
+        points_layer.process_click(event_alt, 0)
+        mock_pick.assert_called_once_with(int(points_layer.nodes[0]))
+    assert set(tracks_viewer.selected_nodes.as_list) == selection_before
+
+    # Test 6: Alt-click on empty space does not reset the selection
+    event_alt = MockEvent(modifiers=["Alt"])
+    points_layer.process_click(event_alt, None)
+    assert set(tracks_viewer.selected_nodes.as_list) == selection_before
+
 
 def test_set_point_size_updates_default_size(viewer, solution_tracks_2d):
     """Test set_point_size updates default_size."""
