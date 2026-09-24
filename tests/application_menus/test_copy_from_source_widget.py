@@ -3,6 +3,7 @@ current tracks."""
 
 import contextlib
 
+import dask.array as da
 import numpy as np
 import pytest
 from napari.layers import Labels, Points
@@ -89,6 +90,19 @@ def multichannel_labels_app(make_napari_viewer, solution_tracks_2d):
     tracks_viewer = TracksViewer.get_instance(viewer)
     tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
     source = viewer.add_labels(_multichannel_source_labels(), name="src")
+    widget = CopyFromSourceWidget(viewer)
+    return viewer, widget, source
+
+
+@pytest.fixture
+def dask_source(make_napari_viewer, solution_tracks_2d):
+    """A viewer with tracks and a lazily loaded (dask-backed) Labels source layer."""
+
+    viewer = make_napari_viewer()
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
+    lazy = da.from_array(_source_labels(), chunks=(1, 50, 50))
+    source = viewer.add_labels(lazy, name="src")
     widget = CopyFromSourceWidget(viewer)
     return viewer, widget, source
 
@@ -616,15 +630,12 @@ def test_replace_is_undone_in_one_step(overlapping_source):
     assert not tracks.graph.has_node(1)
 
 
-def test_copy_from_a_lazily_loaded_source(dask_source, monkeypatch):
+def test_copy_from_a_lazily_loaded_source(dask_source):
     """A dask-backed source hands out unevaluated scalars; the copy has to materialise
     them, or the pixel lookup stays lazy and comes back with arrays of unknown length."""
 
-    _viewer, widget, _source = dask_source
-    monkeypatch.setattr(
-        "motile_tracker.application_menus.copy_from_source_widget.confirm_extend_segmentation",
-        lambda current, new: True,
-    )
+    _viewer, widget, source = dask_source
+    assert isinstance(source.data, da.Array)
 
     widget.source_layer_dropdown.setCurrentText("src")
     widget.chain_btn.setChecked(True)
@@ -632,14 +643,15 @@ def test_copy_from_a_lazily_loaded_source(dask_source, monkeypatch):
     tracks = widget.tracks_viewer.tracks
     n_nodes = tracks.graph_solution.num_nodes()
     target = widget._get_target_layer()
-    # t=7 is outside the original segmentation, so this also covers the extended region
-    widget._target_callback(target, _RightClickEvent(position=(7, 51.5, 11.5)))
+    widget._target_callback(target, _RightClickEvent(position=(3, 51.5, 11.5)))
 
     assert tracks.graph_solution.num_nodes() == n_nodes + 1
-    frame = np.asarray(tracks.segmentation[7])
-    # the copied label covers exactly the 4x4 block the source holds at t=7
-    assert frame[50:54, 10:14].all()
-    assert frame.sum() == frame[50:54, 10:14].sum()
+    frame = np.asarray(tracks.segmentation[3])
+    # the copied label covers exactly the 4x4 block the source holds at t=3
+    node = frame[51, 11]
+    assert node != 0
+    assert np.count_nonzero(frame == node) == 16
+    assert (frame[50:54, 10:14] == node).all()
 
 
 def _copied_node(widget, t):
