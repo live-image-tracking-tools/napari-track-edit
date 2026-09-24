@@ -14,6 +14,13 @@ from skimage.measure import regionprops
 
 logger = logging.getLogger(__name__)
 
+# Download sources for the napari sample data
+ZENODO_RAW_URL = "https://zenodo.org/records/13903500/files/imaging.zip"
+ZENODO_LABELS_URL = "https://zenodo.org/records/13903500/files/segmentation.zip"
+CTC_URL_TEMPLATE = (
+    "http://data.celltrackingchallenge.net/training-datasets/{ds_name}.zip"
+)
+
 
 def Mouse_Embryo_Membrane() -> list[LayerData]:
     """Loads the Mouse Embryo Membrane raw data and segmentation data from
@@ -175,8 +182,8 @@ def download_zenodo_dataset(
     ds_file_raw = data_dir / raw_name
     ds_file_labels = data_dir / label_name
     ds_zarr = data_dir / (ds_name + ".zarr")
-    url_raw = "https://zenodo.org/records/13903500/files/imaging.zip"
-    url_labels = "https://zenodo.org/records/13903500/files/segmentation.zip"
+    url_raw = ZENODO_RAW_URL
+    url_labels = ZENODO_LABELS_URL
     zip_filename_raw = data_dir / "imaging.zip"
     zip_filename_labels = data_dir / "segmentation.zip"
 
@@ -208,7 +215,7 @@ def download_ctc_dataset(ds_name: str, data_dir: Path) -> None:
     """
     ds_dir = data_dir / ds_name
     ds_zarr = data_dir / (ds_name + ".zarr")
-    ctc_url = f"http://data.celltrackingchallenge.net/training-datasets/{ds_name}.zip"
+    ctc_url = CTC_URL_TEMPLATE.format(ds_name=ds_name)
     zip_filename = data_dir / f"{ds_name}.zip"
     if not zip_filename.is_file():
         urlretrieve(ctc_url, filename=zip_filename)

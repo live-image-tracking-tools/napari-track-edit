@@ -1,7 +1,14 @@
+import urllib.request
+import zipfile
+from pathlib import Path
+
 import napari
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt, QUrl
+from qtpy.QtGui import QDesktopServices
 from qtpy.QtWidgets import (
+    QApplication,
     QLabel,
+    QMessageBox,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
@@ -10,6 +17,35 @@ from qtpy.QtWidgets import (
 DOCS_URL = "https://funkelab.github.io/motile_tracker"
 KEYBINDINGS_URL = f"{DOCS_URL}/key_bindings.html"
 TUTORIAL_URL = "https://github.com/funkelab/motile_tracker/blob/main/assets/motile-tracker_tutorial.pdf"
+
+
+def _drive_download_url(file_id: str) -> str:
+    """Direct-download URL for a Google Drive file (skips the preview page)."""
+    return (
+        f"https://drive.usercontent.google.com/download?id={file_id}"
+        "&export=download&confirm=t"
+    )
+
+
+# Zipped example geff datasets, as (link label, file name, download url)
+EXAMPLE_GEFFS = (
+    (
+        "2D",
+        "hela2D_crop_tracks.geff.zip",
+        _drive_download_url("1wI1IHtxvbXB6Tg75zozxnFbeTITBefSW"),
+    ),
+    (
+        "3D",
+        "mouse3D_tracks.geff.zip",
+        _drive_download_url("1zTiI4FRiSyOomaN-eV_HBTqQoawUCPWi"),
+    ),
+)
+# Links use this scheme to trigger an in-app download instead of navigating.
+DOWNLOAD_SCHEME = "geff-download"
+LOAD_HINT = (
+    "Unzip the file, then load the .geff from the Tracks List menu "
+    '(select "Tracks (geff)" and press Load).'
+)
 
 
 class WelcomeWidget(QWidget):
@@ -34,17 +70,26 @@ class WelcomeWidget(QWidget):
         layout.addWidget(title)
 
         # Top links
+        download_links = "&nbsp;&nbsp;".join(
+            f'<a href="{DOWNLOAD_SCHEME}:{label}">'
+            f"<b>📥 Download {label} example</b></a>"
+            for label, _, _ in EXAMPLE_GEFFS
+        )
         links_html = f"""
         <p style="margin: 8px 0; line-height: 1.8;">
             <a href="{DOCS_URL}"><b>📖 Documentation</b></a>&nbsp;&nbsp;
             <a href="{KEYBINDINGS_URL}"><b>🖱️ Keybindings</b></a>&nbsp;&nbsp;
             <a href="{TUTORIAL_URL}"><b>🎓 Tutorial</b></a>
         </p>
+        <p style="margin: 8px 0; line-height: 1.8;">
+            {download_links}
+        </p>
         """
         links = QTextBrowser()
-        links.setOpenExternalLinks(True)
+        links.setOpenLinks(False)  # handled in _on_link_clicked
+        links.anchorClicked.connect(self._on_link_clicked)
         links.setHtml(links_html)
-        links.setMaximumHeight(50)
+        links.setMaximumHeight(80)
         links.setStyleSheet(
             "QTextBrowser { border: none; background: transparent; margin: 0px; padding: 0px; }"
         )
@@ -82,3 +127,46 @@ class WelcomeWidget(QWidget):
 
         layout.addWidget(content)
         self.setLayout(layout)
+
+    def _on_link_clicked(self, url: QUrl) -> None:
+        """Open documentation links in a browser, download example data in-app."""
+        if url.scheme() != DOWNLOAD_SCHEME:
+            QDesktopServices.openUrl(url)
+            return
+        for label, filename, download_url in EXAMPLE_GEFFS:
+            if label == url.path():
+                self._download(filename, download_url)
+                return
+
+    def _download(self, filename: str, url: str) -> None:
+        """Download a dataset to the user's Downloads folder."""
+        dest = Path.home() / "Downloads" / filename
+        if dest.exists():
+            QMessageBox.information(
+                self,
+                "Already downloaded",
+                f"{filename} is already in your Downloads folder:\n{dest}\n\n"
+                f"{LOAD_HINT}",
+            )
+            return
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            urllib.request.urlretrieve(url, dest)  # noqa: S310 - fixed https url
+            if not zipfile.is_zipfile(dest):
+                # Google Drive serves an html page instead of the file when the
+                # download is blocked (quota exceeded, permissions changed, ...).
+                dest.unlink(missing_ok=True)
+                raise RuntimeError(
+                    "Google Drive refused the download, try again later."
+                )
+        except Exception as e:  # noqa: BLE001 - surfaced to the user in a dialog
+            QMessageBox.critical(self, "Download failed", str(e))
+        else:
+            QMessageBox.information(
+                self,
+                "Download complete",
+                f"Saved to:\n{dest}\n\n{LOAD_HINT}",
+            )
+        finally:
+            QApplication.restoreOverrideCursor()
