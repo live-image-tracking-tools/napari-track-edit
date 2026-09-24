@@ -47,6 +47,7 @@ def test_tree_plot_initialization_and_update(viewer, solution_tracks_2d):
     assert hasattr(tree_plot, "node_clicked")
     assert hasattr(tree_plot, "jump_to_node")
     assert hasattr(tree_plot, "nodes_selected")
+    assert hasattr(tree_plot, "pick_track_id")
 
     # Test 3: Update with all parameters
     track_df = tree_widget.tracks_viewer.track_df
@@ -116,6 +117,40 @@ def test_tree_plot_selection(viewer, solution_tracks_2d):
     )
     assert received, "nodes_selected should have been emitted for a covering box"
     assert len(received[0]) == len(tree_plot._node_ids)
+
+
+def test_tree_plot_alt_click_picks_track_id(viewer, solution_tracks_2d):
+    """ALT/OPTION + click on a tree node adopts its track id, without selecting it."""
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
+
+    tree_widget = TreeWidget(viewer)
+    tree_plot = tree_widget.tree_widget
+
+    class _PickEvent:
+        """Stand-in for the pygfx pick event that _on_click receives."""
+
+        def __init__(self, row, modifiers):
+            self.button = 1
+            self.pick_info = {"vertex_index": row}
+            self.modifiers = modifiers
+
+    # node 6 lives at t=4 and is the only node of track 5
+    row = tree_plot._id_to_row[6]
+    viewer.dims.set_point(0, 0)
+    tracks_viewer.selected_nodes.reset()
+
+    picked = []
+    tree_plot.pick_track_id.connect(picked.append)
+    with patch.object(tracks_viewer, "center_on_node") as center_mock:
+        tree_plot._on_click(_PickEvent(row, ["Alt"]))
+        center_mock.assert_not_called()
+
+    assert picked == [6]
+    # the TreeWidget wiring took the track id over without touching the selection
+    assert tracks_viewer.selected_track == solution_tracks_2d.get_track_id(6)
+    assert len(tracks_viewer.selected_nodes) == 0
+    assert viewer.dims.current_step[0] == 0
 
 
 def test_centering(viewer, solution_tracks_2d):
@@ -246,6 +281,8 @@ def test_keyboard_shortcuts_all(mock_move, viewer, solution_tracks_2d, qtbot):
     tracks_viewer.delete_edge = delete_edge_mock
     swap_mock = MagicMock()
     tracks_viewer.swap_nodes = swap_mock
+    set_division_mock = MagicMock()
+    tracks_viewer.set_division = set_division_mock
     undo_mock = MagicMock()
     tracks_viewer.undo = undo_mock
     redo_mock = MagicMock()
@@ -286,9 +323,12 @@ def test_keyboard_shortcuts_all(mock_move, viewer, solution_tracks_2d, qtbot):
     qtbot.keyPress(tree_widget, Qt.Key_X)
     qtbot.keyRelease(tree_widget, Qt.Key_X)
 
-    # Test 9: Y key release re-enables mouse in both directions
+    # Test 9: Y is a zoom modifier while held; tapping it (no scrolling in between)
+    # calls set_division on release, and re-enables the mouse in both directions
     qtbot.keyPress(tree_widget, Qt.Key_Y)
+    set_division_mock.assert_not_called()
     qtbot.keyRelease(tree_widget, Qt.Key_Y)
+    set_division_mock.assert_called_once()
 
     # Test 10: All arrow keys call navigation widget move method
     qtbot.keyPress(tree_widget, Qt.Key_Left)
@@ -329,6 +369,35 @@ def test_keyboard_shortcuts_all(mock_move, viewer, solution_tracks_2d, qtbot):
     tracks_viewer.restore_selection = restore_mock
     qtbot.keyPress(tree_widget, Qt.Key_E)
     restore_mock.assert_called_once()
+
+
+def test_scrolling_while_holding_y_zooms_instead_of_setting_a_division(
+    viewer, solution_tracks_2d, qtbot
+):
+    """Test that Y only sets a division when it is not used as a zoom modifier.
+
+    Y restricts the zoom to the y-axis while it is held down, so scrolling with Y
+    down must not also make/break a division when the key is released.
+    """
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
+    set_division_mock = MagicMock()
+    tracks_viewer.set_division = set_division_mock
+
+    tree_widget = TreeWidget(viewer)
+
+    qtbot.keyPress(tree_widget, Qt.Key_Y)
+    # scrolling over the canvas is what pygfx reports to the plot as a wheel event
+    tree_widget.tree_widget._on_canvas_wheel(None)
+    assert tree_widget.tree_widget.scrolled
+    qtbot.keyRelease(tree_widget, Qt.Key_Y)
+
+    set_division_mock.assert_not_called()
+    # the scroll is forgotten again, so the next tap does set a division
+    assert not tree_widget.tree_widget.scrolled
+    qtbot.keyPress(tree_widget, Qt.Key_Y)
+    qtbot.keyRelease(tree_widget, Qt.Key_Y)
+    set_division_mock.assert_called_once()
 
 
 def test_mode_and_plot_type_switching(viewer, solution_tracks_2d, click_node):

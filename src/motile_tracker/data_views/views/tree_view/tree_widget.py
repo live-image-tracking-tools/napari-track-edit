@@ -5,7 +5,7 @@ import contextlib
 import napari
 import numpy as np
 import pandas as pd
-from qtpy.QtCore import QEvent, QObject, Qt
+from qtpy.QtCore import QEvent, QObject
 from qtpy.QtGui import QKeyEvent
 from qtpy.QtWidgets import (
     QHBoxLayout,
@@ -68,6 +68,9 @@ class TreeWidget(QWidget):
         )
         self.tree_widget.node_clicked.connect(self.selected_nodes.add)
         self.tree_widget.jump_to_node.connect(self.tracks_viewer.center_on_node)
+        self.tree_widget.pick_track_id.connect(
+            self.tracks_viewer.select_track_id_from_node
+        )
         self.tree_widget.nodes_selected.connect(self.selected_nodes.add_list)
         self.tracks_viewer.center_node.connect(self.tree_widget.center_on_node)
 
@@ -185,8 +188,8 @@ class TreeWidget(QWidget):
 
         Priority order:
         1. Tree-widget-specific keybinds (highest priority) - call TreeWidget methods
-        2. General keybinds (work in table widget too) - call tracks_viewer methods
-        3. Modifier keybinds (mouse zoom constraints)
+        2. Modifier keybinds (mouse zoom constraints)
+        3. General keybinds (work in table widget too) - call tracks_viewer methods
         4. Navigation (arrow keys)
         """
         # Handle tree-widget-specific keybinds first (higher priority)
@@ -198,6 +201,18 @@ class TreeWidget(QWidget):
                 event.accept()
                 return
 
+        # Handle mouse zoom constraints (X/Y axes) before the general keybinds because a
+        # zoom modifier can double as a general keybind. The constraint applies while the
+        # key is held, and the general action only fires on release, if the user did
+        # not scroll in the meantime (see keyReleaseEvent).
+        if event.key() in TREE_WIDGET_MODIFIER_ACTIONS:
+            if not event.isAutoRepeat():
+                x_enabled, y_enabled = TREE_WIDGET_MODIFIER_ACTIONS[event.key()]
+                self.set_mouse_enabled(x=x_enabled, y=y_enabled)
+                self.tree_widget.reset_scrolled()
+            event.accept()
+            return
+
         # Try general keybinds (these also work in table widget)
         action_name = GENERAL_KEY_ACTIONS.get(event.key())
         if action_name:
@@ -206,13 +221,6 @@ class TreeWidget(QWidget):
                 method()
                 event.accept()
                 return
-
-        # Handle mouse zoom constraints (X/Y axes)
-        if event.key() in TREE_WIDGET_MODIFIER_ACTIONS:
-            x_enabled, y_enabled = TREE_WIDGET_MODIFIER_ACTIONS[event.key()]
-            self.set_mouse_enabled(x=x_enabled, y=y_enabled)
-            event.accept()
-            return
 
         # Handle navigation (Arrow keys)
         direction = TREE_WIDGET_NAVIGATION_KEYS.get(event.key())
@@ -236,6 +244,10 @@ class TreeWidget(QWidget):
     def swap_nodes(self):
         """Swap the nodes by swapping upstream edges"""
         self.tracks_viewer.swap_nodes()
+
+    def set_division(self):
+        """Make or break a division between the three selected nodes"""
+        self.tracks_viewer.set_division()
 
     def undo(self):
         """Undo action."""
@@ -284,10 +296,27 @@ class TreeWidget(QWidget):
         self.tree_widget.setMouseEnabled(x=x, y=y)
 
     def keyReleaseEvent(self, ev):
-        """Reset the mouse scrolling when releasing the X/Y key"""
+        """Reset the mouse scrolling when releasing a zoom modifier (X/Y) key.
 
-        if ev.key() == Qt.Key_X or ev.key() == Qt.Key_Y:
-            self.tree_widget.setMouseEnabled(x=True, y=True)
+        A zoom modifier that is also a general keybind (Y, which sets a division) was
+        only meant as a zoom modifier if the user scrolled while holding it down; a
+        plain tap runs the general action instead.
+        """
+
+        if ev.key() not in TREE_WIDGET_MODIFIER_ACTIONS or ev.isAutoRepeat():
+            return
+
+        scrolled = self.tree_widget.scrolled
+        self.tree_widget.setMouseEnabled(x=True, y=True)
+        self.tree_widget.reset_scrolled()
+        if scrolled:
+            return
+
+        action_name = GENERAL_KEY_ACTIONS.get(ev.key())
+        if action_name:
+            method = getattr(self.tracks_viewer, action_name, None)
+            if method:
+                method()
 
     def _update_selected(self):
         """Called whenever the selection list is updated. Only re-computes
@@ -324,7 +353,7 @@ class TreeWidget(QWidget):
         if self.tracks_viewer.tracks is None:
             self.graph = None
         else:
-            self.graph = self.tracks_viewer.tracks.graph
+            self.graph = self.tracks_viewer.tracks.graph_solution
 
         # check whether we have regionprop measurements and therefore should activate the
         # feature button
@@ -350,6 +379,9 @@ class TreeWidget(QWidget):
         # also update the navigation widget
         self.navigation_widget.track_df = self.tracks_viewer.track_df
         self.navigation_widget.lineage_df = self.lineage_df
+        self.navigation_widget.view_direction = self.view_direction
+        self.navigation_widget.plot_type = self.plot_type
+        self.navigation_widget.feature = self.plot_type_widget.get_current_feature()
 
         # check which view to set
         if self.mode == "lineage":

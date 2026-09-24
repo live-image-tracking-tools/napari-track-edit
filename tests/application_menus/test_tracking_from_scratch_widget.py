@@ -9,7 +9,6 @@ guard that empty-graph path.
 import numpy as np
 import pytest
 
-from motile_tracker.application_menus.track_list_widget import TrackListWidget
 from motile_tracker.application_menus.tracking_from_scratch_widget import (
     TrackingFromScratch,
 )
@@ -51,7 +50,7 @@ def test_start_tracking_creates_empty_tracks(scratch_app, mode, layer_type):
 
     tracks_viewer = widget.tracks_viewer
     assert tracks_viewer.tracks is not None
-    assert tracks_viewer.tracks.graph.num_nodes() == 0
+    assert tracks_viewer.tracks.graph_solution.num_nodes() == 0
 
     # the track layers exist and are empty
     points_layer = tracks_viewer.tracking_layers.points_layer
@@ -99,11 +98,3 @@ def test_creating_a_second_tree_replaces_the_first(scratch_app):
     second = widget.tracks_viewer.tracks
     assert second is not first
     assert second.segmentation is None
-
-
-def test_track_list_widget_contains_from_scratch_widget(make_napari_viewer):
-    """The from-scratch controls live above the tracks list in the Tracks List tab."""
-
-    viewer = make_napari_viewer()
-    widget = TrackListWidget(viewer)
-    assert isinstance(widget.layout().itemAt(0).widget(), TrackingFromScratch)

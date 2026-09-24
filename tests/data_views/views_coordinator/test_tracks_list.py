@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from funtracks.data_model import SolutionTracks, Tracks
+from funtracks.data_model import Tracks
 from funtracks.import_export import write_to_geff
 from qtpy.QtWidgets import QDialog
 from tracksdata.nodes import Mask
@@ -79,6 +79,21 @@ class TestTracksListAddRemove:
         tracks_list.remove_tracks(item)
         assert tracks_list.tracks_list.count() == 0
 
+    def test_remove_last_tracks_emits_cleared(self, tracks_list, motile_run):
+        emitted = []
+        tracks_list.tracks_cleared.connect(lambda: emitted.append(True))
+        tracks_list.add_tracks(motile_run, "run1", select=False)
+        tracks_list.remove_tracks(tracks_list.tracks_list.item(0))
+        assert emitted == [True]
+
+    def test_remove_one_of_two_does_not_emit_cleared(self, tracks_list, motile_run):
+        emitted = []
+        tracks_list.tracks_cleared.connect(lambda: emitted.append(True))
+        tracks_list.add_tracks(motile_run, "run1", select=False)
+        tracks_list.add_tracks(motile_run, "run2", select=False)
+        tracks_list.remove_tracks(tracks_list.tracks_list.item(0))
+        assert emitted == []
+
     def test_selection_changed_emits_signal(self, tracks_list, motile_run):
         emitted = []
         tracks_list.view_tracks.connect(lambda t, n: emitted.append((t, n)))
@@ -87,100 +102,92 @@ class TestTracksListAddRemove:
         assert len(emitted) == 1
         assert emitted[0][1] == "run1"
 
-    def test_add_solution_tracks_not_wrapped(self, tracks_list, solution_tracks_2d):
-        """SolutionTracks added to the list should NOT be wrapped in MotileRun."""
+    def test_add_tracks_not_wrapped(self, tracks_list, solution_tracks_2d):
+        """Tracks added to the list should NOT be wrapped in MotileRun."""
         tracks_list.add_tracks(solution_tracks_2d, "imported", select=False)
         item = tracks_list.tracks_list.item(0)
         widget = tracks_list.tracks_list.itemWidget(item)
-        assert isinstance(widget.tracks, SolutionTracks)
+        assert widget.tracks is solution_tracks_2d
         assert not isinstance(widget.tracks, MotileRun)
 
-    def test_view_tracks_emits_solution_tracks_for_plain_tracks(
-        self, tracks_list, graph_2d
-    ):
-        """The list stores plain Tracks, but view_tracks must emit a
-        SolutionTracks because the views and actions still need track IDs.
+    def test_view_tracks_emits_the_stored_object(self, tracks_list, graph_2d):
+        """view_tracks must emit the very object the list holds.
+
+        The list used to convert to the deprecated Tracks on the way
+        out, which rebuilt the solution view and the segmentation: a second
+        subgraph() over the whole graph, and a viewer editing a different
+        object than the one the save and export buttons read.
         """
         # the fixture graph stores track ids in "track_id", so that has to be
         # declared: tracklet_attr is how a caller names an existing column
-        plain_tracks = Tracks(graph_2d, ndim=3, time_attr="t", tracklet_attr="track_id")
+        tracks = Tracks(graph_2d, ndim=3, time_attr="t", tracklet_attr="track_id")
 
         emitted = []
         tracks_list.view_tracks.connect(lambda t, n: emitted.append((t, n)))
-        tracks_list.add_tracks(plain_tracks, "plain", select=True)
+        tracks_list.add_tracks(tracks, "plain", select=True)
 
-        # stored as-is, not converted on the way in
         item = tracks_list.tracks_list.item(0)
-        assert tracks_list.tracks_list.itemWidget(item).tracks is plain_tracks
+        assert tracks_list.tracks_list.itemWidget(item).tracks is tracks
 
         assert len(emitted) == 1
-        converted = emitted[0][0]
-        assert isinstance(converted, SolutionTracks)
-        # the conversion must carry over the attributes the views rely on
-        # rather than re-deriving them
-        assert converted.scale == plain_tracks.scale
-        assert converted.ndim == plain_tracks.ndim
-        assert (converted.segmentation is None) == (plain_tracks.segmentation is None)
-        # the point of converting: the views need track ids to actually be on
-        # the graph, not merely named by the FeatureDict
-        assert converted.features.tracklet_key in converted.graph.node_attr_keys()
-        assert converted.features.lineage_key in converted.graph.node_attr_keys()
+        assert emitted[0][0] is tracks
+        # the views need track ids to actually be on the graph, not merely
+        # named by the FeatureDict
+        assert tracks.features.tracklet_key in tracks.graph_solution.node_attr_keys()
+        assert tracks.features.lineage_key in tracks.graph_solution.node_attr_keys()
 
-    def test_view_tracks_computes_missing_track_ids(self, tracks_list, graph_2d):
-        """Tracks with no track id column at all must come out of the
-        conversion with one computed, not merely declared.
+    def test_view_tracks_emits_tracks_with_track_ids(self, tracks_list, graph_2d):
+        """Tracks built from a graph with no track id column must still reach
+        the views with one computed, not merely declared.
 
-        Tracks imported from a geff that never had track ids land here. On
-        funtracks < 2.1, passing a FeatureDict to Tracks.__init__ activates the
-        declared features without computing the missing ones, so the conversion
-        has to enable them itself. From 2.1 the constructor already computes
-        them, so this only checks that the outcome is the same either way.
+        Tracks imported from a geff that never had track ids land here. The
+        list no longer repairs this on the way out, so the guarantee has to
+        come from Tracks.__init__ itself.
         """
         graph_2d.remove_node_attr_key("track_id")
         graph_2d.remove_node_attr_key("lineage_id")
-        plain_tracks = Tracks(graph_2d, ndim=3, time_attr="t")
+        tracks = Tracks(graph_2d, ndim=3, time_attr="t")
 
         emitted = []
         tracks_list.view_tracks.connect(lambda t, n: emitted.append((t, n)))
-        tracks_list.add_tracks(plain_tracks, "plain", select=True)
+        tracks_list.add_tracks(tracks, "plain", select=True)
 
-        converted = emitted[0][0]
-        assert converted.features.tracklet_key in converted.graph.node_attr_keys()
-        assert converted.features.lineage_key in converted.graph.node_attr_keys()
+        viewed = emitted[0][0]
+        assert viewed.features.tracklet_key in viewed.graph_solution.node_attr_keys()
+        assert viewed.features.lineage_key in viewed.graph_solution.node_attr_keys()
 
     def test_view_tracks_segmentation_follows_edits(self, tracks_list, graph_2d):
-        """The emitted tracks must own their segmentation, not borrow the old one.
+        """The emitted tracks must own the segmentation they render.
 
         A GraphArrayView renders from, and listens to, the single graph object
-        it was built with. Handing the original view to the converted tracks
-        left it bound to the graph of the tracks in the list, so an edit made
-        through the converted tracks (painting a label) never invalidated its
-        cache: the pixels snapped back while the centroid moved.
+        it was built with. When the list converted on the way out, the emitted
+        tracks could end up bound to the graph of a different object, so an
+        edit made through the emitted tracks (painting a label) never
+        invalidated its cache: the pixels snapped back while the centroid
+        moved.
         """
-        plain_tracks = Tracks(graph_2d, ndim=3, time_attr="t", tracklet_attr="track_id")
-        assert plain_tracks.segmentation is not None
+        tracks = Tracks(graph_2d, ndim=3, time_attr="t", tracklet_attr="track_id")
+        assert tracks.segmentation is not None
 
         emitted = []
         tracks_list.view_tracks.connect(lambda t, n: emitted.append((t, n)))
-        tracks_list.add_tracks(plain_tracks, "plain", select=True)
-        converted = emitted[0][0]
+        tracks_list.add_tracks(tracks, "plain", select=True)
+        viewed = emitted[0][0]
 
-        assert converted.segmentation.graph is converted.graph_solution
+        assert viewed.segmentation.graph is viewed.graph_solution
 
         node = 1
-        time = converted.get_time(node)
-        assert (np.asarray(converted.segmentation[time]) == node).any()
+        time = viewed.get_time(node)
+        assert (np.asarray(viewed.segmentation[time]) == node).any()
 
-        old_mask = converted.get_mask(node)
-        converted.update_mask(
-            node, Mask(np.zeros_like(old_mask.mask), bbox=old_mask.bbox)
-        )
+        old_mask = viewed.get_mask(node)
+        viewed.update_mask(node, Mask(np.zeros_like(old_mask.mask), bbox=old_mask.bbox))
 
-        assert not (np.asarray(converted.segmentation[time]) == node).any()
+        assert not (np.asarray(viewed.segmentation[time]) == node).any()
 
     def test_view_tracks_passes_through_motile_run(self, tracks_list, motile_run):
-        """A MotileRun is already a SolutionTracks, so it must be emitted
-        unchanged rather than rebuilt (which would drop its solver params).
+        """A MotileRun is already a Tracks, so it must be emitted unchanged
+        rather than rebuilt (which would drop its solver params).
         """
         emitted = []
         tracks_list.view_tracks.connect(lambda t, n: emitted.append((t, n)))
@@ -378,15 +385,15 @@ class TestTracksListSave:
 
 
 # ---------------------------------------------------------------------------
-# TracksList — save SolutionTracks directly (not wrapped in MotileRun)
+# TracksList — save Tracks directly (not wrapped in MotileRun)
 # ---------------------------------------------------------------------------
 
 
-class TestTracksListSaveSolutionTracks:
+class TestTracksListSaveTracks:
     def test_solution_tracks_saved_directly_to_path(
         self, tracks_list, solution_tracks_2d, tmp_path
     ):
-        """SolutionTracks are written with write_to_geff at the save path,
+        """Tracks are written with write_to_geff at the save path,
         not wrapped in a MotileRun."""
         tracks_list.add_tracks(solution_tracks_2d, "imported", select=True)
         tracks_list.save_dir_line.setText(str(tmp_path))
@@ -572,7 +579,7 @@ class TestTracksListLoadGeff:
 
         assert len(emitted) == 1
         # tracks_loaded hands out the stored object as-is, which is a plain
-        # Tracks. Only view_tracks converts to SolutionTracks.
+        # Tracks; nothing converts on the way in or out.
         assert isinstance(emitted[0][0], Tracks)
         assert emitted[0][1] == geff_path
 

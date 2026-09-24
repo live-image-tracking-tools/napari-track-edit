@@ -12,7 +12,7 @@ from funtracks.candidate_graph import (
     compute_graph_from_points_list,
     compute_graph_from_seg,
 )
-from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
+from funtracks.utils.tracksdata_utils import create_empty_graph
 from motile import Solver, TrackGraph
 from motile.constraints import MaxChildren, MaxParents
 from motile.constraints.constraint import Constraint
@@ -96,7 +96,7 @@ def solve(
     on_solver_update: Callable | None = None,
     scale: list | None = None,
     cand_graph: td.graph.BaseGraph | None = None,
-) -> td.graph.GraphView:
+) -> td.graph.BaseGraph:
     """Get a tracking solution for the given segmentation and parameters.
 
     Constructs a candidate graph from the segmentation (unless one is
@@ -120,7 +120,7 @@ def solve(
             single-window mode which always builds its own). Defaults to None.
 
     Returns:
-        td.graph.GraphView: A solution graph where the ids of the nodes correspond to
+        td.graph.BaseGraph: A solution graph where the ids of the nodes correspond to
             the time and ids of the passed in segmentation labels. See funtracks for exact
             implementation details.
     """
@@ -174,7 +174,7 @@ def _solve_full(
     cand_graph: td.graph.BaseGraph,
     solver_params: SolverParams,
     on_solver_update: Callable | None = None,
-) -> td.graph.GraphView:
+) -> td.graph.BaseGraph:
     """Solve the tracking problem on the full candidate graph at once."""
     cand_graph_view = cand_graph.filter().subgraph()
     solver = construct_solver(cand_graph_view, solver_params)
@@ -191,14 +191,14 @@ def _solve_full(
     for u, v in list(result.edge_list()):
         if (u, v) not in selected_edges:
             result.remove_edge(u, v)
-    return result.filter().subgraph()
+    return result
 
 
 def _solve_window(
     window_subgraph: td.graph.GraphView,
     solver_params: SolverParams,
     on_solver_update: Callable | None = None,
-) -> td.graph.GraphView | None:
+) -> td.graph.BaseGraph | None:
     """Solve a single window subgraph.
 
     This is the core solving logic shared by both single window mode and
@@ -222,6 +222,10 @@ def _solve_window(
             "Window has no edges (%d nodes), returning nodes directly",
             window_subgraph.num_nodes(),
         )
+        # Callers get a base graph back, so a view has to be materialised. A
+        # freshly built candidate graph is already one and can be handed back.
+        if isinstance(window_subgraph, td.graph.GraphView):
+            return window_subgraph.detach()
         return window_subgraph
 
     solver = construct_solver(window_subgraph, solver_params)
@@ -235,7 +239,7 @@ def _solve_window(
     for u, v in list(result.edge_list()):
         if (u, v) not in selected_edges:
             result.remove_edge(u, v)
-    return result.filter().subgraph()
+    return result
 
 
 def _solve_single_window(
@@ -243,7 +247,7 @@ def _solve_single_window(
     solver_params: SolverParams,
     on_solver_update: Callable | None = None,
     scale: list | None = None,
-) -> td.graph.GraphView:
+) -> td.graph.BaseGraph:
     """Solve a single window for interactive parameter testing.
 
     Builds the full candidate graph, filters it to the window frames, and solves.
@@ -304,7 +308,7 @@ def _solve_single_window(
 
     if solution is None:
         logger.warning("Window has no nodes")
-        return create_empty_graphview_graph()
+        return create_empty_graph()
 
     logger.debug(
         "Single window solution has %d nodes, %d edges",
@@ -318,7 +322,7 @@ def _solve_chunked(
     cand_graph: td.graph.BaseGraph,
     solver_params: SolverParams,
     on_solver_update: Callable | None = None,
-) -> td.graph.GraphView:
+) -> td.graph.BaseGraph:
     """Solve the tracking problem in chunks using a sliding window approach.
 
     This function solves the tracking problem in windows of `window_size` frames,
@@ -347,7 +351,7 @@ def _solve_chunked(
     # Get the frame range from the candidate graph
     times = [cand_graph.nodes[n]["t"] for n in cand_graph.node_ids()]
     if not times:
-        return create_empty_graphview_graph()
+        return create_empty_graph()
 
     min_time = min(times)
     max_time = max(times)
@@ -451,13 +455,12 @@ def _solve_chunked(
     )
 
     if not all_selected_nodes:
-        return create_empty_graphview_graph()
+        return create_empty_graph()
 
     result = cand_graph.filter(node_ids=list(all_selected_nodes)).subgraph().detach()
     for u, v in list(result.edge_list()):
         if (u, v) not in all_selected_edges:
             result.remove_edge(u, v)
-    result = result.filter().subgraph()
     logger.debug(
         "Combined solution has %d nodes, %d edges",
         result.num_nodes(),
@@ -468,7 +471,7 @@ def _solve_chunked(
 
 def _set_pinning_on_graph(
     cand_graph: td.graph.BaseGraph,
-    solution_graph: td.graph.GraphView,
+    solution_graph: td.graph.BaseGraph,
     overlap_start: int,
     overlap_end: int,
 ) -> None:

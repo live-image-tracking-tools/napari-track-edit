@@ -214,7 +214,7 @@ class CollectionWidget(QWidget):
     def _invert_selection(self) -> None:
         """Invert the current selection"""
 
-        all_nodes = set(self.tracks_viewer.tracks.graph.node_ids())
+        all_nodes = set(self.tracks_viewer.tracks.graph_solution.node_ids())
         inverted = list(all_nodes - set(self.tracks_viewer.selected_nodes))
         self.tracks_viewer.selected_nodes.add_list(inverted, append=False)
 
@@ -241,6 +241,10 @@ class CollectionWidget(QWidget):
         self.collection_list.clear()
         self.selected_collection = None  # set back to None
 
+        if self.tracks_viewer.tracks is None:
+            # nothing is loaded, so the cleared list above is the whole answer
+            return
+
         # find existing group features on Tracks
         group_features = [
             (group_name, group_dict)
@@ -252,7 +256,7 @@ class CollectionWidget(QWidget):
             if group_name not in group_dict:
                 nodes = [
                     node
-                    for node in self.tracks_viewer.tracks.graph.node_ids()
+                    for node in self.tracks_viewer.tracks.graph_solution.node_ids()
                     if self.tracks_viewer.tracks.get_node_attr(node, group_name)
                 ]
                 group_dict[group_name] = nodes
@@ -354,7 +358,9 @@ class CollectionWidget(QWidget):
                 ]
             else:
                 # fallback in case the lineage feature is not activated
-                lineage = extract_lineage_tree(self.tracks_viewer.tracks.graph, node_id)
+                lineage = extract_lineage_tree(
+                    self.tracks_viewer.tracks.graph_solution, node_id
+                )
 
             nodes_to_process.extend(lineage)
             selected.difference_update(lineage)
@@ -449,8 +455,8 @@ class CollectionWidget(QWidget):
         # remove from the features dict and graph schema
         if group_name in self.tracks_viewer.tracks.features:
             del self.tracks_viewer.tracks.features[group_name]
-        if group_name in self.tracks_viewer.tracks.graph.node_attr_keys():
-            self.tracks_viewer.tracks.graph.remove_node_attr_key(group_name)
+        if group_name in self.tracks_viewer.tracks.graph_solution.node_attr_keys():
+            self.tracks_viewer.tracks.graph_solution.remove_node_attr_key(group_name)
 
         # If we removed the last group while in 'group' mode, fall back to 'all'
         # so the viewer doesn't stay stuck on an empty group view.
