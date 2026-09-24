@@ -50,6 +50,11 @@ KEYBINDINGS = {
         "qt_keys": [Qt.Key_D, Qt.Key_Delete],
         "targets": ["tracks_viewer"],
     },
+    "request_new_track": {
+        "napari_keys": ["m"],
+        "qt_keys": [Qt.Key_M],
+        "targets": ["tracks_viewer"],
+    },
     "connect_nodes_with_divisions": {
         "napari_keys": ["c"],
         "qt_keys": [Qt.Key_C],
