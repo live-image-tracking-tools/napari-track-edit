@@ -6,24 +6,26 @@ from typing import Optional
 import napari
 import pandas as pd
 from funtracks.actions import AddNode, BasicAction, DeleteNode
-from funtracks.data_model import SolutionTracks
+from funtracks.data_model import Tracks
 from funtracks.exceptions import InvalidActionError
 from funtracks.user_actions import (
     UserAddEdge,
     UserDeleteEdge,
     UserDeleteNodes,
+    UserMergeNodes,
     UserSetDivision,
     UserSwapPredecessors,
+    get_track_id_options,
 )
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
+from motile_tracker.data_views.dims_utils import TracksDims
 from motile_tracker.data_views.keybindings_config import (
     KEYMAP,
     bind_keymap,
 )
 from motile_tracker.data_views.node_type import NodeType
-from motile_tracker.data_views.views.layers.track_labels import new_label
 from motile_tracker.data_views.views.layers.tracks_layer_group import TracksLayerGroup
 from motile_tracker.data_views.views.tree_view.tree_widget_utils import (
     extract_lineage_tree,
@@ -38,9 +40,18 @@ from motile_tracker.data_views.views_coordinator.node_selection_history import (
 from motile_tracker.data_views.views_coordinator.tracks_list import TracksList
 from motile_tracker.data_views.views_coordinator.user_dialogs import (
     confirm_force_operation,
+    select_merge_track_id,
 )
 
-BASE_TEXT = "Click: select node\nShift+Click: append to selection\nCtrl/Cmd+Click: center node\n[Q]: toggle display\nCurrent display mode: "
+BASE_TEXT = (
+    "Click : select node\n"
+    "Shift + Click : add to selection\n"
+    "Ctrl (/CMD) + Click : center node\n"
+    "Alt (/Option) + Click : pick tracklet ID\n"
+    "[Q] : toggle display\n"
+    "\n"
+    "Current display mode : "
+)
 
 
 class TracksViewer:
@@ -102,7 +113,7 @@ class TracksViewer:
             NodeType.SPLIT: "triangle_up",
         }
         self.mode = "all"
-        self.tracks: SolutionTracks | None = None
+        self.tracks: Tracks | None = None
         self.visible: list | str = []
         self.tracking_layers = TracksLayerGroup(self.viewer, self.tracks, "", self)
         self.center_node.connect(self.tracking_layers.center_view)
@@ -130,6 +141,30 @@ class TracksViewer:
 
         self.viewer.dims.events.ndisplay.connect(self.update_selection)
 
+    @property
+    def tracks_dims(self) -> TracksDims:
+        """How the tracks' axes sit compared to the viewer's world axes.
+
+        Raises:
+            RuntimeError: If no tracks are loaded.
+        """
+
+        if self.tracks is None:
+            raise RuntimeError("No tracks are loaded, so they have no dimensions")
+        return TracksDims(self.viewer.dims.ndim, self.tracks.ndim)
+
+    def set_axis_labels(self) -> None:
+        """Name the viewer's sliders after the axes the tracks use."""
+
+        if self.tracks is None:
+            return
+
+        dims = self.tracks_dims
+        labels = list(self.viewer.dims.axis_labels)
+        # any 'extra' dims just keep the name they had already
+        labels[dims.ndim_offset :] = ["t", *self.tracks.axis_names]
+        self.viewer.dims.axis_labels = labels
+
     def get_collection_widget(self) -> CollectionWidget:
         """Return a reference to the groups widget"""
         if self.collection_widget is None or getattr(
@@ -156,13 +191,13 @@ class TracksViewer:
     def set_keybinds(self):
         bind_keymap(self.viewer, KEYMAP, self)
 
-    def request_new_track(self) -> None:
+    def request_new_track(self, event=None) -> None:
         """Request a new track id (with new segmentation label if a seg layer is present)"""
 
         if self.tracks is None:
             return
         if self.tracking_layers.seg_layer is not None:
-            new_label(self.tracking_layers.seg_layer)
+            self.tracking_layers.seg_layer.new_label()
         else:
             self.set_new_track_id()
 
@@ -246,7 +281,8 @@ class TracksViewer:
             self.collection_widget._refresh()
 
         if len(self.selected_nodes) > 0 and any(
-            not self.tracks.graph.has_node(node) for node in self.selected_nodes
+            not self.tracks.graph_solution.has_node(node)
+            for node in self.selected_nodes
         ):
             self.selected_nodes.reset()
 
@@ -280,7 +316,7 @@ class TracksViewer:
             tracks.refresh.disconnect(self._refresh)
             tracks.action_applied.disconnect(self._on_action_applied)
 
-    def update_tracks(self, tracks: SolutionTracks, name: str) -> None:
+    def update_tracks(self, tracks: Tracks, name: str) -> None:
         """Stop viewing a previous set of tracks and replace it with a new one.
         Will create new segmentation and tracks layers and add them to the viewer.
 
@@ -313,6 +349,7 @@ class TracksViewer:
 
         self.set_display_mode("all")
         self.tracking_layers.set_tracks(tracks, name)
+        self.set_axis_labels()  # the layers are in, so the viewer's dims have settled
         self.selected_nodes.reset()
 
         # ensure a valid track is selected from the start
@@ -405,7 +442,7 @@ class TracksViewer:
         keep the previous list of nodes visible to not have an entirely empty viewer.
         """
 
-        if self.tracks is None or self.tracks.graph is None:
+        if self.tracks is None or self.tracks.graph_solution is None:
             self.visible = []
             return
         if self.mode == "lineage":
@@ -413,17 +450,23 @@ class TracksViewer:
             # filter those
             if len(self.selected_nodes) == 0 and self.visible is not None:
                 prev_visible = [
-                    node for node in self.visible if self.tracks.graph.has_node(node)
+                    node
+                    for node in self.visible
+                    if self.tracks.graph_solution.has_node(node)
                 ]
                 self.visible = []
                 for node_id in prev_visible:
-                    self.visible += extract_lineage_tree(self.tracks.graph, node_id)
+                    self.visible += extract_lineage_tree(
+                        self.tracks.graph_solution, node_id
+                    )
                     if set(prev_visible).issubset(self.visible):
                         break
             else:
                 self.visible = []
                 for node in self.selected_nodes:
-                    self.visible += extract_lineage_tree(self.tracks.graph, node)
+                    self.visible += extract_lineage_tree(
+                        self.tracks.graph_solution, node
+                    )
         elif self.mode == "group":
             if (
                 self.collection_widget is not None
@@ -461,6 +504,36 @@ class TracksViewer:
             node: The node ID to center on.
         """
         self.center_node.emit(node)
+
+    def select_track_id_from_node(self, node: int) -> None:
+        """Adopt the tracklet id of the given node as the current track id, without
+        selecting or centering on that node.
+
+        This is similar to the pipette behavior on the labels layer, but now available
+        on all views, and not bound to the current time point. With a segmentation
+        present, the pick goes through the labels layer's ``selected_label``, so
+        ``_ensure_valid_label`` decides the label value that should be painted with
+        that is consistent with the picked tracklet id.
+
+        Args:
+            node: The node ID whose tracklet id should become the current one.
+        """
+
+        node = int(node)
+        if self.tracks is None or not self.tracks.graph_solution.has_node(node):
+            return
+
+        seg_layer = self.tracking_layers.seg_layer
+        if seg_layer is not None:
+            if seg_layer.selected_label == node:
+                seg_layer._ensure_valid_label()
+            else:
+                seg_layer.selected_label = node
+        else:
+            # no segmentation to paint in: only the track id itself is meaningful
+            self.selected_track = int(self.tracks.get_track_id(node))
+            self.set_track_id_color(self.selected_track)
+            self.update_track_id.emit()
 
     def _on_action_applied(self, action: BasicAction) -> None:
         """Handle action_applied signal from tracks.
@@ -548,6 +621,55 @@ class TracksViewer:
         except InvalidActionError as e:
             QMessageBox.warning(None, "Cannot set division", str(e))
 
+    def merge_horizontally(self, event=None):
+        """Merge every set of selected nodes that shares a time point into one node.
+
+        The user picks which of the tracklet ids in a set the merged node should keep.
+        Sets that offer the same tracklet ids are asked about only once. Cancelling any
+        of the dialogs cancels the whole merge.
+        """
+
+        if self.tracks is None:
+            return
+        nodes = [int(node) for node in self.selected_nodes.as_list]
+        try:
+            options = get_track_id_options(self.tracks, nodes)
+            track_id_per_time = self._ask_merge_track_ids(options, self.colormap)
+            if track_id_per_time is None:
+                return  # the user cancelled, so merge nothing at all
+            UserMergeNodes(self.tracks, nodes, track_ids=track_id_per_time)
+        except InvalidActionError as e:
+            QMessageBox.warning(None, "Cannot merge nodes", str(e))
+
+    @staticmethod
+    def _ask_merge_track_ids(
+        options: dict[int, list[int]], colormap
+    ) -> dict[int, int] | None:
+        """Ask the user which tracklet id to keep in each set of nodes to merge.
+
+        Args:
+            options: A mapping from time point to the tracklet ids to choose from.
+            colormap: The colormap used to color the tracklet id options.
+
+        Returns:
+            A mapping from time point to the chosen tracklet id, or None if the user
+            cancelled any of the dialogs.
+        """
+
+        # Time points offering the same tracklet ids can be answered in one dialog
+        times_per_option: dict[tuple[int, ...], list[int]] = {}
+        for time, track_ids in options.items():
+            times_per_option.setdefault(tuple(track_ids), []).append(time)
+
+        track_id_per_time: dict[int, int] = {}
+        for track_ids, times in times_per_option.items():
+            track_id = select_merge_track_id(list(track_ids), times, colormap)
+            if track_id is None:
+                return None
+            for time in times:
+                track_id_per_time[time] = track_id
+        return track_id_per_time
+
     def create_edge(self, event=None):
         """Add an edge between the two currently selected nodes"""
 
@@ -565,7 +687,7 @@ class TracksViewer:
 
             node1, node2 = int(node1), int(node2)
 
-            if self.tracks.graph.out_degree(node1) >= 2:
+            if self.tracks.graph_solution.out_degree(node1) >= 2:
                 QMessageBox.warning(
                     None,
                     "Cannot add edge",

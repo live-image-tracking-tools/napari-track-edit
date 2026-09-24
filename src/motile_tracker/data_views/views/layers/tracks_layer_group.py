@@ -47,7 +47,7 @@ class TracksLayerGroup:
         else:
             self.seg_layer = None
 
-        if self.tracks is not None and self.tracks.graph is not None:
+        if self.tracks is not None and self.tracks.graph_solution is not None:
             self.tracks_layer = TrackGraph(
                 name=self.name + "_tracks",
                 tracks_viewer=self.tracks_viewer,
@@ -145,63 +145,78 @@ class TracksLayerGroup:
         Requests from the other views (tree view, table, menus) always center.
         """
 
+        interaction_layer = (
+            self.seg_layer if self.seg_layer is not None else self.points_layer
+        )
         if (
-            (self.seg_layer is None and self.points_layer.mode == "pan_zoom")
-            or (self.seg_layer is not None and self.seg_layer.mode == "pan_zoom")
-            or not self.tracks_viewer.interacting_with_canvas
+            self.tracks_viewer.interacting_with_canvas
+            and interaction_layer.mode != "pan_zoom"
         ):
-            location = self.tracks.get_position(node, incl_time=True)
-            assert len(location) == self.viewer.dims.ndim, (
-                f"Location {location} does not match viewer number of dims "
-                f"{self.viewer.dims.ndim}"
+            return
+
+        # The viewer may carry more dimensions than the tracks do. The tracks own the
+        # trailing axes.
+        dims = self.tracks_viewer.tracks_dims
+
+        location = self.tracks.get_position(node, incl_time=True)
+
+        # Retrieve the tracks point in the viewer dimensions.
+        # Set dims.point directly with world coordinates, napari will convert the step
+        # indices. Extra leading axes keep their current position.
+        point = dims.embed_point(location, self.viewer.dims.point)
+        self.viewer.dims.point = point
+
+        # check whether the new coordinates are inside or outside the field of view,
+        # then adjust the camera if needed. The points layer is always in world units,
+        # because it directly reads the scaled coordinates. Therefore, no rescaling
+        # is necessary to compute the camera center.
+        example_layer = self.points_layer
+        corner_coordinates = example_layer.corner_pixels
+
+        # check which dimensions are shown, the first dimension is displayed on the
+        # x axis, and the second on the y_axis
+        dims_displayed = self.viewer.dims.displayed
+
+        # Note: This centering does not work in 3D. What we should do instead is take
+        # the view direction vector, start at the point, and move backward along the
+        # vector a certain amount to put the point in view.
+        # Note #2: Points already does centering when you add the first point, and it
+        # works in 3D. We can look at that to see what logic they use.
+
+        # self.viewer.dims.displayed_order
+        x_dim = dims_displayed[-1]
+        y_dim = dims_displayed[-2]
+
+        # corner_pixels is indexed by the layer's own axes, while dims_displayed indexes
+        # the viewer's, so the displayed axes have to be translated. The points layer
+        # spans exactly the tracks' axes. Rolling or transposing with the napari buttons
+        # can put an axis it does not span (a channel, say) on screen; centering on one
+        # is meaningless, so leave the camera alone rather than indexing corner_pixels
+        # out of bounds.
+        x_layer_dim = dims.to_tracks_axis(x_dim)
+        y_layer_dim = dims.to_tracks_axis(y_dim)
+        if x_layer_dim is None or y_layer_dim is None:
+            return
+
+        # find corner pixels for the displayed axes
+        _min_x = corner_coordinates[0][x_layer_dim]
+        _max_x = corner_coordinates[1][x_layer_dim]
+        _min_y = corner_coordinates[0][y_layer_dim]
+        _max_y = corner_coordinates[1][y_layer_dim]
+
+        # check whether the node location falls within the corner spatial range
+        if not (
+            (point[x_dim] > _min_x and point[x_dim] < _max_x)
+            and (point[y_dim] > _min_y and point[y_dim] < _max_y)
+        ):
+            camera_center = self.viewer.camera.center
+
+            # set the center y and x to the center of the node, by using the index
+            # of the currently displayed dimensions
+            self.viewer.camera.center = (
+                camera_center[0],
+                point[y_dim],
+                # camera center is calculated in scaled coordinates, and the optional
+                # labels layer is scaled by the layer.scale attribute
+                point[x_dim],
             )
-
-            # Set dims.point directly with world coordinates - napari will
-            # automatically convert to the correct step indices
-            self.viewer.dims.point = location
-
-            # check whether the new coordinates are inside or outside the field of view,
-            # then adjust the camera if needed
-            example_layer = (
-                self.points_layer
-            )  # the points layer is always in world units,
-            # because it directly reads the scaled coordinates. Therefore, no rescaling
-            # is necessary to compute the camera center
-            corner_coordinates = example_layer.corner_pixels
-
-            # check which dimensions are shown, the first dimension is displayed on the
-            # x axis, and the second on the y_axis
-            dims_displayed = self.viewer.dims.displayed
-
-            # Note: This centering does not work in 3D. What we should do instead is take
-            # the view direction vector, start at the point, and move backward along the
-            # vector a certain amount to put the point in view.
-            # Note #2: Points already does centering when you add the first point, and it
-            # works in 3D. We can look at that to see what logic they use.
-
-            # self.viewer.dims.displayed_order
-            x_dim = dims_displayed[-1]
-            y_dim = dims_displayed[-2]
-
-            # find corner pixels for the displayed axes
-            _min_x = corner_coordinates[0][x_dim]
-            _max_x = corner_coordinates[1][x_dim]
-            _min_y = corner_coordinates[0][y_dim]
-            _max_y = corner_coordinates[1][y_dim]
-
-            # check whether the node location falls within the corner spatial range
-            if not (
-                (location[x_dim] > _min_x and location[x_dim] < _max_x)
-                and (location[y_dim] > _min_y and location[y_dim] < _max_y)
-            ):
-                camera_center = self.viewer.camera.center
-
-                # set the center y and x to the center of the node, by using the index
-                # of the currently displayed dimensions
-                self.viewer.camera.center = (
-                    camera_center[0],
-                    location[y_dim],
-                    # camera center is calculated in scaled coordinates, and the optional
-                    # labels layer is scaled by the layer.scale attribute
-                    location[x_dim],
-                )

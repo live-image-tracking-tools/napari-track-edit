@@ -8,7 +8,7 @@ from warnings import warn
 import dask.array as da
 import napari.layers
 import numpy as np
-from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
+from funtracks.utils.tracksdata_utils import create_empty_graph
 from qtpy.QtCore import Signal
 from qtpy.QtWidgets import (
     QComboBox,
@@ -23,6 +23,7 @@ from qtpy.QtWidgets import (
 )
 from tqdm import tqdm
 
+from motile_tracker.data_views.dims_utils import TracksDims
 from motile_tracker.motile.backend import MotileRun, get_solver_name
 
 from .params_editor import SolverParamsEditor
@@ -85,10 +86,21 @@ class RunEditor(QGroupBox):
         elif isinstance(layer, napari.layers.Points):
             enable_iou = False
         self.solver_params_widget.iou_row.toggle_visible(enable_iou)
+        # the frame constraint has to be recomputed when the selection changes
+        self._update_max_frames()
 
     def _update_max_frames(self) -> None:
         """Update the max frame constraint from viewer dims."""
-        max_frame = self.viewer.dims.range[0].stop
+
+        # The viewer may carry extra leading dims the input layer does not have, so time
+        # is not necessarily world axis 0. The input layer will serve to build Tracks, so
+        # occupies the trailing axes the same way the tracks will.
+        layer = self.get_input_layer()
+        if layer is None:
+            time_axis = 0
+        else:
+            time_axis = TracksDims(self.viewer.dims.ndim, layer.ndim).time_axis
+        max_frame = self.viewer.dims.range[time_axis].stop
         self.solver_params_widget.set_max_frames(int(max_frame))
 
     def _labels_layer_widget(self) -> QWidget:
@@ -191,9 +203,9 @@ class RunEditor(QGroupBox):
         elif isinstance(input_layer, napari.layers.Points):
             input_seg = None
             input_points = input_layer.data
-        params = self.solver_params_widget.solver_params.copy()
+        params = self.solver_params_widget.solver_params.model_copy()
         return MotileRun(
-            graph=create_empty_graphview_graph(),
+            graph=create_empty_graph(),
             input_segmentation=input_seg,
             run_name=run_name,
             solver_params=params,
