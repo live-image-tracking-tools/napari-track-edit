@@ -1,7 +1,7 @@
 """Tests for TrackingWidget - the tab widget holding the two ways of making tracks."""
 
 import numpy as np
-from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
+from funtracks.utils.tracksdata_utils import create_empty_graph
 from qtpy.QtWidgets import QGroupBox
 
 from napari_track_edit.application_menus.tracking_from_scratch_widget import (
@@ -64,7 +64,7 @@ def test_motile_settings_stay_visible_for_manual_tracks(make_napari_viewer, qtbo
     tracks_viewer = TracksViewer.get_instance(viewer)
     tracks_viewer.tracks_list.add_tracks(
         MotileRun(
-            graph=create_empty_graphview_graph(),
+            graph=create_empty_graph(),
             run_name="run",
             solver_params=SolverParams(),
             ndim=3,

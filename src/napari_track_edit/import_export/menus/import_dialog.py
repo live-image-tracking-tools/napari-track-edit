@@ -334,7 +334,7 @@ class ImportDialog(QDialog):
         imported without an area attribute); otherwise reuses existing values.
         """
         if self.tracks.segmentation is not None and "area" not in self.tracks.features:
-            recompute = "area" not in self.tracks.graph.node_attr_keys()
+            recompute = "area" not in self.tracks.graph_solution.node_attr_keys()
             self.tracks.enable_features(["area"], recompute=recompute)
 
     def _maybe_convert_legacy_masks(self, geff_dir: Path) -> bool:

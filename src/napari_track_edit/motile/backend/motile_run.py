@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import tracksdata as td
-from funtracks.data_model import SolutionTracks
+from funtracks.data_model import Tracks
 from funtracks.import_export import import_from_geff, load_v1_tracks
 
 from napari_track_edit.import_export.geff_io import is_geff, write_geff_over
@@ -27,7 +27,7 @@ ATTRS_FILENAME = "attrs.json"
 _TRACKSDATA_INTERNAL_EDGE_KEYS = frozenset({"edge_id", "source_id", "target_id"})
 
 
-class MotileRun(SolutionTracks):
+class MotileRun(Tracks):
     """An object representing a motile tracking run. Contains a name,
     parameters, time of creation, information about the solving process
     (status and list of solver gaps), and optionally the input and output
@@ -37,7 +37,7 @@ class MotileRun(SolutionTracks):
 
     def __init__(
         self,
-        graph: td.graph.GraphView,
+        graph: td.graph.BaseGraph,
         run_name: str,
         time_attr: str = "t",
         pos_attr: str | tuple[str] | list[str] = "pos",
@@ -223,7 +223,7 @@ class MotileRun(SolutionTracks):
         elif tracks_path.exists():
             tracks = import_from_geff(tracks_path)
         elif (run_dir / "graph.json").exists():
-            tracks = load_v1_tracks(run_dir, solution=True)
+            tracks = load_v1_tracks(run_dir)
         else:
             tracks = import_from_geff(run_dir / "tracks")
         if attrs is not None:
@@ -231,7 +231,7 @@ class MotileRun(SolutionTracks):
             # "segmentation_shape" key for runs saved by older versions.
             seg_shape = attrs.get("shape", attrs.get("segmentation_shape"))
             if seg_shape is not None:
-                tracks.graph._update_metadata(shape=tuple(seg_shape))
+                tracks.graph_full._update_metadata(shape=tuple(seg_shape))
             scale = attrs.get("scale") or tracks.scale
             time_attr = attrs.get("time_attr") or tracks.features.time_key
         else:
@@ -345,7 +345,7 @@ class MotileRun(SolutionTracks):
             directory (Path):  The directory in which to save the attributes
         """
         out_path = directory / ATTRS_FILENAME
-        seg_shape = self.graph.metadata.get("shape")
+        seg_shape = self.graph_full.metadata.get("shape")
         scale = (
             self.scale
             if not isinstance(self.scale, np.ndarray)

@@ -59,7 +59,7 @@ class EditableParam(QWidget):
         """
         super().__init__()
         self.param_name = param_name
-        field = solver_params.model_fields[param_name]
+        field = type(solver_params).model_fields[param_name]
         self.dtype = _get_base_type(field.annotation)
         self.title = field.title
         self.negative = negative
@@ -103,7 +103,7 @@ class OptionalEditableParam(EditableParam):
             negative (bool, optional): _description_. Defaults to False.
         """
         # Get ui_default before calling super().__init__ (which calls update_from_params)
-        field = solver_params.model_fields[param_name]
+        field = type(solver_params).model_fields[param_name]
         extra = field.json_schema_extra or {}
         self.ui_default = extra.get("ui_default", 0)
 
@@ -206,7 +206,7 @@ class SolverParamsEditor(QWidget):
         layout.setSpacing(0)
         # layout.addWidget(QLabel(title))
         for param_name in self.param_categories[param_category]:
-            field = self.solver_params.model_fields[param_name]
+            field = type(self.solver_params).model_fields[param_name]
             param_cls = (
                 OptionalEditableParam
                 if issubclass(NoneType, field.annotation)
