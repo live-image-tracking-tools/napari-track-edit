@@ -47,6 +47,7 @@ def test_tree_plot_initialization_and_update(viewer, solution_tracks_2d):
     assert hasattr(tree_plot, "node_clicked")
     assert hasattr(tree_plot, "jump_to_node")
     assert hasattr(tree_plot, "nodes_selected")
+    assert hasattr(tree_plot, "pick_track_id")
 
     # Test 3: Update with all parameters
     track_df = tree_widget.tracks_viewer.track_df
@@ -116,6 +117,40 @@ def test_tree_plot_selection(viewer, solution_tracks_2d):
     )
     assert received, "nodes_selected should have been emitted for a covering box"
     assert len(received[0]) == len(tree_plot._node_ids)
+
+
+def test_tree_plot_alt_click_picks_track_id(viewer, solution_tracks_2d):
+    """ALT/OPTION + click on a tree node adopts its track id, without selecting it."""
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
+
+    tree_widget = TreeWidget(viewer)
+    tree_plot = tree_widget.tree_widget
+
+    class _PickEvent:
+        """Stand-in for the pygfx pick event that _on_click receives."""
+
+        def __init__(self, row, modifiers):
+            self.button = 1
+            self.pick_info = {"vertex_index": row}
+            self.modifiers = modifiers
+
+    # node 6 lives at t=4 and is the only node of track 5
+    row = tree_plot._id_to_row[6]
+    viewer.dims.set_point(0, 0)
+    tracks_viewer.selected_nodes.reset()
+
+    picked = []
+    tree_plot.pick_track_id.connect(picked.append)
+    with patch.object(tracks_viewer, "center_on_node") as center_mock:
+        tree_plot._on_click(_PickEvent(row, ["Alt"]))
+        center_mock.assert_not_called()
+
+    assert picked == [6]
+    # the TreeWidget wiring took the track id over without touching the selection
+    assert tracks_viewer.selected_track == solution_tracks_2d.get_track_id(6)
+    assert len(tracks_viewer.selected_nodes) == 0
+    assert viewer.dims.current_step[0] == 0
 
 
 def test_centering(viewer, solution_tracks_2d):

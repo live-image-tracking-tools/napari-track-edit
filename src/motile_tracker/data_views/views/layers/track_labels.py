@@ -10,7 +10,6 @@ from funtracks.exceptions import InvalidActionError
 from funtracks.user_actions import UserUpdateSegmentation
 from napari.layers import Labels
 from napari.utils import DirectLabelColormap
-from napari.utils.action_manager import action_manager
 from napari.utils.notifications import show_info
 
 from motile_tracker.data_views.keybindings_config import (
@@ -33,21 +32,10 @@ if TYPE_CHECKING:
     from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
-def new_label(layer: TrackLabels):
-    """A function to override the default napari labels new_label function.
-    Must be registered (see end of this file)"""
-
-    layer.events.selected_label.disconnect(layer._ensure_valid_label)
-    _new_label(layer, new_track_id=True)
-    layer.events.selected_label.connect(layer._ensure_valid_label)
-
-
 def _new_label(layer: TrackLabels, new_track_id=True):
-    """A function to get a new label for a given TrackLabels layer. Should properly
-    go on the class, but needs to be registered to override the default napari function
-    in the action manager. This helper is abstracted out because we want to do the same
-    thing without making a new track id in the layer, and with the new track id in the
-    overriden action.
+    """A function to get a new label for a given TrackLabels layer. This helper is
+    abstracted out because we want to do the same thing both with and without making a
+    new track id for the layer.
 
     Args:
         layer (TrackLabels): A TrackLabels layer from which get a new label for drawing a
@@ -128,10 +116,16 @@ class TrackLabels(ContourLabels):
                 value = get_click_value(self, event)
                 self.process_click(event, value=value)
 
-    def assign_new_label(self, event):
-        """Function for orthoviews to connect to so the 'm' event can be processed here"""
+    def new_label(self) -> None:
+        """Select a valid new label to paint a new track with.
 
-        new_label(self)
+        Called by TracksViewer.request_new_track, which owns the "start a new track"
+        action for all views. The label is new by construction, guard can be skipped.
+        """
+
+        self.events.selected_label.disconnect(self._ensure_valid_label)
+        _new_label(self, new_track_id=True)
+        self.events.selected_label.connect(self._ensure_valid_label)
 
     def process_click(
         self,
@@ -169,7 +163,10 @@ class TrackLabels(ContourLabels):
                 if is_visible:
                     append = "Shift" in event.modifiers
                     jump = "Control" in event.modifiers
-                    if jump:
+                    pick_track = "Alt" in event.modifiers
+                    if pick_track:
+                        self.tracks_viewer.select_track_id_from_node(int(value))
+                    elif jump:
                         self.tracks_viewer.center_on_node(value)
                     else:
                         self.tracks_viewer.selected_nodes.add(int(value), append)
@@ -188,7 +185,7 @@ class TrackLabels(ContourLabels):
         """
         tracks = self.tracks_viewer.tracks
         if tracks is not None:
-            nodes = tracks.graph.node_ids()
+            nodes = tracks.graph_solution.node_ids()
             track_ids = tracks.get_track_ids(nodes)
             # One vectorized colormap.map call for all nodes: colormap.map has a
             # large fixed per-call overhead (cache lookup, dtype, reshape), so a
@@ -293,6 +290,16 @@ class TrackLabels(ContourLabels):
     def _on_paint(self, event):
         """Listen to the paint event and check which track_ids have changed"""
 
+        _, updated_pixels = self._parse_paint_event(event.value)
+
+        # Every entry covers exactly one time point, so more than one distinct time
+        # means the brush spanned frames, which is not allowed.
+        if len({u[1] if len(u) == 3 else int(u[0][0][0]) for u in updated_pixels}) > 1:
+            show_info("Painting in the time dimension is not supported")
+            self._revert_paint(event)
+            self._refresh()  # also re-syncs the orthoviews, if present
+            return
+
         # painting happens on the canvas, so specify with tracks_viewer.viewer_interaction
         with self.tracks_viewer.viewer_interaction():
             # make sure that 0 (in the case or erasing) or a valid label (in the case of
@@ -309,7 +316,6 @@ class TrackLabels(ContourLabels):
 
             with self.events.selected_label.blocker():
                 try:
-                    _, updated_pixels = self._parse_paint_event(event.value)
                     UserUpdateSegmentation(
                         tracks=self.tracks_viewer.tracks,
                         new_value=target_value,
@@ -439,7 +445,12 @@ class TrackLabels(ContourLabels):
 
         update_colormap = False
         if self.tracks_viewer.tracks is not None:
-            current_timepoint = self.viewer.dims.current_step[0]
+            # The viewer may carry extra leading axes the tracks do not have, so time is
+            # not necessarily axis 0.
+            current_timepoint = self.viewer.dims.current_step[
+                self.tracks_viewer.tracks_dims.time_axis
+            ]
+
             # A label that names a node outside the solution but still present in
             # graph_full is soft-deleted: the node was removed, or added and then
             # undone. Select a new label if this is the case.
@@ -447,8 +458,9 @@ class TrackLabels(ContourLabels):
                 self.selected_label
             ) and self.tracks_viewer.tracks.graph_full.has_node(self.selected_label):
                 _new_label(self, new_track_id=False)
+
             # if a node with the given label is already in the graph
-            if self.tracks_viewer.tracks.graph.has_node(self.selected_label):
+            if self.tracks_viewer.tracks.graph_solution.has_node(self.selected_label):
                 # Update the track id
                 self.tracks_viewer.selected_track = (
                     self.tracks_viewer.tracks.get_track_id(self.selected_label)
@@ -526,13 +538,3 @@ class TrackLabels(ContourLabels):
             n_edit_dimensions = self.tracks_viewer.tracks.ndim - 1
         self._n_edit_dimensions = n_edit_dimensions
         self.events.n_edit_dimensions()
-
-
-# This is to override the default napari function to get a new label for the labels layer
-action_manager.register_action(
-    name="napari:new_label",
-    command=new_label,
-    keymapprovider=TrackLabels,
-    description="",
-)
-TrackLabels.bind_key("m", overwrite=True)(new_label)

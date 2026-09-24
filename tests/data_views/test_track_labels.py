@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 
-from motile_tracker.data_views.views.layers.track_labels import new_label
 from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
@@ -57,6 +56,32 @@ def create_event_val(
     return event_val
 
 
+def create_cross_time_event_val(
+    tps: tuple[int, ...],
+    z: tuple[int],
+    y: tuple[int],
+    x: tuple[int],
+    old_val: int,
+    target_val: int,
+):
+    """Create a single paint atom whose pixels straddle more than one time point.
+
+    This is the shape of the event a brush produces once a roll has put time inside
+    napari's dims_to_paint: one stroke, one atom, indices spanning several frames.
+    """
+
+    atoms = [
+        create_event_val(tp, z, y, x, old_val=old_val, target_val=target_val)[0]
+        for tp in tps
+    ]
+    ndim = len(atoms[0][0])
+    indices = tuple(
+        np.concatenate([atom[0][dim] for atom in atoms]) for dim in range(ndim)
+    )
+    old_vals = np.concatenate([atom[1] for atom in atoms])
+    return [(indices, old_vals, target_val)]
+
+
 def test_paint_event(viewer, solution_tracks_3d_with_division):
     """Test paint event processing
 
@@ -83,7 +108,7 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
     )  # ensure this is active when testing undo
 
     # Test selecting a new label
-    new_label(tracks_viewer.tracking_layers.seg_layer)
+    tracks_viewer.tracking_layers.seg_layer.new_label()
     assert tracks_viewer.tracking_layers.seg_layer.selected_label == 5
     assert tracks_viewer.selected_track == 4  # new track id
 
@@ -100,7 +125,9 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
         tp=3, z=(15, 20), y=(45, 50), x=(75, 80), old_val=0, target_val=60
     )
     event = MockEvent(event_val)
-    assert tracks_viewer.tracks.graph.num_nodes() == 4  # 4 nodes before the paint event
+    assert (
+        tracks_viewer.tracks.graph_solution.num_nodes() == 4
+    )  # 4 nodes before the paint event
     tracks_viewer.tracking_layers.seg_layer._on_paint(event)
 
     # verify the new selected label is now at painted pixels.
@@ -110,8 +137,10 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
     )
     # verfiy that the node is present and has the correct track id.
     assert tracks_viewer.tracks.get_track_id(5) == 4
-    assert tracks_viewer.tracks.graph.num_nodes() == 5  # 5 nodes after paint event
-    assert tracks_viewer.tracks.graph.num_edges() == 3  # no new edges
+    assert (
+        tracks_viewer.tracks.graph_solution.num_nodes() == 5
+    )  # 5 nodes after paint event
+    assert tracks_viewer.tracks.graph_solution.num_edges() == 3  # no new edges
 
     ### 2) Simulate paint event that overwrites an existing node with a new track id. Below
     # event aims to completely replace node 3 with a new label, that has track id 4, since
@@ -128,21 +157,23 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
     viewer.dims.current_step = step
 
     # Run event and evaluate
-    assert tracks_viewer.tracks.graph.num_nodes() == 5  # 5 nodes before paint event
+    assert (
+        tracks_viewer.tracks.graph_solution.num_nodes() == 5
+    )  # 5 nodes before paint event
     tracks_viewer.tracking_layers.seg_layer._on_paint(event)
     assert (
-        tracks_viewer.tracks.graph.num_nodes() == 5
+        tracks_viewer.tracks.graph_solution.num_nodes() == 5
     )  # still 5 nodes after paint event
     # (node 3 has been replaced entirely)
-    assert 3 not in tracks_viewer.tracks.graph.node_ids()  # node 3 is removed
+    assert 3 not in tracks_viewer.tracks.graph_solution.node_ids()  # node 3 is removed
     assert (
         int(np.asarray(tracks_viewer.tracking_layers.seg_layer.data[2, 55, 45, 40]))
         == 6
     )  # next
     # available value
     assert tracks_viewer.tracks.get_track_id(6) == 4  # the selected track id
-    assert not tracks_viewer.tracks.graph.has_edge(2, 3)
-    assert tracks_viewer.tracks.graph.has_edge(6, 5)
+    assert not tracks_viewer.tracks.graph_solution.has_edge(2, 3)
+    assert tracks_viewer.tracks.graph_solution.has_edge(6, 5)
 
     ### 3) simulate an erase event (paint event with label 0) that removes part of label 6
     event_val = create_event_val(
@@ -151,16 +182,18 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
     event = MockEvent(event_val)
 
     # Run event and evaluate
-    assert tracks_viewer.tracks.graph.num_nodes() == 5  # 5 nodes before paint event
+    assert (
+        tracks_viewer.tracks.graph_solution.num_nodes() == 5
+    )  # 5 nodes before paint event
     tracks_viewer.tracking_layers.seg_layer.mode = "erase"  # to correctly interpret
     # painting with 0
 
     tracks_viewer.tracking_layers.seg_layer._on_paint(event)
     assert (
-        tracks_viewer.tracks.graph.num_nodes() == 5
+        tracks_viewer.tracks.graph_solution.num_nodes() == 5
     )  # still 5 nodes after paint event
     # (node 6 is now smaller)
-    assert tracks_viewer.tracks.graph.nodes[6]["area"] < 1000
+    assert tracks_viewer.tracks.graph_solution.nodes[6]["area"] < 1000
     assert (
         int(np.asarray(tracks_viewer.tracking_layers.seg_layer.data[2, 55, 45, 40]))
         == 0
@@ -168,11 +201,127 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
 
     ### 4) Test undoing the last paint event
     tracks_viewer.tracking_layers.seg_layer.undo()
-    assert tracks_viewer.tracks.graph.nodes[6]["area"] == 1000
+    assert tracks_viewer.tracks.graph_solution.nodes[6]["area"] == 1000
     assert (
         int(np.asarray(tracks_viewer.tracking_layers.seg_layer.data[2, 55, 45, 40]))
         == 6
     )  # back at 5
+
+
+class TestPaintingAcrossTime:
+    """A stroke must stay inside one frame.
+
+    n_edit_dimensions is clamped to keep time out of the brush, but that only holds
+    while the viewer is unrolled: napari paints the *last* n_edit_dimensions of the
+    layer's axis order, and rolling permutes that order. So the guard has to look at
+    the pixels the event actually touched.
+    """
+
+    def test_rolling_puts_time_inside_naparis_paint_window(self, viewer):
+        """The napari behaviour that makes the check necessary.
+
+        If this ever stops being true, the guard in _on_paint becomes dead code
+        rather than silently wrong, and this test says so directly.
+        """
+
+        layer = viewer.add_labels(np.zeros((4, 10, 20, 20), dtype=int))
+        layer.n_edit_dimensions = 3  # what TrackLabels clamps 3D+time tracks to
+
+        assert 0 not in layer._get_dims_to_paint()  # time is out of the brush
+        viewer.dims.roll()
+        assert 0 in layer._get_dims_to_paint()  # ...until the viewer is rolled
+
+    def test_painting_across_time_is_rejected(
+        self, viewer, solution_tracks_3d_with_division
+    ):
+        """Without the guard this reaches funtracks, which asserts a single time
+        point, and the AssertionError escapes _on_paint with the pixels already
+        painted: the segmentation and the graph disagree from then on."""
+
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(
+            tracks=solution_tracks_3d_with_division, name="test"
+        )
+        seg_layer = tracks_viewer.tracking_layers.seg_layer
+        seg_layer.new_label()
+        seg_layer.mode = "paint"
+
+        nodes_before = tracks_viewer.tracks.graph_solution.num_nodes()
+        event = MockEvent(
+            create_cross_time_event_val(
+                tps=(2, 3), z=(15, 20), y=(45, 50), x=(75, 80), old_val=0, target_val=60
+            )
+        )
+
+        seg_layer._on_paint(event)
+
+        assert tracks_viewer.tracks.graph_solution.num_nodes() == nodes_before
+        for tp in (2, 3):
+            assert int(np.asarray(seg_layer.data[tp, 15, 45, 75])) == 0
+
+    def test_erasing_across_time_is_rejected(
+        self, viewer, solution_tracks_3d_with_division
+    ):
+        """Erasing takes a different path in funtracks: it has no single-time
+        assertion at all and applies the edit to every frame it touched, so without
+        the guard this silently shrinks nodes in frames the user never looked at."""
+
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(
+            tracks=solution_tracks_3d_with_division, name="test"
+        )
+        tracks_viewer.tracks.enable_features(["area"])
+        seg_layer = tracks_viewer.tracking_layers.seg_layer
+        seg_layer.mode = "erase"
+
+        # nodes 3 and 4 are the two children of the division, in frames 2 and 2;
+        # take the areas of every node so any cross-frame shrink shows up
+        areas_before = {
+            node: tracks_viewer.tracks.graph_solution.nodes[node]["area"]
+            for node in tracks_viewer.tracks.graph_solution.node_ids()
+        }
+        event = MockEvent(
+            create_cross_time_event_val(
+                tps=(1, 2), z=(55, 57), y=(45, 48), x=(40, 42), old_val=3, target_val=0
+            )
+        )
+
+        seg_layer._on_paint(event)
+
+        assert {
+            node: tracks_viewer.tracks.graph_solution.nodes[node]["area"]
+            for node in tracks_viewer.tracks.graph_solution.node_ids()
+        } == areas_before
+
+    def test_a_single_frame_stroke_still_paints(
+        self, viewer, solution_tracks_3d_with_division
+    ):
+        """The guard must not catch an ordinary stroke, including one made in a
+        frame other than the one the time slider is on (which is how an ortho view
+        edit arrives)."""
+
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(
+            tracks=solution_tracks_3d_with_division, name="test"
+        )
+        seg_layer = tracks_viewer.tracking_layers.seg_layer
+        seg_layer.new_label()
+        seg_layer.mode = "paint"
+
+        step = list(viewer.dims.current_step)
+        step[0] = 3
+        viewer.dims.current_step = step
+        nodes_before = tracks_viewer.tracks.graph_solution.num_nodes()
+
+        seg_layer._on_paint(
+            MockEvent(
+                create_event_val(
+                    tp=3, z=(15, 20), y=(45, 50), x=(75, 80), old_val=0, target_val=60
+                )
+            )
+        )
+
+        assert tracks_viewer.tracks.graph_solution.num_nodes() == nodes_before + 1
 
 
 def test_ensure_valid_label(viewer, solution_tracks_3d_with_division):
@@ -222,10 +371,35 @@ def test_ensure_valid_label(viewer, solution_tracks_3d_with_division):
     assert tracks_viewer.selected_track == 1  # updated to 1, matching label 2
 
     # Verify starting a new track via the new_label function
-    new_label(tracks_viewer.tracking_layers.seg_layer)
+    tracks_viewer.tracking_layers.seg_layer.new_label()
     assert tracks_viewer.tracking_layers.seg_layer.selected_label == 5  # next available
     # value
     assert tracks_viewer.selected_track == 4  # new track id (still unused)
+
+
+def test_alt_click_picks_track_id(viewer, solution_tracks_2d):
+    """ALT/OPTION + click on a label adopts its track id without selecting the node.
+
+    This is the pipette made available from pan_zoom mode and from any frame: node 6
+    lives at t=4, and clicking it from t=0 must neither select it nor move the viewer.
+    """
+
+    class _Event:
+        def __init__(self, modifiers):
+            self.modifiers = modifiers
+
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
+    seg_layer = tracks_viewer.tracking_layers.seg_layer
+
+    viewer.dims.set_point(0, 0)
+    tracks_viewer.selected_nodes.reset()
+
+    seg_layer.process_click(_Event(["Alt"]), np.int64(6))
+
+    assert tracks_viewer.selected_track == solution_tracks_2d.get_track_id(6)
+    assert len(tracks_viewer.selected_nodes) == 0
+    assert viewer.dims.current_step[0] == 0
 
 
 def test_background_label_does_not_get_a_color(
@@ -297,13 +471,13 @@ def test_paint_with_preserve_labels_paints_into_background(
     step[0] = 0  # node 1 lives at t=0, bbox 45-54^3
     viewer.dims.current_step = step
 
-    new_label(seg_layer)
+    seg_layer.new_label()
     new_value = seg_layer.selected_label
 
     seg_layer.preserve_labels = True
     seg_layer.brush_size = 3
 
-    nodes_before = tracks_viewer.tracks.graph.num_nodes()
+    nodes_before = tracks_viewer.tracks.graph_solution.num_nodes()
 
     # Pure background: far from node 1
     seg_layer.paint(np.array([0, 50, 80, 80]), new_value)
@@ -313,7 +487,7 @@ def test_paint_with_preserve_labels_paints_into_background(
     # Existing node 1 untouched
     assert int(np.asarray(seg_layer.data[0, 50, 50, 50])) == 1
     # Graph: new node added
-    assert tracks_viewer.tracks.graph.num_nodes() == nodes_before + 1
+    assert tracks_viewer.tracks.graph_solution.num_nodes() == nodes_before + 1
 
 
 def test_paint_with_preserve_labels_does_not_overwrite_existing(
@@ -332,19 +506,19 @@ def test_paint_with_preserve_labels_does_not_overwrite_existing(
     step[0] = 0
     viewer.dims.current_step = step
 
-    new_label(seg_layer)
+    seg_layer.new_label()
     new_value = seg_layer.selected_label
 
     seg_layer.preserve_labels = True
     seg_layer.brush_size = 3
 
-    nodes_before = tracks_viewer.tracks.graph.num_nodes()
+    nodes_before = tracks_viewer.tracks.graph_solution.num_nodes()
 
     # Center of node 1
     seg_layer.paint(np.array([0, 50, 50, 50]), new_value)
 
     assert int(np.asarray(seg_layer.data[0, 50, 50, 50])) == 1
-    assert tracks_viewer.tracks.graph.num_nodes() == nodes_before
+    assert tracks_viewer.tracks.graph_solution.num_nodes() == nodes_before
 
 
 def test_undo_on_readonly_data_does_not_fire_paint_event(
@@ -406,7 +580,7 @@ def test_label_and_color_stay_usable_after_undo(
     viewer.dims.current_step = step
     seg_layer.brush_size = 30
 
-    new_label(seg_layer)
+    seg_layer.new_label()
     painted = seg_layer.selected_label
     seg_layer.paint(np.array([0, 50, 50, 50]), painted)
     track_before = tracks_viewer.tracks.get_track_id(painted)

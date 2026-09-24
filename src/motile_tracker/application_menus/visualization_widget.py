@@ -181,10 +181,20 @@ class VisualizationWidget(QWidget):
         self.show_ortho_views.stateChanged.connect(self.initialize_ortho_views)
         self.show_ortho_views.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
+        self.show_viewer_overlay = QCheckBox("Display keybinds on canvas")
+        self.show_viewer_overlay.setChecked(True)
+        self.show_viewer_overlay.toggled.connect(self.toggle_viewer_text_overlay)
+
         main_layout.addWidget(self.show_ortho_views)
+        main_layout.addWidget(self.show_viewer_overlay)
         main_layout.addStretch(1)
 
         self.setMaximumHeight(360)
+
+    def toggle_viewer_text_overlay(self, checked: bool):
+        """Change the visibility of the text overlay"""
+
+        self.viewer.text_overlay.visible = checked
 
     def initialize_ortho_views(self, checked: bool):
         """Initializes the ortho views."""
