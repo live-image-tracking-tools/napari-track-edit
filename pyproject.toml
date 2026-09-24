@@ -30,7 +30,7 @@ classifiers = [
 ]
 
 dependencies =[
-    "napari>=0.6.2,<0.10.0",
+    "napari>=0.6.5,<0.10.0",
     "funtracks @ git+https://github.com/funkelab/funtracks.git@refs/pull/295/head",
     "appdirs>=1,<2",
     "numpy>=2,<3",
@@ -47,7 +47,7 @@ dependencies =[
     "fastplotlib>=0.6.1,<0.7",
     "pygfx==0.15.3",
     "wgpu>=0.29, <0.30",
-    "napari-orthogonal-views>=0.4.0",
+    "napari-orthogonal-views>=0.5.0",
     "lxml_html_clean>=0.4,<1",
     "zarr>=2.18.7,<4",
     # Not used directly (it arrives via tracksdata), pinned to keep it co-installable
