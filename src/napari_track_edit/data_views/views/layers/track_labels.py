@@ -278,7 +278,7 @@ class TrackLabels(ContourLabels):
         return new_value, actions
 
     def _revert_paint(self, _, source_layer: Labels | None = None):
-        """Revert a paint event after it fails validation (no motile tracker Actions have
+        """Revert a paint event after it fails validation (no actions have
         been created). This keeps the view synced with the backend data.
         been created). If a source_layer is provided, the paint event will be reverted on
         this layer (this is necessary for orthoviews). This keeps the view synced with
