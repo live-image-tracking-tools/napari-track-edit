@@ -101,6 +101,11 @@ KEYBINDINGS = {
         "group": "Editing",
         "targets": ["tracks_viewer"],
     },
+    "merge_horizontally": {
+        "napari_keys": ["h"],
+        "qt_keys": [Qt.Key_H],
+        "targets": ["tracks_viewer"],
+    },
     "undo": {
         "key": "z",
         "description": "Undo the last editing action",
