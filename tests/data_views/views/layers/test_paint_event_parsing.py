@@ -31,6 +31,7 @@ from funtracks.user_actions.user_update_segmentation import (
     _create_masks_from_bboxes,
     _create_masks_from_multi_index,
 )
+from napari.layers import Labels
 from napari.utils import DirectLabelColormap
 
 from motile_tracker.data_views.lazy_array_wrapper import LazyArrayWrapper
@@ -494,5 +495,67 @@ def test_undo_on_writable_data_still_restores_the_array():
     assert not np.array_equal(np.asarray(layer.data), before)
 
     layer.undo()
+
+    assert np.array_equal(np.asarray(layer.data), before)
+
+
+# ContourLabels defines _abort_stroke itself, so the probe has to be the napari
+# class: only napari >= 0.8 stages a stroke and can abort one.
+needs_staged_strokes = pytest.mark.skipif(
+    not hasattr(Labels, "_abort_stroke"),
+    reason="napari < 0.8 has no encircle-and-fill stroke to abort",
+)
+
+
+@needs_staged_strokes
+def test_abort_stroke_on_read_only_data_does_not_raise():
+    """Aborting the encircle-and-fill stroke must not write to the array.
+
+    napari >= 0.8 stages that stroke and aborts it when the tool is disabled
+    mid-stroke (a mode switch, say). Without the override, the inherited
+    implementation writes every staged atom back and raises
+    ``TypeError: 'LazyArrayWrapper' object does not support item assignment``.
+    """
+    layer = read_only_layer_showing_the_painted_frame()
+    before = np.array(layer._slice.image.raw)
+
+    layer._begin_stroke()
+    for col in (6, 7, 8):
+        layer.paint((0, 7, col), NEW, refresh=False)
+    assert layer._staged_history, "the stroke should have staged something"
+
+    layer._abort_stroke()  # must not raise
+
+    assert np.array_equal(np.array(layer._slice.image.raw), before)
+    assert layer._staged_history == []
+
+
+@needs_staged_strokes
+def test_abort_stroke_emits_no_paint_event():
+    """As with undo: a paint event here would re-enter _on_paint."""
+    layer = read_only_layer_showing_the_painted_frame()
+    layer._begin_stroke()
+    layer.paint((0, 7, 7), NEW, refresh=False)
+
+    events = []
+    layer.events.paint.connect(lambda event: events.append(event.value))
+    layer._abort_stroke()
+
+    assert events == []
+    assert len(layer._undo_history) == 0
+
+
+@needs_staged_strokes
+def test_abort_stroke_on_writable_data_still_reverts_the_array():
+    """Writable data keeps napari's own abort, which rolls the array back."""
+    before = displayed_segmentation()
+    layer = make_layer(before.copy())
+
+    layer._begin_stroke()
+    for col in (6, 7, 8):
+        layer.paint((0, 7, col), NEW, refresh=False)
+    assert not np.array_equal(np.asarray(layer.data), before)
+
+    layer._abort_stroke()
 
     assert np.array_equal(np.asarray(layer.data), before)

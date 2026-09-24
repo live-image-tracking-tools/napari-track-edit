@@ -339,6 +339,28 @@ class ContourLabels(napari.layers.Labels):
         else:
             super().undo()
 
+    def _abort_stroke(self):
+        """Override for read-only data (e.g. GraphArrayView).
+
+        napari >= 0.8 stages the atoms of an encircle-and-fill stroke (right click
+        in paint mode) instead of committing them one by one, and aborts the stroke
+        when the tool is disabled mid-stroke, e.g. by a mode switch. Its abort walks
+        the staged atoms backwards and writes each one back into the array, either
+        directly or via ``_replay_masked_atom``, which read-only data cannot take.
+
+        Nothing was ever written (see ``_paint_region_with_mask``), so dropping the
+        staged atoms and re-slicing is all the revert this layer needs, and, as in
+        ``undo``, it avoids emitting a paint event that would re-enter _on_paint.
+        """
+        if hasattr(self.data, "__setitem__"):
+            super()._abort_stroke()
+            return
+
+        self._staged_history = []
+        self._block_history = False
+        self._updated_slice = None  # the whole slice is about to be reloaded
+        self.refresh()
+
     def redo(self):
         """Override redo for read-only data (e.g. GraphArrayView).
         There is nothing to do here in our use case, since we have our own history logic,
