@@ -517,7 +517,7 @@ class TracksViewer:
         """
 
         node = int(node)
-        if self.tracks is None or not self.tracks.graph.has_node(node):
+        if self.tracks is None or not self.tracks.solution_graph.has_node(node):
             return
 
         seg_layer = self.tracking_layers.seg_layer
