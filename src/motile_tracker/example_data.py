@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import NamedTuple
 from urllib.request import urlretrieve
 
-import gdown
 import numpy as np
 import tifffile
 import zarr
@@ -341,26 +340,32 @@ def Mouse_Embryo_Membrane_raw() -> LayerData:
 class SampleTracks(NamedTuple):
     """Example tracks shown in the welcome widget, with their raw data."""
 
-    url: str  # Google Drive folder with the geff
-    store_name: str  # name of the geff store in the user data dir
+    url: str  # download url of a zip holding the geff store
+    store_name: str  # name of the geff store in the zip and in the user data dir
     raw_name: str  # name of the raw data layer
     load_raw: Callable[[], LayerData]
 
 
-# Example tracks, by display name.
-# TODO: the drive folders are missing their zarr metadata files. Until they are
-# re-uploaded, the store names point at local test geffs, so the download is
-# skipped when those are present.
+def _drive_download_url(file_id: str) -> str:
+    """Direct-download URL for a Google Drive file (skips the preview page)."""
+    return (
+        f"https://drive.usercontent.google.com/download?id={file_id}"
+        "&export=download&confirm=t"
+    )
+
+
+# Example tracks, by display name. They are zipped, because Google Drive drops the
+# hidden zarr metadata files (.zattrs, ...) of uploaded folders.
 SAMPLE_TRACKS: dict[str, SampleTracks] = {
     "Hela cells (2D)": SampleTracks(
-        "https://drive.google.com/drive/folders/1zRRS4TmfRgFCr11MMWmzNnKSNTDVitJl",
-        "test_data_2D.geff",
+        _drive_download_url("1wI1IHtxvbXB6Tg75zozxnFbeTITBefSW"),
+        "hela2D_crop_tracks.geff",
         "01_raw",
         Fluo_N2DL_HeLa_crop_raw,
     ),
     "Mouse embryo (3D)": SampleTracks(
-        "https://drive.google.com/drive/folders/1FyZ6KGjCdE3o0R9LpKFpOGtJHMZWLDEQ",
-        "test_data_3D.geff",
+        _drive_download_url("1zTiI4FRiSyOomaN-eV_HBTqQoawUCPWi"),
+        "mouse3D_tracks.geff",
         "01_membrane",
         Mouse_Embryo_Membrane_raw,
     ),
@@ -384,26 +389,37 @@ def sample_tracks_path(name: str) -> Path:
     store_path = data_dir / store_name
     if not store_path.exists():
         logger.info("Downloading %s", name)
-        download_drive_folder(url, store_path)
+        download_zipped_store(url, store_path)
     return store_path
 
 
-def download_drive_folder(url: str, output: Path) -> None:
-    """Download a public Google Drive folder to the given path. The folder is
-    first downloaded next to the output and only moved into place once complete,
-    so an interrupted download is not mistaken for existing data.
+def download_zipped_store(url: str, output: Path) -> None:
+    """Download a zip holding a store named like the output, and unpack it there.
+
+    The zip is downloaded and unpacked next to the output, and only moved into
+    place once complete, so an interrupted download is not mistaken for existing
+    data.
 
     Args:
-        url (str): Url of the Google Drive folder
-        output (Path): Path to store the folder contents at
+        url (str): Download url of the zip
+        output (Path): Path to put the store at. The zip must contain a directory
+            with the same name.
     """
-    tmp_output = output.with_name(output.name + ".download")
-    if tmp_output.exists():
-        shutil.rmtree(tmp_output)
-    files = gdown.download_folder(
-        url=url, output=str(tmp_output), quiet=True, use_cookies=False
-    )
-    if not files:
-        shutil.rmtree(tmp_output, ignore_errors=True)
-        raise RuntimeError(f"Failed to download {url}")
-    tmp_output.rename(output)
+    tmp_dir = output.with_name(output.name + ".download")
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    tmp_dir.mkdir()
+    try:
+        zip_path = tmp_dir / "download.zip"
+        urlretrieve(url, filename=zip_path)
+        if not zipfile.is_zipfile(zip_path):
+            # Google Drive serves an html page instead of the file when the
+            # download is blocked (quota exceeded, permissions changed, ...).
+            raise RuntimeError(f"Google Drive refused the download of {url}")
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(tmp_dir)
+        store = tmp_dir / output.name
+        if not store.is_dir():
+            raise RuntimeError(f"{url} does not contain {output.name}")
+        store.rename(output)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)

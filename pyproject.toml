@@ -50,7 +50,6 @@ dependencies =[
     "napari-orthogonal-views>=0.4.0",
     "lxml_html_clean>=0.4,<1",
     "zarr>=2.18.7,<4",
-    "gdown>=5,<7",
     # Not used directly (it arrives via tracksdata), pinned to keep it co-installable
     # with pygfx's uharfbuzz. Both are Cython 3.3.0 limited-API builds that share the
     # runtime module _cython_3_3_0limitednofinalize, but at different Py_LIMITED_API

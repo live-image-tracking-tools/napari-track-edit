@@ -1,9 +1,10 @@
 """Tests for the sample tracks shown as examples in the welcome widget."""
 
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import numpy as np
 import pytest
@@ -24,63 +25,86 @@ EMBRYO = "Mouse embryo (3D)"
 
 @pytest.mark.parametrize("name", list(SAMPLE_TRACKS))
 def test_sample_tracks_links(name):
-    """The Google Drive folders with the sample tracks are still reachable
-    (Drive answers 404 for removed or unshared folders)."""
-    url = SAMPLE_TRACKS[name].url
-    with urlopen(url, timeout=30) as response:
-        assert response.status == 200
+    """The sample tracks can still be downloaded. Fetches the first byte only.
+    Google Drive answers with an html page rather than an error status when a
+    file is unshared, removed, or over its quota."""
+    request = Request(SAMPLE_TRACKS[name].url, headers={"Range": "bytes=0-0"})
+    with urlopen(request, timeout=30) as response:
+        assert response.status in (200, 206)
+        assert "text/html" not in response.headers.get("Content-Type", "")
+        assert response.read(1)
 
 
 @pytest.fixture
 def user_data_dir(tmp_path, monkeypatch) -> Path:
     """Point the appdir "user data dir" at a temporary directory."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
     monkeypatch.setattr(
         example_data,
         "AppDirs",
-        lambda _: type("Dirs", (), {"user_data_dir": str(tmp_path)}),
+        lambda _: type("Dirs", (), {"user_data_dir": str(data_dir)}),
     )
-    return tmp_path
+    return data_dir
+
+
+def _fake_urlretrieve(downloads: list[str], content: dict[str, bytes]):
+    """An urlretrieve that writes a zip with the given files, recording the urls."""
+
+    def urlretrieve(url, filename):
+        downloads.append(url)
+        with zipfile.ZipFile(filename, "w") as zip_ref:
+            for name, data in content.items():
+                zip_ref.writestr(name, data)
+
+    return urlretrieve
 
 
 def test_sample_tracks_path_skips_download_if_present(user_data_dir, monkeypatch):
-    name = HELA
-    store = user_data_dir / SAMPLE_TRACKS[name].store_name
+    store = user_data_dir / SAMPLE_TRACKS[HELA].store_name
     store.mkdir()
-
-    def fail(*args, **kwargs):
-        raise AssertionError("should not download")
-
-    monkeypatch.setattr(example_data, "download_drive_folder", fail)
-    assert sample_tracks_path(name) == store
+    downloads = []
+    monkeypatch.setattr(example_data, "urlretrieve", _fake_urlretrieve(downloads, {}))
+    assert sample_tracks_path(HELA) == store
+    assert downloads == []
 
 
 def test_sample_tracks_path_downloads_if_missing(user_data_dir, monkeypatch):
-    name = EMBRYO
+    store_name = SAMPLE_TRACKS[EMBRYO].store_name
     downloads = []
+    content = {f"{store_name}/.zattrs": b"{}", f"{store_name}/.zgroup": b"{}"}
+    monkeypatch.setattr(
+        example_data, "urlretrieve", _fake_urlretrieve(downloads, content)
+    )
 
-    def fake_download_folder(url, output, **kwargs):
-        downloads.append(url)
-        Path(output).mkdir()
-        (Path(output) / "zarr.json").touch()
-        return [str(Path(output) / "zarr.json")]
-
-    monkeypatch.setattr(example_data.gdown, "download_folder", fake_download_folder)
-    path = sample_tracks_path(name)
-    assert downloads == [SAMPLE_TRACKS[name].url]
-    assert path == user_data_dir / SAMPLE_TRACKS[name].store_name
-    assert (path / "zarr.json").exists()
-    assert not path.with_name(path.name + ".download").exists()
+    path = sample_tracks_path(EMBRYO)
+    assert downloads == [SAMPLE_TRACKS[EMBRYO].url]
+    assert path == user_data_dir / store_name
+    assert (path / ".zattrs").exists()  # hidden files survive
+    assert [p.name for p in user_data_dir.iterdir()] == [store_name]
 
     # second call uses the downloaded data
-    sample_tracks_path(name)
+    sample_tracks_path(EMBRYO)
     assert len(downloads) == 1
 
 
-def test_failed_download_leaves_no_data(user_data_dir, monkeypatch):
-    name = HELA
-    monkeypatch.setattr(example_data.gdown, "download_folder", lambda **kwargs: None)
-    with pytest.raises(RuntimeError):
-        sample_tracks_path(name)
+def test_refused_download_leaves_no_data(user_data_dir, monkeypatch):
+    """Google Drive serving an html page instead of the zip is an error."""
+
+    def urlretrieve(url, filename):
+        Path(filename).write_text("<html>quota exceeded</html>")
+
+    monkeypatch.setattr(example_data, "urlretrieve", urlretrieve)
+    with pytest.raises(RuntimeError, match="refused"):
+        sample_tracks_path(HELA)
+    assert list(user_data_dir.iterdir()) == []
+
+
+def test_zip_without_store_leaves_no_data(user_data_dir, monkeypatch):
+    content = {"other.geff/.zattrs": b"{}"}
+    monkeypatch.setattr(example_data, "urlretrieve", _fake_urlretrieve([], content))
+    with pytest.raises(RuntimeError, match="does not contain"):
+        sample_tracks_path(HELA)
     assert list(user_data_dir.iterdir()) == []
 
 
