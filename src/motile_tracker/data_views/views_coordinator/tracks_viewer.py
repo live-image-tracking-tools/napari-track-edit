@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import Optional
 
 import napari
@@ -11,17 +12,18 @@ from funtracks.user_actions import (
     UserAddEdge,
     UserDeleteEdge,
     UserDeleteNodes,
+    UserSetDivision,
     UserSwapPredecessors,
 )
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
+from motile_tracker.data_views.dims_utils import TracksDims
 from motile_tracker.data_views.keybindings_config import (
     KEYMAP,
     bind_keymap,
 )
 from motile_tracker.data_views.node_type import NodeType
-from motile_tracker.data_views.views.layers.track_labels import new_label
 from motile_tracker.data_views.views.layers.tracks_layer_group import TracksLayerGroup
 from motile_tracker.data_views.views.tree_view.tree_widget_utils import (
     extract_lineage_tree,
@@ -38,7 +40,15 @@ from motile_tracker.data_views.views_coordinator.user_dialogs import (
     confirm_force_operation,
 )
 
-BASE_TEXT = "Click: select node\nShift+Click: append to selection\nCtrl/Cmd+Click: center node\n[Q]: toggle display\nCurrent display mode: "
+BASE_TEXT = (
+    "Click : select node\n"
+    "Shift + Click : add to selection\n"
+    "Ctrl (/CMD) + Click : center node\n"
+    "Alt (/Option) + Click : pick tracklet ID\n"
+    "[Q] : toggle display\n"
+    "\n"
+    "Current display mode : "
+)
 
 
 class TracksViewer:
@@ -112,16 +122,45 @@ class TracksViewer:
 
         self.tracks_list = TracksList()
         self.tracks_list.view_tracks.connect(self.update_tracks)
+        self.tracks_list.tracks_cleared.connect(self.clear_tracks)
         self.tracks_list.request_colormap.connect(self.set_colormap_to_trackslist)
         self.selected_track = None
         self.track_id_color = [0, 0, 0, 0]
         self.force = False
+        # True while an interaction in the napari canvas (a click or a paint event) is
+        # being processed, so that centering requests know where they came from (see
+        # viewer_interaction and TracksLayerGroup.center_view)
+        self.interacting_with_canvas = False
 
         self.collection_widget = None
 
         self.set_keybinds()
 
         self.viewer.dims.events.ndisplay.connect(self.update_selection)
+
+    @property
+    def tracks_dims(self) -> TracksDims:
+        """How the tracks' axes sit compared to the viewer's world axes.
+
+        Raises:
+            RuntimeError: If no tracks are loaded.
+        """
+
+        if self.tracks is None:
+            raise RuntimeError("No tracks are loaded, so they have no dimensions")
+        return TracksDims(self.viewer.dims.ndim, self.tracks.ndim)
+
+    def set_axis_labels(self) -> None:
+        """Name the viewer's sliders after the axes the tracks use."""
+
+        if self.tracks is None:
+            return
+
+        dims = self.tracks_dims
+        labels = list(self.viewer.dims.axis_labels)
+        # any 'extra' dims just keep the name they had already
+        labels[dims.ndim_offset :] = ["t", *self.tracks.axis_names]
+        self.viewer.dims.axis_labels = labels
 
     def get_collection_widget(self) -> CollectionWidget:
         """Return a reference to the groups widget"""
@@ -158,7 +197,7 @@ class TracksViewer:
         if self.tracks is None:
             return
         if self.tracking_layers.seg_layer is not None:
-            new_label(self.tracking_layers.seg_layer)
+            self.tracking_layers.seg_layer.new_label()
         else:
             self.set_new_track_id()
 
@@ -284,12 +323,14 @@ class TracksViewer:
             tracks (funtracks.data_model.Tracks): The tracks to visualize in napari.
             name (str): The name of the tracks to display in the layer names
         """
-        self.selected_nodes.reset()
+        # clear rather than reset: the selection history belongs to the outgoing
+        # tracks, and restoring one of its node ids against a different graph is
+        # meaningless. This drops deleted_items with it.
+        self.selected_nodes.clear()
 
         self._disconnect_tracks()
 
         self.tracks = tracks
-        self.selected_nodes.deleted_items.clear()  # Reset deleted nodes when switching tracks
 
         # listen to refresh signals from the tracks
         self.tracks.refresh.connect(self._refresh)
@@ -307,6 +348,7 @@ class TracksViewer:
 
         self.set_display_mode("all")
         self.tracking_layers.set_tracks(tracks, name)
+        self.set_axis_labels()  # the layers are in, so the viewer's dims have settled
         self.selected_nodes.reset()
 
         # ensure a valid track is selected from the start
@@ -320,6 +362,39 @@ class TracksViewer:
         # Update visualization widget
         self.mode_updated.emit()
 
+    def clear_tracks(self) -> None:
+        """Stop displaying any tracks at all: the mirror of update_tracks.
+
+        Called when the last entry leaves the results list. Without it the napari
+        layers, the tree plot and the table keep rendering a tracks object that the
+        application no longer holds.
+
+        Input layers that update_tracks hid stay hidden: the user may have hidden
+        them themselves, and we do not record which ones were ours.
+        """
+
+        self._disconnect_tracks()
+        self.tracks = None
+        # update_track_df cannot produce this: it returns early without tracks, so
+        # the dataframe of the tracks that just went away would survive
+        self.track_df = pd.DataFrame()
+        self.axis_order = []
+
+        # remove the layers before clearing the selection: clearing emits
+        # selection_updated, and the update_selection that follows would otherwise
+        # recolour layers that are about to be thrown away
+        self.tracking_layers.set_tracks(None, "")
+        self.selected_nodes.clear()
+
+        self.set_display_mode("all")
+        if self.collection_widget is not None:
+            self.collection_widget.retrieve_existing_groups()
+
+        # reset_view=True is required: the TreeWidget only returns to "all" mode and
+        # drops its lineage dataframe when this argument is truthy
+        self.tracks_updated.emit(True)
+        self.mode_updated.emit()
+
     def toggle_display_mode(self, event=None) -> None:
         """Toggle the display mode between available options.
 
@@ -327,7 +402,10 @@ class TracksViewer:
         'all' and 'lineage' in that case.
         """
 
-        has_groups = self.collection_widget.collection_list.count() > 0
+        has_groups = (
+            self.collection_widget is not None
+            and self.collection_widget.collection_list.count() > 0
+        )
 
         if self.mode == "lineage":
             self.set_display_mode("group" if has_groups else "all")
@@ -365,6 +443,7 @@ class TracksViewer:
 
         if self.tracks is None or self.tracks.graph is None:
             self.visible = []
+            return
         if self.mode == "lineage":
             # if no nodes are selected, check which nodes were previously visible and
             # filter those
@@ -394,6 +473,20 @@ class TracksViewer:
         else:
             self.visible = "all"
 
+    @contextmanager
+    def viewer_interaction(self):
+        """Mark everything that happens inside this block as originating from the
+        napari canvas, to suppress node centering when the seg or points layer is not in
+        pan_zoom mode.
+        """
+
+        previous = self.interacting_with_canvas
+        self.interacting_with_canvas = True
+        try:
+            yield
+        finally:
+            self.interacting_with_canvas = previous
+
     def center_on_node(self, node: int) -> None:
         """Request all views to center on the given node.
 
@@ -404,6 +497,36 @@ class TracksViewer:
             node: The node ID to center on.
         """
         self.center_node.emit(node)
+
+    def select_track_id_from_node(self, node: int) -> None:
+        """Adopt the tracklet id of the given node as the current track id, without
+        selecting or centering on that node.
+
+        This is similar to the pipette behavior on the labels layer, but now available
+        on all views, and not bound to the current time point. With a segmentation
+        present, the pick goes through the labels layer's ``selected_label``, so
+        ``_ensure_valid_label`` decides the label value that should be painted with
+        that is consistent with the picked tracklet id.
+
+        Args:
+            node: The node ID whose tracklet id should become the current one.
+        """
+
+        node = int(node)
+        if self.tracks is None or not self.tracks.graph.has_node(node):
+            return
+
+        seg_layer = self.tracking_layers.seg_layer
+        if seg_layer is not None:
+            if seg_layer.selected_label == node:
+                seg_layer._ensure_valid_label()
+            else:
+                seg_layer.selected_label = node
+        else:
+            # no segmentation to paint in: only the track id itself is meaningful
+            self.selected_track = int(self.tracks.get_track_id(node))
+            self.set_track_id_color(self.selected_track)
+            self.update_track_id.emit()
 
     def _on_action_applied(self, action: BasicAction) -> None:
         """Handle action_applied signal from tracks.
@@ -431,10 +554,8 @@ class TracksViewer:
         self.filter_visible_nodes()
         self.tracking_layers.update_visible(self.visible)
 
-        if len(self.selected_nodes) > 0:
+        if self.tracks is not None and len(self.selected_nodes) > 0:
             self.selected_track = self.tracks.get_track_id(self.selected_nodes[-1])
-        else:
-            self.selected_track = None
 
         self.set_track_id_color(self.selected_track)
         self.update_track_id.emit()
@@ -479,6 +600,19 @@ class TracksViewer:
             node2 = self.selected_nodes[1]
 
             UserSwapPredecessors(self.tracks, nodes=(int(node1), int(node2)))
+
+    def set_division(self, event=None):
+        """Calls the UserAction to make or break a division between the three
+        currently selected nodes
+        """
+
+        if self.tracks is None:
+            return
+        nodes = [int(node) for node in self.selected_nodes.as_list]
+        try:
+            UserSetDivision(self.tracks, tuple(nodes))
+        except InvalidActionError as e:
+            QMessageBox.warning(None, "Cannot set division", str(e))
 
     def create_edge(self, event=None):
         """Add an edge between the two currently selected nodes"""

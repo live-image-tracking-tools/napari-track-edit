@@ -48,6 +48,11 @@ KEYBINDINGS = {
         "qt_keys": [Qt.Key_D, Qt.Key_Delete],
         "targets": ["tracks_viewer"],
     },
+    "request_new_track": {
+        "napari_keys": ["m"],
+        "qt_keys": [Qt.Key_M],
+        "targets": ["tracks_viewer"],
+    },
     "create_edge": {
         "napari_keys": ["a"],
         "qt_keys": [Qt.Key_A],
@@ -56,6 +61,11 @@ KEYBINDINGS = {
     "delete_edge": {
         "napari_keys": ["b"],
         "qt_keys": [Qt.Key_B],
+        "targets": ["tracks_viewer"],
+    },
+    "set_division": {
+        "napari_keys": ["y"],
+        "qt_keys": [Qt.Key_Y],
         "targets": ["tracks_viewer"],
     },
     "swap_nodes": {
@@ -96,11 +106,6 @@ KEYBINDINGS = {
     "select_next": {
         "napari_keys": ["n"],  # Next: Navigate forwards in selection history
         "qt_keys": [Qt.Key_N],
-        "targets": ["tracks_viewer"],
-    },
-    "request_new_track": {
-        "napari_keys": ["'"],  # Start a new track / tracklet id
-        "qt_keys": [],
         "targets": ["tracks_viewer"],
     },
     # Actions available in both napari and tree_widget (but connected to different functions)

@@ -353,8 +353,10 @@ class CopyFromSourceWidget(QWidget):
 
         A source layer may hold several 'channels': alternative segmentations of the
         same objects, stacked on extra axes in front of the ones the tracks use. Napari
-        aligns layers on their trailing dimensions, so those axes come first in the
-        viewer, and their sliders pick which of the alternatives a copy reads from.
+        aligns layers on their trailing dimensions, so those axes come directly in front
+        of the tracks' axes in the viewer (see TracksDims), and their sliders pick which
+        of the alternatives a copy reads from. This count is in the layer's own data
+        axes, as returned by world_to_data.
         """
 
         tracks = self.tracks_viewer.tracks
@@ -804,7 +806,10 @@ class CopyFromSourceWidget(QWidget):
 
         lead = self._leading_axes(self._source_layer)
         if lead:
-            labels = list(self.viewer.dims.axis_labels)[:lead]
+            # the source's extra axes sit directly in front of the tracks' axes in the
+            # viewer, which may itself hold more leading axes from other layers
+            time_axis = self.tracks_viewer.tracks_dims.time_axis
+            labels = list(self.viewer.dims.axis_labels)[time_axis - lead : time_axis]
             named = ", ".join(f"'{label}'" for label in labels)
             self.channel_hint.setText(
                 f"This source has {lead} extra axis/axes ({named}) in front of the ones "
