@@ -12,8 +12,10 @@ from funtracks.user_actions import (
     UserAddEdge,
     UserDeleteEdge,
     UserDeleteNodes,
+    UserMergeNodes,
     UserSetDivision,
     UserSwapPredecessors,
+    get_track_id_options,
 )
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
@@ -38,6 +40,7 @@ from motile_tracker.data_views.views_coordinator.node_selection_history import (
 from motile_tracker.data_views.views_coordinator.tracks_list import TracksList
 from motile_tracker.data_views.views_coordinator.user_dialogs import (
     confirm_force_operation,
+    select_merge_track_id,
 )
 
 BASE_TEXT = (
@@ -617,6 +620,55 @@ class TracksViewer:
             UserSetDivision(self.tracks, tuple(nodes))
         except InvalidActionError as e:
             QMessageBox.warning(None, "Cannot set division", str(e))
+
+    def merge_horizontally(self, event=None):
+        """Merge every set of selected nodes that shares a time point into one node.
+
+        The user picks which of the tracklet ids in a set the merged node should keep.
+        Sets that offer the same tracklet ids are asked about only once. Cancelling any
+        of the dialogs cancels the whole merge.
+        """
+
+        if self.tracks is None:
+            return
+        nodes = [int(node) for node in self.selected_nodes.as_list]
+        try:
+            options = get_track_id_options(self.tracks, nodes)
+            track_id_per_time = self._ask_merge_track_ids(options, self.colormap)
+            if track_id_per_time is None:
+                return  # the user cancelled, so merge nothing at all
+            UserMergeNodes(self.tracks, nodes, track_ids=track_id_per_time)
+        except InvalidActionError as e:
+            QMessageBox.warning(None, "Cannot merge nodes", str(e))
+
+    @staticmethod
+    def _ask_merge_track_ids(
+        options: dict[int, list[int]], colormap
+    ) -> dict[int, int] | None:
+        """Ask the user which tracklet id to keep in each set of nodes to merge.
+
+        Args:
+            options: A mapping from time point to the tracklet ids to choose from.
+            colormap: The colormap used to color the tracklet id options.
+
+        Returns:
+            A mapping from time point to the chosen tracklet id, or None if the user
+            cancelled any of the dialogs.
+        """
+
+        # Time points offering the same tracklet ids can be answered in one dialog
+        times_per_option: dict[tuple[int, ...], list[int]] = {}
+        for time, track_ids in options.items():
+            times_per_option.setdefault(tuple(track_ids), []).append(time)
+
+        track_id_per_time: dict[int, int] = {}
+        for track_ids, times in times_per_option.items():
+            track_id = select_merge_track_id(list(track_ids), times, colormap)
+            if track_id is None:
+                return None
+            for time in times:
+                track_id_per_time[time] = track_id
+        return track_id_per_time
 
     def create_edge(self, event=None):
         """Add an edge between the two currently selected nodes"""
