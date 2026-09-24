@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790183651997,
+  "lastUpdate": 1790228622514,
   "repoUrl": "https://github.com/live-image-tracking-tools/napari-track-edit",
   "entries": {
     "motile_tracker benchmarks (pytest-benchmark)": [
@@ -4658,6 +4658,135 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.019976863689290657",
             "extra": "mean: 957.9351796666818 msec\nrounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "32863964+AnniekStok@users.noreply.github.com",
+            "name": "Anniek Stokkermans",
+            "username": "AnniekStok"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "14ebe3e43f0d3a6983db01d33b449f53c5a292af",
+          "message": "Merge pull request #482 from live-image-tracking-tools/intensity_feature\n\nAdd intensity to the feature widget",
+          "timestamp": "2026-09-24T07:39:05+02:00",
+          "tree_id": "69ac658c83af11d19a5af44b5d7e06e73eaaa5ce",
+          "url": "https://github.com/live-image-tracking-tools/napari-track-edit/commit/14ebe3e43f0d3a6983db01d33b449f53c5a292af"
+        },
+        "date": 1790228621823,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/benchmarks/bench_data_model.py::test_extract_sorted_tracks[large]",
+            "value": 2.5303996883635342,
+            "unit": "iter/sec",
+            "range": "stddev: 0.16327855171832167",
+            "extra": "mean: 395.1944843333119 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/benchmarks/bench_ui_actions.py::test_add_tracks[large]",
+            "value": 0.4740809240634974,
+            "unit": "iter/sec",
+            "range": "stddev: 1.3661408950717406",
+            "extra": "mean: 2.1093445216666473 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/benchmarks/bench_ui_actions.py::test_click_node_treeview[large]",
+            "value": 6.791170862144821,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0006192639610144536",
+            "extra": "mean: 147.25001333336726 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/benchmarks/bench_ui_actions.py::test_click_node_canvas[large]",
+            "value": 6.508376499669025,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00719082227352758",
+            "extra": "mean: 153.64814866669954 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/benchmarks/bench_ui_actions.py::test_set_display_mode_lineage[large]",
+            "value": 10.997952162981779,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0022395027616746747",
+            "extra": "mean: 90.92601833329657 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/benchmarks/bench_ui_actions.py::test_tree_flip_axes[large]",
+            "value": 43.256685706496576,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00045379629727119867",
+            "extra": "mean: 23.11781366665855 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/benchmarks/bench_ui_actions.py::test_tree_feature_recolor[large]",
+            "value": 43.697172303556606,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0020148842809212565",
+            "extra": "mean: 22.884775999993206 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/benchmarks/bench_ui_actions.py::test_label_colormap_rebuild[large]",
+            "value": 7.4364138280993615,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00504456902221589",
+            "extra": "mean: 134.47342000002513 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/benchmarks/bench_ui_actions.py::test_delete_node[large]",
+            "value": 0.8401588501108233,
+            "unit": "iter/sec",
+            "range": "stddev: 0.3235973955183323",
+            "extra": "mean: 1.1902511053333455 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/benchmarks/bench_ui_actions.py::test_delete_nodes_bulk[large]",
+            "value": 0.725834710758121,
+            "unit": "iter/sec",
+            "range": "stddev: 0.04156075251644762",
+            "extra": "mean: 1.3777241363333512 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/benchmarks/bench_ui_actions.py::test_undo_bulk_delete[large]",
+            "value": 0.8163342536896194,
+            "unit": "iter/sec",
+            "range": "stddev: 0.02319821626720809",
+            "extra": "mean: 1.2249884106666589 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/benchmarks/bench_ui_actions.py::test_delete_edge[large]",
+            "value": 0.8058438216642196,
+            "unit": "iter/sec",
+            "range": "stddev: 0.47943136320699414",
+            "extra": "mean: 1.2409352446666542 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/benchmarks/bench_ui_actions.py::test_create_edge[large]",
+            "value": 0.8992137868129186,
+            "unit": "iter/sec",
+            "range": "stddev: 0.5232021065068454",
+            "extra": "mean: 1.112082593333336 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/benchmarks/bench_ui_actions.py::test_undo[large]",
+            "value": 1.137217232479845,
+            "unit": "iter/sec",
+            "range": "stddev: 0.02080877733792695",
+            "extra": "mean: 879.3394713333479 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/benchmarks/bench_ui_actions.py::test_redo[large]",
+            "value": 0.9800696457287469,
+            "unit": "iter/sec",
+            "range": "stddev: 0.024064849147001344",
+            "extra": "mean: 1.02033565100002 sec\nrounds: 3"
           }
         ]
       }
