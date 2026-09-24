@@ -4,7 +4,7 @@ These exercise motile_tracker's own pure hot paths, so they run without a displa
 ``extract_sorted_tracks`` is the O(N)+topological-sort routine behind every
 tree-view refresh.
 
-(SolutionTracks construction is intentionally *not* benchmarked here -- it is
+(Tracks construction is intentionally *not* benchmarked here -- it is
 funtracks' code and is covered by funtracks' own benchmark suite.)
 """
 

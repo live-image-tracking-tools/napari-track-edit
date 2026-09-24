@@ -45,7 +45,7 @@ def test_initialization(viewer, solution_tracks_2d):
     assert points_layer.name == "test_points"
 
     # Verify nodes were extracted
-    assert len(points_layer.nodes) == solution_tracks_2d.graph.num_nodes()
+    assert len(points_layer.nodes) == solution_tracks_2d.graph_solution.num_nodes()
 
     # Verify node_index_dict was created
     assert len(points_layer.node_index_dict) == len(points_layer.nodes)
@@ -225,31 +225,37 @@ def test_update_data_without_seg_layer(
     assert tracks_viewer.tracking_layers.seg_layer is None
 
     # Test 1: Added action adds node
-    initial_node_count = solution_tracks_2d_without_segmentation.graph.num_nodes()
+    initial_node_count = (
+        solution_tracks_2d_without_segmentation.graph_solution.num_nodes()
+    )
     new_point = np.array([[1, 50, 50]])
     event = MockEvent(action="added", value=new_point)
     points_layer._update_data(event)
-    assert tracks_viewer.tracks.graph.num_nodes() == initial_node_count + 1
+    assert tracks_viewer.tracks.graph_solution.num_nodes() == initial_node_count + 1
 
     # Test 2: Removed action removes node
-    first_node = list(solution_tracks_2d_without_segmentation.graph.node_ids())[0]
+    first_node = list(
+        solution_tracks_2d_without_segmentation.graph_solution.node_ids()
+    )[0]
     click_node(tracks_viewer, first_node)
-    current_node_count = solution_tracks_2d_without_segmentation.graph.num_nodes()
+    current_node_count = (
+        solution_tracks_2d_without_segmentation.graph_solution.num_nodes()
+    )
     event = MockEvent(action="removed")
     points_layer._update_data(event)
-    assert tracks_viewer.tracks.graph.num_nodes() == current_node_count - 1
+    assert tracks_viewer.tracks.graph_solution.num_nodes() == current_node_count - 1
 
     # Test 3: Changed action updates node position (single node)
     points_layer.selected_data.add(0)
     first_node = points_layer.nodes[0]
-    original_pos = solution_tracks_2d_without_segmentation.graph.nodes[first_node][
-        "pos"
-    ]
+    original_pos = solution_tracks_2d_without_segmentation.graph_solution.nodes[
+        first_node
+    ]["pos"]
     new_pos = np.array([1, 100, 100])
     points_layer.data[0] = new_pos
     event = MockEvent(action="changed")
     points_layer._update_data(event)
-    updated_pos = tracks_viewer.tracks.graph.nodes[first_node]["pos"]
+    updated_pos = tracks_viewer.tracks.graph_solution.nodes[first_node]["pos"]
     assert not np.array_equal(updated_pos, original_pos)
 
     # Test 4: Changed action updates position for ALL selected nodes (multi-node)
@@ -259,17 +265,17 @@ def test_update_data_without_seg_layer(
     node_0 = points_layer.nodes[0]
     node_1 = points_layer.nodes[1]
     original_pos_0 = np.asarray(
-        solution_tracks_2d_without_segmentation.graph.nodes[node_0]["pos"]
+        solution_tracks_2d_without_segmentation.graph_solution.nodes[node_0]["pos"]
     ).copy()
     original_pos_1 = np.asarray(
-        solution_tracks_2d_without_segmentation.graph.nodes[node_1]["pos"]
+        solution_tracks_2d_without_segmentation.graph_solution.nodes[node_1]["pos"]
     ).copy()
     points_layer.data[0] = np.array([points_layer.data[0][0], 11.0, 22.0])
     points_layer.data[1] = np.array([points_layer.data[1][0], 33.0, 44.0])
     event = MockEvent(action="changed")
     points_layer._update_data(event)
-    updated_pos_0 = np.asarray(tracks_viewer.tracks.graph.nodes[node_0]["pos"])
-    updated_pos_1 = np.asarray(tracks_viewer.tracks.graph.nodes[node_1]["pos"])
+    updated_pos_0 = np.asarray(tracks_viewer.tracks.graph_solution.nodes[node_0]["pos"])
+    updated_pos_1 = np.asarray(tracks_viewer.tracks.graph_solution.nodes[node_1]["pos"])
     assert not np.array_equal(updated_pos_0, original_pos_0)
     assert not np.array_equal(updated_pos_1, original_pos_1)
 
@@ -285,22 +291,26 @@ def test_update_data_with_seg_layer(viewer, solution_tracks_2d):
     assert tracks_viewer.tracking_layers.seg_layer is not None
 
     # Test 1: Added action shows info and doesn't add node
-    initial_node_count = solution_tracks_2d.graph.num_nodes()
+    initial_node_count = solution_tracks_2d.graph_solution.num_nodes()
     new_point = np.array([[1, 50, 50]])
     event = MockEvent(action="added", value=new_point)
     with patch("motile_tracker.data_views.views.layers.track_points.show_info"):
         points_layer._update_data(event)
-    assert tracks_viewer.tracks.graph.num_nodes() == initial_node_count
+    assert tracks_viewer.tracks.graph_solution.num_nodes() == initial_node_count
 
     # Test 2: Changed action refreshes instead of updating
     points_layer.selected_data.add(0)
     first_node = points_layer.nodes[0]
-    original_pos = np.asarray(solution_tracks_2d.graph.nodes[first_node]["pos"]).copy()
+    original_pos = np.asarray(
+        solution_tracks_2d.graph_solution.nodes[first_node]["pos"]
+    ).copy()
     new_pos = np.array([1, 100, 100])
     points_layer.data[0] = new_pos
     event = MockEvent(action="changed")
     points_layer._update_data(event)
-    updated_pos = np.asarray(tracks_viewer.tracks.graph.nodes[first_node]["pos"])
+    updated_pos = np.asarray(
+        tracks_viewer.tracks.graph_solution.nodes[first_node]["pos"]
+    )
     assert np.array_equal(updated_pos, original_pos)
 
 
@@ -326,14 +336,16 @@ def test_update_data_invalid_action_forceable(
         lambda message: (True, False),
     )
 
-    initial_node_count = solution_tracks_2d_without_segmentation.graph.num_nodes()
+    initial_node_count = (
+        solution_tracks_2d_without_segmentation.graph_solution.num_nodes()
+    )
     new_point = np.array([[2, 50, 50]])
     event = MockEvent(action="added", value=new_point)
     points_layer._update_data(event)
 
     # Node should have been added despite the initial forceable error
     assert (
-        solution_tracks_2d_without_segmentation.graph.num_nodes()
+        solution_tracks_2d_without_segmentation.graph_solution.num_nodes()
         == initial_node_count + 1
     )
 
@@ -395,7 +407,7 @@ def test_get_symbols_returns_correct_symbols(viewer, solution_tracks_2d):
     symbols = points_layer.get_symbols(solution_tracks_2d, tracks_viewer.symbolmap)
 
     # Verify symbols list has correct length
-    assert len(symbols) == solution_tracks_2d.graph.num_nodes()
+    assert len(symbols) == solution_tracks_2d.graph_solution.num_nodes()
 
     # Verify symbols are from symbolmap
     for symbol in symbols:

@@ -6,7 +6,7 @@ from typing import Optional
 import napari
 import pandas as pd
 from funtracks.actions import AddNode, BasicAction, DeleteNode
-from funtracks.data_model import SolutionTracks
+from funtracks.data_model import Tracks
 from funtracks.exceptions import InvalidActionError
 from funtracks.user_actions import (
     UserAddEdge,
@@ -109,7 +109,7 @@ class TracksViewer:
             NodeType.SPLIT: "triangle_up",
         }
         self.mode = "all"
-        self.tracks: SolutionTracks | None = None
+        self.tracks: Tracks | None = None
         self.visible: list | str = []
         self.tracking_layers = TracksLayerGroup(self.viewer, self.tracks, "", self)
         self.center_node.connect(self.tracking_layers.center_view)
@@ -309,7 +309,8 @@ class TracksViewer:
             self.collection_widget._refresh()
 
         if len(self.selected_nodes) > 0 and any(
-            not self.tracks.graph.has_node(node) for node in self.selected_nodes
+            not self.tracks.graph_solution.has_node(node)
+            for node in self.selected_nodes
         ):
             self.selected_nodes.reset()
 
@@ -345,7 +346,7 @@ class TracksViewer:
             tracks.refresh.disconnect(self._refresh)
             tracks.action_applied.disconnect(self._on_action_applied)
 
-    def update_tracks(self, tracks: SolutionTracks, name: str) -> None:
+    def update_tracks(self, tracks: Tracks, name: str) -> None:
         """Stop viewing a previous set of tracks and replace it with a new one.
         Will create new segmentation and tracks layers and add them to the viewer.
 
@@ -477,7 +478,7 @@ class TracksViewer:
         keep the previous list of nodes visible to not have an entirely empty viewer.
         """
 
-        if self.tracks is None or self.tracks.graph is None:
+        if self.tracks is None or self.tracks.graph_solution is None:
             self.visible = []
             return
         if self.mode == "lineage":
@@ -485,17 +486,23 @@ class TracksViewer:
             # filter those
             if len(self.selected_nodes) == 0 and self.visible is not None:
                 prev_visible = [
-                    node for node in self.visible if self.tracks.graph.has_node(node)
+                    node
+                    for node in self.visible
+                    if self.tracks.graph_solution.has_node(node)
                 ]
                 self.visible = []
                 for node_id in prev_visible:
-                    self.visible += extract_lineage_tree(self.tracks.graph, node_id)
+                    self.visible += extract_lineage_tree(
+                        self.tracks.graph_solution, node_id
+                    )
                     if set(prev_visible).issubset(self.visible):
                         break
             else:
                 self.visible = []
                 for node in self.selected_nodes:
-                    self.visible += extract_lineage_tree(self.tracks.graph, node)
+                    self.visible += extract_lineage_tree(
+                        self.tracks.graph_solution, node
+                    )
         elif self.mode == "group":
             if (
                 self.collection_widget is not None
@@ -549,7 +556,7 @@ class TracksViewer:
         """
 
         node = int(node)
-        if self.tracks is None or not self.tracks.graph.has_node(node):
+        if self.tracks is None or not self.tracks.graph_solution.has_node(node):
             return
 
         seg_layer = self.tracking_layers.seg_layer
@@ -667,7 +674,7 @@ class TracksViewer:
 
             node1, node2 = int(node1), int(node2)
 
-            if self.tracks.graph.out_degree(node1) >= 2:
+            if self.tracks.graph_solution.out_degree(node1) >= 2:
                 QMessageBox.warning(
                     None,
                     "Cannot add edge",

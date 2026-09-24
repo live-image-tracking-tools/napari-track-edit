@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
+from funtracks.utils.tracksdata_utils import create_empty_graph
 
 from motile_tracker.motile.backend import MotileRun, SolverParams
 from motile_tracker.motile.menus.motile_widget import MotileWidget
@@ -47,7 +47,7 @@ def test_view_and_edit_run(make_napari_viewer, solution_tracks_2d, qtbot):
 
     # view_run with MotileRun shows viewer and hides editor
     run = MotileRun(
-        graph=create_empty_graphview_graph(),
+        graph=create_empty_graph(),
         run_name="test_run",
         solver_params=SolverParams(),
         ndim=3,
@@ -56,7 +56,7 @@ def test_view_and_edit_run(make_napari_viewer, solution_tracks_2d, qtbot):
     assert widget.view_run_widget.isVisible()
     assert not widget.edit_run_widget.isVisible()
 
-    # view_run with SolutionTracks (non-MotileRun) hides the viewer and falls back
+    # view_run with Tracks (non-MotileRun) hides the viewer and falls back
     # to the editor, so the solver settings stay available without a motile run
     widget.view_run(solution_tracks_2d)
     assert not widget.view_run_widget.isVisible()
@@ -71,7 +71,7 @@ def test_view_and_edit_run(make_napari_viewer, solution_tracks_2d, qtbot):
     # edit_run with run loads parameters into editor
     custom_params = SolverParams(max_edge_distance=999.0)
     run2 = MotileRun(
-        graph=create_empty_graphview_graph(),
+        graph=create_empty_graph(),
         run_name="test_run",
         solver_params=custom_params,
         ndim=3,
@@ -88,7 +88,7 @@ def test_generate_tracks(make_napari_viewer):
     widget = MotileWidget(viewer)
 
     run = MotileRun(
-        graph=create_empty_graphview_graph(),
+        graph=create_empty_graph(),
         run_name="test_run",
         solver_params=SolverParams(),
         ndim=3,
@@ -122,25 +122,25 @@ def test_solve_with_motile(make_napari_viewer, segmentation_2d):
 
     # Returns a run where all nodes have track_id assigned
     run = MotileRun(
-        graph=create_empty_graphview_graph(),
+        graph=create_empty_graph(),
         run_name="test_run",
         solver_params=SolverParams(),
         input_segmentation=segmentation_2d,
     )
     widget.view_run_widget.run = run
     result = worker_fn(widget, run)
-    assert result.graph.num_nodes() > 0
-    for node in result.graph.node_ids():
+    assert result.graph_solution.num_nodes() > 0
+    for node in result.graph_solution.node_ids():
         assert result.get_track_id(node) is not None
 
     # Area feature is enabled and computed for all nodes
     assert "area" in result.features
-    for node in result.graph.node_ids():
-        assert result.graph.nodes[node]["area"] > 0
+    for node in result.graph_solution.node_ids():
+        assert result.graph_solution.nodes[node]["area"] > 0
 
     # Raises ValueError without input data
     run2 = MotileRun(
-        graph=create_empty_graphview_graph(),
+        graph=create_empty_graph(),
         input_segmentation=None,
         run_name="test_run",
         solver_params=SolverParams(),
@@ -153,7 +153,7 @@ def test_solve_with_motile(make_napari_viewer, segmentation_2d):
     # Uses points when provided
     points_data = np.array([[0, 10, 20], [1, 30, 40]])
     run3 = MotileRun(
-        graph=create_empty_graphview_graph(),
+        graph=create_empty_graph(),
         input_segmentation=None,
         input_points=points_data,
         run_name="test_run",
@@ -166,8 +166,8 @@ def test_solve_with_motile(make_napari_viewer, segmentation_2d):
         ) as mock_build,
         patch("motile_tracker.motile.menus.motile_widget.solve") as mock_solve,
     ):
-        mock_build.return_value = create_empty_graphview_graph()
-        mock_solve.return_value = create_empty_graphview_graph()
+        mock_build.return_value = create_empty_graph()
+        mock_solve.return_value = create_empty_graph()
         worker_fn = widget.solve_with_motile.__wrapped__
         worker_fn(widget, run3)
         mock_build.assert_called_once()
@@ -176,7 +176,7 @@ def test_solve_with_motile(make_napari_viewer, segmentation_2d):
 
     # Shows warning for empty result
     run4 = MotileRun(
-        graph=create_empty_graphview_graph(),
+        graph=create_empty_graph(),
         input_segmentation=segmentation_2d,
         run_name="test_run",
         solver_params=SolverParams(),
@@ -188,8 +188,8 @@ def test_solve_with_motile(make_napari_viewer, segmentation_2d):
         patch("motile_tracker.motile.menus.motile_widget.solve") as mock_solve,
         patch("motile_tracker.motile.menus.motile_widget.show_warning") as mock_warning,
     ):
-        mock_build.return_value = create_empty_graphview_graph()
-        mock_solve.return_value = create_empty_graphview_graph()
+        mock_build.return_value = create_empty_graph()
+        mock_solve.return_value = create_empty_graph()
         worker_fn = widget.solve_with_motile.__wrapped__
         worker_fn(widget, run4)
         mock_warning.assert_called_once()
@@ -199,7 +199,7 @@ def test_solve_with_motile(make_napari_viewer, segmentation_2d):
     segmentation_2d[1][10:10, 10:10] = 1  # duplicate value
 
     run5 = MotileRun(
-        graph=create_empty_graphview_graph(),
+        graph=create_empty_graph(),
         input_segmentation=segmentation_2d,
         run_name="test_run",
         solver_params=SolverParams(),
@@ -216,9 +216,9 @@ def test_solve_with_motile(make_napari_viewer, segmentation_2d):
     ):
         mock_build.side_effect = [
             ValueError("Duplicate values found among nodes"),
-            create_empty_graphview_graph(),
+            create_empty_graph(),
         ]
-        mock_solve.return_value = create_empty_graphview_graph()
+        mock_solve.return_value = create_empty_graph()
 
         relabeled = segmentation_2d.copy()
         relabeled[1][10:10, 10:10] = 100
@@ -248,7 +248,7 @@ def test_solver_events_and_completion(make_napari_viewer, qtbot):
     widget = MotileWidget(viewer)
 
     run = MotileRun(
-        graph=create_empty_graphview_graph(),
+        graph=create_empty_graph(),
         run_name="test_run",
         solver_params=SolverParams(),
         ndim=3,

@@ -104,14 +104,14 @@ def test_ortho_views(viewer, qtbot, solution_tracks_3d_with_division):
     )
 
     # test paint event on one of the ortho views and see if a new node is added
-    assert tracks_viewer.tracks.graph.num_nodes() == 5
+    assert tracks_viewer.tracks.graph_solution.num_nodes() == 5
     step = list(viewer.dims.current_step)
     step[0] = 2
     viewer.dims.current_step = step
     m.right_widget.vm_container.viewer_model.layers[-1].paint(
         coord=(2, 63, 20, 30), new_label=6, refresh=True
     )
-    assert tracks_viewer.tracks.graph.num_nodes() == 6
+    assert tracks_viewer.tracks.graph_solution.num_nodes() == 6
 
     # test syncing of properties
     viewer.layers[-1].selected_label = 7  # forward sync only
@@ -163,7 +163,7 @@ def test_colormap_shared_with_ortho_views(
         widget.vm_container.viewer_model.layers[seg_layer.name]
         for widget in (m.right_widget, m.bottom_widget)
     ]
-    nodes = tracks_viewer.tracks.graph.node_ids()
+    nodes = tracks_viewer.tracks.graph_solution.node_ids()
 
     def check_shared(tag):
         for copied_layer in copies:
@@ -238,7 +238,7 @@ def test_point_outline_updates_ortho_views_once(
         lambda event: emitted.update(["border_color"])
     )
 
-    node = tracks_viewer.tracks.graph.node_ids()[1]
+    node = tracks_viewer.tracks.graph_solution.node_ids()[1]
     tracks_viewer.selected_nodes.add(node, False)
     assert emitted["border_color"] == 1, emitted
 
@@ -341,7 +341,7 @@ def test_point_size_stable_when_editing_in_ortho_views(
     for index in range(3):
         bottom.selected_data = {index}
     assert points_layer.default_size == default_size
-    for node in tracks_viewer.tracks.graph.node_ids()[:3]:
+    for node in tracks_viewer.tracks.graph_solution.node_ids()[:3]:
         tracks_viewer.selected_nodes.add(node, False)
     assert points_layer.default_size == default_size
 

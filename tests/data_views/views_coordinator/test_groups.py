@@ -335,7 +335,7 @@ def test_selection_operations(viewer, solution_tracks_2d, qtbot, click_node):
     assert 3 in tracks_viewer.selected_nodes
 
     # Test 4: Invert selection
-    all_nodes = set(tracks_viewer.tracks.graph.node_ids())
+    all_nodes = set(tracks_viewer.tracks.graph_solution.node_ids())
     selected = [1, 2, 3]
 
     qtbot.mouseClick(selection_widget.invert_btn, Qt.MouseButton.LeftButton)
@@ -392,8 +392,8 @@ class TestRetrieveExistingGroups:
         )
 
         # Set some nodes to True for this feature
-        tracks_viewer.tracks.graph.nodes[1]["existing_group"] = True
-        tracks_viewer.tracks.graph.nodes[2]["existing_group"] = True
+        tracks_viewer.tracks.graph_solution.nodes[1]["existing_group"] = True
+        tracks_viewer.tracks.graph_solution.nodes[2]["existing_group"] = True
 
         widget = CollectionWidget(tracks_viewer)
         widget.retrieve_existing_groups()
@@ -428,7 +428,7 @@ class TestRetrieveExistingGroups:
         assert len(widget.selected_collection.collection) == 2
 
         # Remove a node from the graph
-        tracks_viewer.tracks.graph.remove_node(1)
+        tracks_viewer.tracks.graph_solution.remove_node(1)
 
         # Mark the node as deleted in the selection system
         tracks_viewer.selected_nodes.deleted_items.add(1)
