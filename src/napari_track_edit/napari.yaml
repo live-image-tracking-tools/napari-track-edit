@@ -1,5 +1,5 @@
 name: napari-track-edit
-display_name: Motile Tracker
+display_name: Napari Track Edit
 # use 'hidden' to remove plugin from napari hub search results
 visibility: public
 # see https://napari.org/stable/plugins/manifest.html for valid categories
