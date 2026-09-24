@@ -398,6 +398,16 @@ class TrackLabels(ContourLabels):
     def _on_paint(self, event):
         """Listen to the paint event and check which track_ids have changed"""
 
+        _, updated_pixels = self._parse_paint_event(event.value)
+
+        # Every entry covers exactly one time point, so more than one distinct time
+        # means the brush spanned frames, which is not allowed.
+        if len({u[1] if len(u) == 3 else int(u[0][0][0]) for u in updated_pixels}) > 1:
+            show_info("Painting in the time dimension is not supported")
+            self._revert_paint(event)
+            self._refresh()  # also re-syncs the orthoviews, if present
+            return
+
         # painting happens on the canvas, so specify with tracks_viewer.viewer_interaction
         with self.tracks_viewer.viewer_interaction():
             # make sure that 0 (in the case or erasing) or a valid label (in the case of
@@ -547,7 +557,12 @@ class TrackLabels(ContourLabels):
 
         update_colormap = False
         if self.tracks_viewer.tracks is not None:
-            current_timepoint = self.viewer.dims.current_step[0]
+            # The viewer may carry extra leading axes the tracks do not have, so time is
+            # not necessarily axis 0.
+            current_timepoint = self.viewer.dims.current_step[
+                self.tracks_viewer.tracks_dims.time_axis
+            ]
+
             # A label that names a node outside the solution but still present in
             # graph_full is soft-deleted: the node was removed, or added and then
             # undone. Select a new label if this is the case.
@@ -555,6 +570,7 @@ class TrackLabels(ContourLabels):
                 self.selected_label
             ) and self.tracks_viewer.tracks.graph_full.has_node(self.selected_label):
                 _new_label(self, new_track_id=False)
+
             # if a node with the given label is already in the graph
             if self.tracks_viewer.tracks.graph.has_node(self.selected_label):
                 # Update the track id
