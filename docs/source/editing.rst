@@ -79,6 +79,13 @@ The incoming edges of two nodes at the same time point can be swapped with the '
 
    Swapping the incoming edges between two nodes at the same time point.
 
+Merging nodes horizontally
+--------------------------
+Nodes that share a time point can be merged into a single node with the 'Merge' button (``H`` key).
+Any number of nodes can be merged at once, and if the selection contains nodes in more than one time point, every set of nodes sharing a time point is merged.
+One pop up is shown per distinct set of tracklet IDs.
+Selected nodes that are alone in their time point are left untouched.
+
 Undoing and redoing actions
 ***************************
 All types of actions described above are appended to the Action History, and can be undone or redone. To undo, click 'Undo' in the Edit Tracks menu or by pressing ``Z``. Similarly, to redo an action, press 'Redo' in the Edit Tracks menu or ``R``.
