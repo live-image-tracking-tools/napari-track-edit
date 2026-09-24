@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 import pytest
-from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
+from funtracks.utils.tracksdata_utils import create_empty_graph
 from qtpy.QtWidgets import QPushButton
 
 from motile_tracker.motile.backend import MotileRun, SolverParams
@@ -21,7 +21,7 @@ def sample_run(segmentation_2d):
     """Fixture for creating a sample MotileRun."""
 
     return MotileRun(
-        graph=create_empty_graphview_graph(),
+        graph=create_empty_graph(),
         input_segmentation=segmentation_2d,
         run_name="test_run",
         solver_params=SolverParams(),
@@ -56,7 +56,7 @@ def test_update_run(run_viewer, sample_run, qtbot):
 
     # Test 3: update_run emits params_widget.new_params signal
     sample_run2 = MotileRun(
-        graph=create_empty_graphview_graph(),
+        graph=create_empty_graph(),
         input_segmentation=sample_run.input_segmentation,
         run_name="test_run2",
         solver_params=SolverParams(),
@@ -66,7 +66,7 @@ def test_update_run(run_viewer, sample_run, qtbot):
 
     # Test 4: update_run calls solver_event_update
     sample_run3 = MotileRun(
-        graph=create_empty_graphview_graph(),
+        graph=create_empty_graph(),
         input_segmentation=sample_run.input_segmentation,
         run_name="test_run3",
         solver_params=SolverParams(),
