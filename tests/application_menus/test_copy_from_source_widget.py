@@ -323,6 +323,39 @@ def test_right_click_selects_without_recentering(labels_app):
     assert tracks_viewer.selected_nodes[0] == copied
 
 
+def test_copy_does_not_request_centering(labels_app):
+    """Neither the copy itself nor the target layer's own click handler may ask the
+    views to center, not even when the right-click lands on an existing track label."""
+
+    viewer, widget, _source = labels_app
+    widget.source_layer_dropdown.setCurrentText("src")
+    widget.chain_btn.setChecked(True)
+    target = widget._get_target_layer()
+    tracks_viewer = widget.tracks_viewer
+    tracks_viewer.selected_nodes.reset()
+
+    centered = []
+    tracks_viewer.center_node.connect(centered.append)
+
+    viewer.dims.set_current_step(0, 0)
+    # node 1 covers rows/columns 30-70 at t=0, and the source holds nothing there
+    event = _RightClickEvent(position=(0, 50, 50))
+    event.modifiers = []
+    _drive_callbacks(target, event)
+
+    assert centered == []
+    assert len(tracks_viewer.selected_nodes) == 0  # node 1 was not selected
+
+    # an actual copy selects the copied node, still without centering
+    event = _RightClickEvent(position=(0, 51.5, 11.5))
+    event.modifiers = []
+    _drive_callbacks(target, event)
+
+    assert centered == []
+    assert len(tracks_viewer.selected_nodes) == 1
+    assert tracks_viewer.selected_nodes[0] != 1
+
+
 def _frame(tracks, t=0):
     return np.asarray(tracks.segmentation[t])
 
