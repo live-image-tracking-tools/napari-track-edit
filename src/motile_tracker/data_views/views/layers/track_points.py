@@ -61,7 +61,7 @@ class TrackPoints(ZOnlyPoints):
         tracks_viewer: TracksViewer,
     ):
         self.tracks_viewer = tracks_viewer
-        self.nodes = tracks_viewer.tracks.graph.node_ids()
+        self.nodes = tracks_viewer.tracks.graph_solution.node_ids()
         self.node_index_dict = {node: idx for idx, node in enumerate(self.nodes)}
 
         if len(self.nodes) > 0:
@@ -208,7 +208,7 @@ class TrackPoints(ZOnlyPoints):
         self.events.data.disconnect(
             self._update_data
         )  # do not listen to new events until updates are complete
-        self.nodes = self.tracks_viewer.tracks.graph.node_ids()
+        self.nodes = self.tracks_viewer.tracks.graph_solution.node_ids()
 
         self.node_index_dict = {node: idx for idx, node in enumerate(self.nodes)}
 
@@ -366,7 +366,7 @@ class TrackPoints(ZOnlyPoints):
         }
         symbols = [
             symbolmap[statemap[degree]]
-            for degree in tracks.graph.out_degree(self.nodes)
+            for degree in tracks.graph_solution.out_degree(self.nodes)
         ]
         return symbols
 
