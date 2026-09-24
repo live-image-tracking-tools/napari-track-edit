@@ -376,14 +376,20 @@ def test_csv_import_2d_with_segmentation(
     # Verify tracks were imported successfully
     assert hasattr(dialog, "tracks"), "Dialog should have tracks attribute after import"
     assert dialog.tracks is not None, "Tracks should not be None"
-    assert dialog.tracks.graph.num_nodes() == solution_tracks_2d.graph.num_nodes()
-    assert dialog.tracks.graph.num_edges() == solution_tracks_2d.graph.num_edges()
+    assert (
+        dialog.tracks.graph_solution.num_nodes()
+        == solution_tracks_2d.graph_solution.num_nodes()
+    )
+    assert (
+        dialog.tracks.graph_solution.num_edges()
+        == solution_tracks_2d.graph_solution.num_edges()
+    )
     assert dialog.tracks.ndim == 3
 
     # Area should be enabled and computed even though it was not in the CSV
     assert "area" in dialog.tracks.features
-    for node_id in dialog.tracks.graph.node_ids():
-        assert dialog.tracks.graph.nodes[node_id]["area"] > 0
+    for node_id in dialog.tracks.graph_solution.node_ids():
+        assert dialog.tracks.graph_solution.nodes[node_id]["area"] > 0
 
 
 def test_csv_import_3d_with_segmentation(
@@ -446,8 +452,14 @@ def test_csv_import_3d_with_segmentation(
     # Verify tracks were imported successfully
     assert hasattr(dialog, "tracks"), "Dialog should have tracks attribute after import"
     assert dialog.tracks is not None, "Tracks should not be None"
-    assert dialog.tracks.graph.num_nodes() == solution_tracks_3d.graph.num_nodes()
-    assert dialog.tracks.graph.num_edges() == solution_tracks_3d.graph.num_edges()
+    assert (
+        dialog.tracks.graph_solution.num_nodes()
+        == solution_tracks_3d.graph_solution.num_nodes()
+    )
+    assert (
+        dialog.tracks.graph_solution.num_edges()
+        == solution_tracks_3d.graph_solution.num_edges()
+    )
     assert dialog.tracks.ndim == 4
 
 
@@ -491,12 +503,12 @@ def test_csv_import_without_segmentation(
     assert hasattr(dialog, "tracks"), "Dialog should have tracks attribute after import"
     assert dialog.tracks is not None, "Tracks should not be None"
     assert (
-        dialog.tracks.graph.num_nodes()
-        == solution_tracks_2d_without_segmentation.graph.num_nodes()
+        dialog.tracks.graph_solution.num_nodes()
+        == solution_tracks_2d_without_segmentation.graph_solution.num_nodes()
     )
     assert (
-        dialog.tracks.graph.num_edges()
-        == solution_tracks_2d_without_segmentation.graph.num_edges()
+        dialog.tracks.graph_solution.num_edges()
+        == solution_tracks_2d_without_segmentation.graph_solution.num_edges()
     )
     assert dialog.tracks.ndim == 3
 
@@ -559,16 +571,16 @@ def test_geff_import_with_segmentation(
     # Verify tracks were imported successfully
     assert hasattr(dialog, "tracks"), "Dialog should have tracks attribute after import"
     assert dialog.tracks is not None, "Tracks should not be None"
-    assert dialog.tracks.graph.num_nodes() == graph.num_nodes()
-    assert dialog.tracks.graph.num_edges() == graph.num_edges()
+    assert dialog.tracks.graph_solution.num_nodes() == graph.num_nodes()
+    assert dialog.tracks.graph_solution.num_edges() == graph.num_edges()
     assert dialog.tracks.ndim == ndim
-    for node_id in dialog.tracks.graph.node_ids():
+    for node_id in dialog.tracks.graph_solution.node_ids():
         dialog.tracks.get_time(node_id)
 
     # Area should be enabled and computed when segmentation is present
     assert "area" in dialog.tracks.features
-    for node_id in dialog.tracks.graph.node_ids():
-        assert dialog.tracks.graph.nodes[node_id]["area"] > 0
+    for node_id in dialog.tracks.graph_solution.node_ids():
+        assert dialog.tracks.graph_solution.nodes[node_id]["area"] > 0
 
 
 def test_geff_import_source_path_is_geff_group_not_container(
@@ -649,12 +661,15 @@ def test_geff_import_without_area_computes_area(
     dialog._finish()
 
     assert dialog.tracks is not None
-    assert dialog.tracks.graph.num_nodes() == graph_2d_without_segmentation.num_nodes()
+    assert (
+        dialog.tracks.graph_solution.num_nodes()
+        == graph_2d_without_segmentation.num_nodes()
+    )
 
     # Area must be in features and computed (positive values, not defaults)
     assert "area" in dialog.tracks.features
-    for node_id in dialog.tracks.graph.node_ids():
-        assert dialog.tracks.graph.nodes[node_id]["area"] > 0
+    for node_id in dialog.tracks.graph_solution.node_ids():
+        assert dialog.tracks.graph_solution.nodes[node_id]["area"] > 0
 
 
 def test_geff_import_without_segmentation(
@@ -697,9 +712,9 @@ def test_geff_import_without_segmentation(
     # Verify tracks were imported successfully
     assert hasattr(dialog, "tracks"), "Dialog should have tracks attribute after import"
     assert dialog.tracks is not None, "Tracks should not be None"
-    assert dialog.tracks.graph.num_nodes() == tracks.graph.num_nodes()
-    assert dialog.tracks.graph.num_edges() == tracks.graph.num_edges()
-    for node_id in dialog.tracks.graph.node_ids():
+    assert dialog.tracks.graph_solution.num_nodes() == tracks.graph_solution.num_nodes()
+    assert dialog.tracks.graph_solution.num_edges() == tracks.graph_solution.num_edges()
+    for node_id in dialog.tracks.graph_solution.node_ids():
         dialog.tracks.get_time(node_id)
 
 
@@ -763,15 +778,21 @@ def test_geff_import_without_axes_metadata(
     # Verify tracks were imported successfully
     assert hasattr(dialog, "tracks"), "Dialog should have tracks attribute after import"
     assert dialog.tracks is not None, "Tracks should not be None"
-    assert dialog.tracks.graph.num_nodes() == graph_2d_without_segmentation.num_nodes()
-    assert dialog.tracks.graph.num_edges() == graph_2d_without_segmentation.num_edges()
+    assert (
+        dialog.tracks.graph_solution.num_nodes()
+        == graph_2d_without_segmentation.num_nodes()
+    )
+    assert (
+        dialog.tracks.graph_solution.num_edges()
+        == graph_2d_without_segmentation.num_edges()
+    )
     assert dialog.tracks.ndim == 3
 
     # Verify axes metadata was generated
     final_metadata = dict(dialog.import_widget.root.attrs.get("geff", {}))
     assert "axes" in final_metadata, "Axes should have been generated"
     assert len(final_metadata["axes"]) == 3, "Should have 3 axes for 2D+time"
-    for node_id in dialog.tracks.graph.node_ids():
+    for node_id in dialog.tracks.graph_solution.node_ids():
         dialog.tracks.get_time(node_id)
 
 
@@ -827,8 +848,8 @@ def test_geff_import_embedded_segmentation(qtbot, tmp_path, graph_2d, monkeypatc
     assert dialog.tracks.segmentation is not None, (
         "Segmentation should be reconstructed from embedded mask/bbox data"
     )
-    assert dialog.tracks.graph.num_nodes() == graph_2d.num_nodes()
-    assert dialog.tracks.graph.num_edges() == graph_2d.num_edges()
+    assert dialog.tracks.graph_solution.num_nodes() == graph_2d.num_nodes()
+    assert dialog.tracks.graph_solution.num_edges() == graph_2d.num_edges()
 
 
 def test_geff_import_old_geff_warning(qtbot, tmp_path, graph_2d, monkeypatch):
@@ -864,8 +885,8 @@ def test_geff_import_old_geff_warning(qtbot, tmp_path, graph_2d, monkeypatch):
     dialog._finish()
 
     assert dialog.tracks is not None
-    assert dialog.tracks.graph.num_nodes() == graph_2d.num_nodes()
-    assert dialog.tracks.graph.num_edges() == graph_2d.num_edges()
+    assert dialog.tracks.graph_solution.num_nodes() == graph_2d.num_nodes()
+    assert dialog.tracks.graph_solution.num_edges() == graph_2d.num_edges()
 
 
 def test_geff_import_with_related_data(qtbot, tmp_path, graph_2d, monkeypatch):
@@ -933,8 +954,8 @@ def test_geff_import_with_related_data(qtbot, tmp_path, graph_2d, monkeypatch):
 
     assert dialog.tracks is not None
     assert dialog.tracks.segmentation is not None
-    assert dialog.tracks.graph.num_nodes() == graph_2d.num_nodes()
-    assert dialog.tracks.graph.num_edges() == graph_2d.num_edges()
+    assert dialog.tracks.graph_solution.num_nodes() == graph_2d.num_nodes()
+    assert dialog.tracks.graph_solution.num_edges() == graph_2d.num_edges()
 
 
 def test_geff_import_no_mask_with_segmentation_shape(
@@ -976,8 +997,14 @@ def test_geff_import_no_mask_with_segmentation_shape(
 
     assert dialog.tracks is not None
     assert dialog.tracks.segmentation is None
-    assert dialog.tracks.graph.num_nodes() == graph_2d_without_segmentation.num_nodes()
-    assert dialog.tracks.graph.num_edges() == graph_2d_without_segmentation.num_edges()
+    assert (
+        dialog.tracks.graph_solution.num_nodes()
+        == graph_2d_without_segmentation.num_nodes()
+    )
+    assert (
+        dialog.tracks.graph_solution.num_edges()
+        == graph_2d_without_segmentation.num_edges()
+    )
 
 
 def test_motile_run_save_load(tmp_path, graph_2d):
@@ -998,8 +1025,8 @@ def test_motile_run_save_load(tmp_path, graph_2d):
 
     loaded = MotileRun.load(run_dir)
     assert loaded.run_name == run.run_name
-    assert loaded.graph.num_nodes() == graph_2d.num_nodes()
-    assert loaded.graph.num_edges() == graph_2d.num_edges()
+    assert loaded.graph_solution.num_nodes() == graph_2d.num_nodes()
+    assert loaded.graph_solution.num_edges() == graph_2d.num_edges()
     assert loaded.solver_params is not None
 
 
@@ -1025,8 +1052,8 @@ def test_motile_run_load_backward_compat(tmp_path, graph_2d):
 
     loaded = MotileRun.load(run_dir)
     assert loaded.run_name == "old_run"
-    assert loaded.graph.num_nodes() == graph_2d.num_nodes()
-    assert loaded.graph.num_edges() == graph_2d.num_edges()
+    assert loaded.graph_solution.num_nodes() == graph_2d.num_nodes()
+    assert loaded.graph_solution.num_edges() == graph_2d.num_edges()
 
 
 # --- legacy (non-bool) mask conversion -------------------------------------

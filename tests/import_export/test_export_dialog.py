@@ -181,7 +181,7 @@ def test_seg_format_defaults_to_zarr(qtbot):
 
 # ---------------------------------------------------------------------------
 # ExportDialog integration tests
-# Real ExportTypeDialog, real SolutionTracks, real export functions.
+# Real ExportTypeDialog, real Tracks, real export functions.
 # Only QFileDialog (OS picker) is mocked.
 # ---------------------------------------------------------------------------
 
