@@ -405,9 +405,7 @@ class TestExtraViewerDims:
             seg_bbox=[4, 9, 9, 6, 11, 11],
             seg_shape=(2, 20, 20, 20),
         )
-        tracks = SolutionTracks(
-            graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t"
-        )
+        tracks = Tracks(graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t")
         if extra_shape is not None:
             viewer.add_image(np.zeros(extra_shape, dtype=np.uint8), name="channels")
 
@@ -479,9 +477,7 @@ class TestOrthoViewsWithExtraDims:
             seg_bbox=[4, 9, 9, 6, 11, 11],
             seg_shape=(2, 20, 20, 20),
         )
-        tracks = SolutionTracks(
-            graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t"
-        )
+        tracks = Tracks(graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t")
         ortho_manager.show()
         qtbot.waitUntil(lambda: ortho_manager.is_shown(), timeout=2000)
 
@@ -529,9 +525,7 @@ class TestAxisLabels:
             seg_bbox=[4, 9, 9, 6, 11, 11],
             seg_shape=(2, 20, 20, 20),
         )
-        return SolutionTracks(
-            graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t"
-        )
+        return Tracks(graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t")
 
     def test_tracks_name_their_own_axes_only(self, viewer, tmp_path):
         tracks_viewer = TracksViewer.get_instance(viewer)
@@ -556,7 +550,7 @@ class TestAxisLabels:
         """The old hardcoded suffix gave 2D+time tracks ('z','y','x'), naming the
         time axis 'z'."""
 
-        graph = create_empty_graphview_graph(
+        graph = create_empty_graph(
             node_attributes=["pos", "area"],
             ndim=3,
             database=str(tmp_path / "graph2d.db"),
@@ -565,9 +559,7 @@ class TestAxisLabels:
             nodes=[{"t": 0, "pos": [10, 10], "area": 100.0, "solution": True}],
             indices=[1],
         )
-        tracks = SolutionTracks(
-            graph=graph, scale=[1.0, 1.0, 1.0], ndim=3, time_attr="t"
-        )
+        tracks = Tracks(graph=graph, scale=[1.0, 1.0, 1.0], ndim=3, time_attr="t")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")

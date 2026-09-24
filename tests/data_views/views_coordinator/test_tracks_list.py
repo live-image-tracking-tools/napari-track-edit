@@ -113,7 +113,7 @@ class TestTracksListAddRemove:
     def test_view_tracks_emits_the_stored_object(self, tracks_list, graph_2d):
         """view_tracks must emit the very object the list holds.
 
-        The list used to convert to the deprecated SolutionTracks on the way
+        The list used to convert to the deprecated Tracks on the way
         out, which rebuilt the solution view and the segmentation: a second
         subgraph() over the whole graph, and a viewer editing a different
         object than the one the save and export buttons read.
