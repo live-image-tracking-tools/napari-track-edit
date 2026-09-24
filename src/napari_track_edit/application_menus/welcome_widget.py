@@ -26,7 +26,7 @@ class WelcomeWidget(QWidget):
         layout.setSpacing(12)
 
         # Title
-        title = QLabel("Motile Tracker")
+        title = QLabel("Napari Track Edit")
         font = title.font()
         font.setPointSize(16)
         font.setBold(True)
