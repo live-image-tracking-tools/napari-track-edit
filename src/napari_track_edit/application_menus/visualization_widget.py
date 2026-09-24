@@ -181,10 +181,20 @@ class VisualizationWidget(QWidget):
         self.show_ortho_views.stateChanged.connect(self.initialize_ortho_views)
         self.show_ortho_views.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
+        self.show_viewer_overlay = QCheckBox("Display keybinds on canvas")
+        self.show_viewer_overlay.setChecked(True)
+        self.show_viewer_overlay.toggled.connect(self.toggle_viewer_text_overlay)
+
         main_layout.addWidget(self.show_ortho_views)
+        main_layout.addWidget(self.show_viewer_overlay)
         main_layout.addStretch(1)
 
         self.setMaximumHeight(360)
+
+    def toggle_viewer_text_overlay(self, checked: bool):
+        """Change the visibility of the text overlay"""
+
+        self.viewer.text_overlay.visible = checked
 
     def initialize_ortho_views(self, checked: bool):
         """Initializes the ortho views."""
@@ -277,14 +287,44 @@ class VisualizationWidget(QWidget):
             self.background_widget.setVisible(False)
 
     def _update_visualization(self):
-        """Apply the values from the widget and send an update signal."""
+        """Apply the values from the widget and send an update signal.
+
+        Returns without touching the layer when the widgets already agree with
+        it. This runs on every `mode_updated`, which includes pressing Q - and
+        there only the *enabled* state of these widgets changes, never their
+        values. Applying them anyway triggers a second `update_selection`, and
+        each one re-slices the whole displayed volume: 6 s in 3D on a
+        1.7e9-voxel timepoint, for a result identical to the refresh
+        `set_display_mode` has already done.
+        """
 
         layer = self.tracks_viewer.tracking_layers.seg_layer
 
-        if layer is not None:
-            layer.highlight_opacity = self.highlight_widget.opacity.value()
-            layer.foreground_opacity = self.foreground_widget.opacity.value()
-            layer.background_opacity = self.background_widget.opacity.value()
-            layer.highlight_contour = not self.highlight_widget.contour.isChecked()
-            layer.foreground_contour = not self.foreground_widget.contour.isChecked()
-            self.tracks_viewer.update_selection(set_view=False)
+        if layer is None:
+            return
+
+        wanted = (
+            self.highlight_widget.opacity.value(),
+            self.foreground_widget.opacity.value(),
+            self.background_widget.opacity.value(),
+            not self.highlight_widget.contour.isChecked(),
+            not self.foreground_widget.contour.isChecked(),
+        )
+        current = (
+            layer.highlight_opacity,
+            layer.foreground_opacity,
+            layer.background_opacity,
+            layer.highlight_contour,
+            layer.foreground_contour,
+        )
+        if wanted == current:
+            return
+
+        (
+            layer.highlight_opacity,
+            layer.foreground_opacity,
+            layer.background_opacity,
+            layer.highlight_contour,
+            layer.foreground_contour,
+        ) = wanted
+        self.tracks_viewer.update_selection(set_view=False)

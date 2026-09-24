@@ -126,7 +126,7 @@ Optionally, you can activate orthogonal views (in the Visualization tab) to disp
 </div>
 
 ### Selecting nodes and creating groups.
-You can select one or multiple nodes for closer inspection. Selection of nodes is possible in the Points and Labels layers, and in the Lineage View. Selecting a node will highlight it and center the object if it is outside the viewing range. You can center the view to any node by pressing `Control` or `CMD` when clicking, without selecting that node. You can append (or subtract) nodes to (from) the selection by holding down `SHIFT` when clicking. In the `Groups` tab you can create groups of nodes that you want to store to review later, for example because these are of particular interest, need to be corrected, or belong to a specific object/cell type. You can also select all nodes in a group or export them.
+You can select one or multiple nodes for closer inspection. Selection of nodes is possible in the Points and Labels layers, and in the Lineage View. Selecting a node will highlight it and center the object if it is outside the viewing range. You can center the view to any node by pressing `Control` or `CMD` when clicking, without selecting that node. Holding down `Alt` (`Option` on macOS) when clicking picks up that node's Tracklet ID as the current one without selecting the node, which works like the pipette tool of the Labels layer except that the node may be in any time point, so neither the time point nor the view changes. You can append (or subtract) nodes to (from) the selection by holding down `SHIFT` when clicking. In the `Groups` tab you can create groups of nodes that you want to store to review later, for example because these are of particular interest, need to be corrected, or belong to a specific object/cell type. You can also select all nodes in a group or export them.
 
 <div style="display: flex; justify-content: space-around;">
     <figure style="margin: 10px; text-align: center;">
@@ -233,6 +233,7 @@ In the future, this plugin will be extended with additional features.
 | Click on a point or label  | Select this node (center view if necessary)  |
 | `SHIFT` + click on point or label  | Add this node to selection  |
 | `CTRL`/`CMD` + click on point or label  | Center view on node |
+| `ALT`/`OPTION` + click on point or label  | Use this node's Tracklet ID as the current one (like the pipette, but without changing selection or time point) |
 | Mouse drag with point layer selection tool active  | Select multiple nodes at once   |
 | `Q` | Toggle between viewing all nodes in the points/labels or only those for the currently selected lineages or groups  |
 | `T` | Center orthogonal views to mouse cursor location.
@@ -245,6 +246,7 @@ In the future, this plugin will be extended with additional features.
 | Click on a point or label | Select this node (center view if necessary) |
 | `SHIFT` + click on node | Add this node to selection |
 | `CTRL`/`CMD` + click on node  | Center view on node |
+| `ALT`/`OPTION` + click on node  | Use this node's Tracklet ID as the current one (like the pipette, but without changing selection or time point) |
 | Scroll | Zoom in or out
 | Scroll + `X` / Right mouse click + drag horizontally | Restrict zoom to the x-axis of the Lineage View |
 | Scroll + `Y` / Right mouse click + drag vertically | Restrict zoom to the y-axis of the Lineage View |

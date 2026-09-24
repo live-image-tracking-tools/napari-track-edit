@@ -24,7 +24,9 @@ from qtpy.QtWidgets import (
 from superqt.fonticon import icon as qticon
 
 if TYPE_CHECKING:
-    from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
+    from napari_track_edit.data_views.views_coordinator.tracks_viewer import (
+        TracksViewer,
+    )
 
 from napari_track_edit.data_views.views.tree_view.tree_widget_utils import (
     extract_lineage_tree,
@@ -240,6 +242,10 @@ class CollectionWidget(QWidget):
         # first clear the entire list
         self.collection_list.clear()
         self.selected_collection = None  # set back to None
+
+        if self.tracks_viewer.tracks is None:
+            # nothing is loaded, so the cleared list above is the whole answer
+            return
 
         # find existing group features on Tracks
         group_features = [

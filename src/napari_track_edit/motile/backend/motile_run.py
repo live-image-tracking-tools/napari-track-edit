@@ -239,7 +239,7 @@ class MotileRun(SolutionTracks):
             time_attr = tracks.features.time_key
         gaps = cls._load_list(run_dir=run_dir, filename=GAPS_FILENAME, required=False)
         return cls(
-            graph=tracks.graph,
+            graph=tracks.graph_full,
             run_name=run_name,
             solver_params=params,
             input_points=input_points,
@@ -250,7 +250,6 @@ class MotileRun(SolutionTracks):
             scale=scale,
             ndim=tracks.ndim,
             _features=tracks.features,
-            _segmentation=tracks.segmentation,
         )
 
     def _save_params(self, run_dir: Path):

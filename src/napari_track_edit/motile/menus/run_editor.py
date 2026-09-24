@@ -23,6 +23,7 @@ from qtpy.QtWidgets import (
 )
 from tqdm import tqdm
 
+from napari_track_edit.data_views.dims_utils import TracksDims
 from napari_track_edit.motile.backend import MotileRun, get_solver_name
 
 from .params_editor import SolverParamsEditor
@@ -85,10 +86,21 @@ class RunEditor(QGroupBox):
         elif isinstance(layer, napari.layers.Points):
             enable_iou = False
         self.solver_params_widget.iou_row.toggle_visible(enable_iou)
+        # the frame constraint has to be recomputed when the selection changes
+        self._update_max_frames()
 
     def _update_max_frames(self) -> None:
         """Update the max frame constraint from viewer dims."""
-        max_frame = self.viewer.dims.range[0].stop
+
+        # The viewer may carry extra leading dims the input layer does not have, so time
+        # is not necessarily world axis 0. The input layer will serve to build Tracks, so
+        # occupies the trailing axes the same way the tracks will.
+        layer = self.get_input_layer()
+        if layer is None:
+            time_axis = 0
+        else:
+            time_axis = TracksDims(self.viewer.dims.ndim, layer.ndim).time_axis
+        max_frame = self.viewer.dims.range[time_axis].stop
         self.solver_params_widget.set_max_frames(int(max_frame))
 
     def _labels_layer_widget(self) -> QWidget:

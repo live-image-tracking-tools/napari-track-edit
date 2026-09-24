@@ -24,6 +24,7 @@ def test_button_states(make_napari_viewer, solution_tracks_2d, click_node):
     assert not editing_menu.swap_nodes_btn.isEnabled()
     assert not editing_menu.delete_edge_btn.isEnabled()
     assert not editing_menu.create_edge_btn.isEnabled()
+    assert not editing_menu.set_division_btn.isEnabled()
 
     # Test 2: Verify update_buttons() disables all buttons when selection is cleared
     # First select nodes to enable buttons
@@ -41,6 +42,7 @@ def test_button_states(make_napari_viewer, solution_tracks_2d, click_node):
     assert not editing_menu.swap_nodes_btn.isEnabled()
     assert not editing_menu.delete_edge_btn.isEnabled()
     assert not editing_menu.create_edge_btn.isEnabled()
+    assert not editing_menu.set_division_btn.isEnabled()
 
     # Test 3: Verify only delete button enabled with single node selection
     click_node(tracks_viewer, 1)
@@ -50,6 +52,7 @@ def test_button_states(make_napari_viewer, solution_tracks_2d, click_node):
     assert editing_menu.delete_node_btn.isEnabled()
     assert not editing_menu.delete_edge_btn.isEnabled()
     assert not editing_menu.create_edge_btn.isEnabled()
+    assert not editing_menu.set_division_btn.isEnabled()
 
     # Test 4: Verify all buttons enabled when two nodes selected
     click_node(tracks_viewer, 1)
@@ -61,17 +64,24 @@ def test_button_states(make_napari_viewer, solution_tracks_2d, click_node):
     assert editing_menu.swap_nodes_btn.isEnabled()
     assert editing_menu.delete_edge_btn.isEnabled()
     assert editing_menu.create_edge_btn.isEnabled()
+    assert not editing_menu.set_division_btn.isEnabled()
 
-    # Test 5: Verify only delete button enabled with 3+ nodes selected
+    # Test 5: Verify delete and division buttons enabled with 3 nodes selected
     click_node(tracks_viewer, 1)
     click_node(tracks_viewer, 2, append=True)
     click_node(tracks_viewer, 3, append=True)
     editing_menu.update_buttons()
 
-    # Verify only delete is enabled, others disabled
+    # Verify only delete and division are enabled, others disabled
     assert editing_menu.delete_node_btn.isEnabled()
+    assert editing_menu.set_division_btn.isEnabled()
     assert not editing_menu.delete_edge_btn.isEnabled()
     assert not editing_menu.create_edge_btn.isEnabled()
+
+    # Test 6: Verify division button is disabled again with 4 nodes selected
+    click_node(tracks_viewer, 4, append=True)
+    editing_menu.update_buttons()
+    assert not editing_menu.set_division_btn.isEnabled()
 
 
 def test_button_interactions(make_napari_viewer, solution_tracks_2d, qtbot, click_node):
@@ -89,6 +99,8 @@ def test_button_interactions(make_napari_viewer, solution_tracks_2d, qtbot, clic
     tracks_viewer.swap_nodes = swap_mock
     delete_edge_mock = MagicMock()
     tracks_viewer.delete_edge = delete_edge_mock
+    set_division_mock = MagicMock()
+    tracks_viewer.set_division = set_division_mock
     new_track_mock = MagicMock()
     tracks_viewer.request_new_track = new_track_mock
     undo_mock = MagicMock()
@@ -119,15 +131,21 @@ def test_button_interactions(make_napari_viewer, solution_tracks_2d, qtbot, clic
     qtbot.mouseClick(editing_menu.delete_edge_btn, Qt.MouseButton.LeftButton)
     delete_edge_mock.assert_called_once()
 
-    # Test 5: Start New Track button calls tracks_viewer.request_new_track()
+    # Test 5: Make/break division button calls tracks_viewer.set_division()
+    click_node(tracks_viewer, 3, append=True)
+    editing_menu.update_buttons()
+    qtbot.mouseClick(editing_menu.set_division_btn, Qt.MouseButton.LeftButton)
+    set_division_mock.assert_called_once()
+
+    # Test 6: Start New Track button calls tracks_viewer.request_new_track()
     qtbot.mouseClick(editing_menu.new_track_btn, Qt.MouseButton.LeftButton)
     new_track_mock.assert_called_once()
 
-    # Test 6: Undo button calls tracks_viewer.undo()
+    # Test 7: Undo button calls tracks_viewer.undo()
     qtbot.mouseClick(editing_menu.undo_btn, Qt.MouseButton.LeftButton)
     undo_mock.assert_called_once()
 
-    # Test 7: Redo button calls tracks_viewer.redo()
+    # Test 8: Redo button calls tracks_viewer.redo()
     qtbot.mouseClick(editing_menu.redo_btn, Qt.MouseButton.LeftButton)
     redo_mock.assert_called_once()
 

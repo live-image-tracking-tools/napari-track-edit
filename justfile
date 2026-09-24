@@ -4,7 +4,7 @@ test:
     uv run pytest .
 
 start:
-    uv run napari-track-edit
+    uv run --extra gurobipy13 napari-track-edit
 
 [working-directory: 'docs']
 @docs-build:

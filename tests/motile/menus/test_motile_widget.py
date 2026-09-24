@@ -56,9 +56,11 @@ def test_view_and_edit_run(make_napari_viewer, solution_tracks_2d, qtbot):
     assert widget.view_run_widget.isVisible()
     assert not widget.edit_run_widget.isVisible()
 
-    # view_run with SolutionTracks (non-MotileRun) hides viewer
+    # view_run with SolutionTracks (non-MotileRun) hides the viewer and falls back
+    # to the editor, so the solver settings stay available without a motile run
     widget.view_run(solution_tracks_2d)
     assert not widget.view_run_widget.isVisible()
+    assert widget.edit_run_widget.isVisible()
 
     # edit_run with None shows editor and hides viewer
     widget.view_run_widget.show()
@@ -184,7 +186,9 @@ def test_solve_with_motile(make_napari_viewer, segmentation_2d):
             "napari_track_edit.motile.menus.motile_widget.build_candidate_graph"
         ) as mock_build,
         patch("napari_track_edit.motile.menus.motile_widget.solve") as mock_solve,
-        patch("napari_track_edit.motile.menus.motile_widget.show_warning") as mock_warning,
+        patch(
+            "napari_track_edit.motile.menus.motile_widget.show_warning"
+        ) as mock_warning,
     ):
         mock_build.return_value = create_empty_graphview_graph()
         mock_solve.return_value = create_empty_graphview_graph()

@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 
-from napari_track_edit.data_views.views.layers.track_labels import new_label
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
@@ -57,6 +56,32 @@ def create_event_val(
     return event_val
 
 
+def create_cross_time_event_val(
+    tps: tuple[int, ...],
+    z: tuple[int],
+    y: tuple[int],
+    x: tuple[int],
+    old_val: int,
+    target_val: int,
+):
+    """Create a single paint atom whose pixels straddle more than one time point.
+
+    This is the shape of the event a brush produces once a roll has put time inside
+    napari's dims_to_paint: one stroke, one atom, indices spanning several frames.
+    """
+
+    atoms = [
+        create_event_val(tp, z, y, x, old_val=old_val, target_val=target_val)[0]
+        for tp in tps
+    ]
+    ndim = len(atoms[0][0])
+    indices = tuple(
+        np.concatenate([atom[0][dim] for atom in atoms]) for dim in range(ndim)
+    )
+    old_vals = np.concatenate([atom[1] for atom in atoms])
+    return [(indices, old_vals, target_val)]
+
+
 def test_paint_event(viewer, solution_tracks_3d_with_division):
     """Test paint event processing
 
@@ -83,7 +108,7 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
     )  # ensure this is active when testing undo
 
     # Test selecting a new label
-    new_label(tracks_viewer.tracking_layers.seg_layer)
+    tracks_viewer.tracking_layers.seg_layer.new_label()
     assert tracks_viewer.tracking_layers.seg_layer.selected_label == 5
     assert tracks_viewer.selected_track == 4  # new track id
 
@@ -175,8 +200,123 @@ def test_paint_event(viewer, solution_tracks_3d_with_division):
     )  # back at 5
 
 
-def test_ensure_valid_label(viewer, solution_tracks_3d_with_division):
+class TestPaintingAcrossTime:
+    """A stroke must stay inside one frame.
 
+    n_edit_dimensions is clamped to keep time out of the brush, but that only holds
+    while the viewer is unrolled: napari paints the *last* n_edit_dimensions of the
+    layer's axis order, and rolling permutes that order. So the guard has to look at
+    the pixels the event actually touched.
+    """
+
+    def test_rolling_puts_time_inside_naparis_paint_window(self, viewer):
+        """The napari behaviour that makes the check necessary.
+
+        If this ever stops being true, the guard in _on_paint becomes dead code
+        rather than silently wrong, and this test says so directly.
+        """
+
+        layer = viewer.add_labels(np.zeros((4, 10, 20, 20), dtype=int))
+        layer.n_edit_dimensions = 3  # what TrackLabels clamps 3D+time tracks to
+
+        assert 0 not in layer._get_dims_to_paint()  # time is out of the brush
+        viewer.dims.roll()
+        assert 0 in layer._get_dims_to_paint()  # ...until the viewer is rolled
+
+    def test_painting_across_time_is_rejected(
+        self, viewer, solution_tracks_3d_with_division
+    ):
+        """Without the guard this reaches funtracks, which asserts a single time
+        point, and the AssertionError escapes _on_paint with the pixels already
+        painted: the segmentation and the graph disagree from then on."""
+
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(
+            tracks=solution_tracks_3d_with_division, name="test"
+        )
+        seg_layer = tracks_viewer.tracking_layers.seg_layer
+        seg_layer.new_label()
+        seg_layer.mode = "paint"
+
+        nodes_before = tracks_viewer.tracks.graph.num_nodes()
+        event = MockEvent(
+            create_cross_time_event_val(
+                tps=(2, 3), z=(15, 20), y=(45, 50), x=(75, 80), old_val=0, target_val=60
+            )
+        )
+
+        seg_layer._on_paint(event)
+
+        assert tracks_viewer.tracks.graph.num_nodes() == nodes_before
+        for tp in (2, 3):
+            assert int(np.asarray(seg_layer.data[tp, 15, 45, 75])) == 0
+
+    def test_erasing_across_time_is_rejected(
+        self, viewer, solution_tracks_3d_with_division
+    ):
+        """Erasing takes a different path in funtracks: it has no single-time
+        assertion at all and applies the edit to every frame it touched, so without
+        the guard this silently shrinks nodes in frames the user never looked at."""
+
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(
+            tracks=solution_tracks_3d_with_division, name="test"
+        )
+        tracks_viewer.tracks.enable_features(["area"])
+        seg_layer = tracks_viewer.tracking_layers.seg_layer
+        seg_layer.mode = "erase"
+
+        # nodes 3 and 4 are the two children of the division, in frames 2 and 2;
+        # take the areas of every node so any cross-frame shrink shows up
+        areas_before = {
+            node: tracks_viewer.tracks.graph.nodes[node]["area"]
+            for node in tracks_viewer.tracks.graph.node_ids()
+        }
+        event = MockEvent(
+            create_cross_time_event_val(
+                tps=(1, 2), z=(55, 57), y=(45, 48), x=(40, 42), old_val=3, target_val=0
+            )
+        )
+
+        seg_layer._on_paint(event)
+
+        assert {
+            node: tracks_viewer.tracks.graph.nodes[node]["area"]
+            for node in tracks_viewer.tracks.graph.node_ids()
+        } == areas_before
+
+    def test_a_single_frame_stroke_still_paints(
+        self, viewer, solution_tracks_3d_with_division
+    ):
+        """The guard must not catch an ordinary stroke, including one made in a
+        frame other than the one the time slider is on (which is how an ortho view
+        edit arrives)."""
+
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(
+            tracks=solution_tracks_3d_with_division, name="test"
+        )
+        seg_layer = tracks_viewer.tracking_layers.seg_layer
+        seg_layer.new_label()
+        seg_layer.mode = "paint"
+
+        step = list(viewer.dims.current_step)
+        step[0] = 3
+        viewer.dims.current_step = step
+        nodes_before = tracks_viewer.tracks.graph.num_nodes()
+
+        seg_layer._on_paint(
+            MockEvent(
+                create_event_val(
+                    tp=3, z=(15, 20), y=(45, 50), x=(75, 80), old_val=0, target_val=60
+                )
+            )
+        )
+
+        assert tracks_viewer.tracks.graph.num_nodes() == nodes_before + 1
+
+
+def test_ensure_valid_label(viewer, solution_tracks_3d_with_division):
     # Create example tracks
     tracks_viewer = TracksViewer.get_instance(viewer)
     tracks_viewer.update_tracks(tracks=solution_tracks_3d_with_division, name="test")
@@ -223,10 +363,61 @@ def test_ensure_valid_label(viewer, solution_tracks_3d_with_division):
     assert tracks_viewer.selected_track == 1  # updated to 1, matching label 2
 
     # Verify starting a new track via the new_label function
-    new_label(tracks_viewer.tracking_layers.seg_layer)
+    tracks_viewer.tracking_layers.seg_layer.new_label()
     assert tracks_viewer.tracking_layers.seg_layer.selected_label == 5  # next available
     # value
     assert tracks_viewer.selected_track == 4  # new track id (still unused)
+
+
+def test_alt_click_picks_track_id(viewer, solution_tracks_2d):
+    """ALT/OPTION + click on a label adopts its track id without selecting the node.
+
+    This is the pipette made available from pan_zoom mode and from any frame: node 6
+    lives at t=4, and clicking it from t=0 must neither select it nor move the viewer.
+    """
+
+    class _Event:
+        def __init__(self, modifiers):
+            self.modifiers = modifiers
+
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
+    seg_layer = tracks_viewer.tracking_layers.seg_layer
+
+    viewer.dims.set_point(0, 0)
+    tracks_viewer.selected_nodes.reset()
+
+    seg_layer.process_click(_Event(["Alt"]), np.int64(6))
+
+    assert tracks_viewer.selected_track == solution_tracks_2d.get_track_id(6)
+    assert len(tracks_viewer.selected_nodes) == 0
+    assert viewer.dims.current_step[0] == 0
+
+
+def test_background_label_does_not_get_a_color(
+    viewer, solution_tracks_3d_with_division
+):
+    """Regression (#493): selecting the background label must not color the background.
+
+    napari binds "X" on Labels layers to swap_selected_and_background_labels, which
+    sets selected_label to 0. When no node was selected, _ensure_valid_label used to
+    allocate a new track id for label 0 and write its color into the colormap, making
+    the whole segmentation background render in that (pink) track color.
+    """
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_3d_with_division, name="test")
+    seg_layer = tracks_viewer.tracking_layers.seg_layer
+
+    # Nothing selected: this is the situation in which the bug bites
+    tracks_viewer.selected_nodes.reset()
+    tracks_viewer.selected_track = None
+
+    seg_layer.selected_label = 0  # what pressing "X" does
+
+    assert seg_layer.selected_label == 0
+    assert tracks_viewer.selected_track is None  # no track id was allocated
+    # the background stays transparent
+    assert np.all(seg_layer.colormap.map(np.array([0])) == 0)
 
 
 def test_data_setitem_empty_indices_does_not_raise(
@@ -272,7 +463,7 @@ def test_paint_with_preserve_labels_paints_into_background(
     step[0] = 0  # node 1 lives at t=0, bbox 45-54^3
     viewer.dims.current_step = step
 
-    new_label(seg_layer)
+    seg_layer.new_label()
     new_value = seg_layer.selected_label
 
     seg_layer.preserve_labels = True
@@ -307,7 +498,7 @@ def test_paint_with_preserve_labels_does_not_overwrite_existing(
     step[0] = 0
     viewer.dims.current_step = step
 
-    new_label(seg_layer)
+    seg_layer.new_label()
     new_value = seg_layer.selected_label
 
     seg_layer.preserve_labels = True
@@ -359,4 +550,53 @@ def test_undo_on_readonly_data_does_not_fire_paint_event(
     assert paint_events_fired == [], (
         "undo() on read-only data must restore the display buffer directly "
         "without emitting events.paint"
+    )
+
+
+def test_label_and_color_stay_usable_after_undo(
+    viewer, solution_tracks_3d_with_division
+):
+    """Undoing a paint must leave a label that can be painted with straight away.
+
+    The node the paint created is soft-deleted by the undo: it keeps its id, so a
+    new one has to be handed out. Its track is a different matter - it has no
+    nodes left, so it is free, and painting on should carry on in it rather than
+    jumping to another colour.
+    """
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_3d_with_division, name="test")
+    seg_layer = tracks_viewer.tracking_layers.seg_layer
+
+    step = list(viewer.dims.current_step)
+    step[0] = 0
+    viewer.dims.current_step = step
+    seg_layer.brush_size = 30
+
+    seg_layer.new_label()
+    painted = seg_layer.selected_label
+    seg_layer.paint(np.array([0, 50, 50, 50]), painted)
+    track_before = tracks_viewer.tracks.get_track_id(painted)
+    color_before = np.array(seg_layer.colormap.color_dict[painted])
+    tracks_viewer.undo()
+
+    # the id is taken for good, so a different one must be offered
+    assert tracks_viewer.tracks.graph_full.has_node(painted)
+    assert not tracks_viewer.tracks.graph_solution.has_node(painted)
+    assert seg_layer.selected_label != painted
+
+    # the track it was painting in has no nodes left, so it is free to carry on
+    # with: the new label draws in the same colour (the alpha differs only because
+    # nothing is selected, so the label is drawn at foreground rather than
+    # highlight opacity)
+    new_label_value = seg_layer.selected_label
+    np.testing.assert_array_equal(
+        seg_layer.colormap.color_dict[new_label_value][:3], color_before[:3]
+    )
+
+    # and painting must land in that same track, so the colour does not snap to
+    # another one on mouse release
+    seg_layer.paint(np.array([0, 50, 50, 50]), new_label_value)
+    assert tracks_viewer.tracks.get_track_id(new_label_value) == track_before
+    np.testing.assert_array_equal(
+        seg_layer.colormap.color_dict[new_label_value], color_before
     )

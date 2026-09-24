@@ -104,6 +104,27 @@ def test_contour_checkbox_updates_layer(visualization_widget):
     assert layer.foreground_contour is True
 
 
+def test_overlay_checkbox_toggles_text_overlay(visualization_widget):
+    """Toggling the keybinds checkbox shows/hides the viewer text overlay.
+
+    Regression: the checkbox was wired to 'stateChanged', which hands over Qt's check
+    state as an int (2 when checked). napari's TextOverlay.visible is a strict
+    pydantic bool, so checking the box raised a ValidationError instead.
+    """
+
+    widget, _ = visualization_widget
+    checkbox = widget.show_viewer_overlay
+
+    # starts checked, matching the overlay being shown with the display mode
+    assert checkbox.isChecked()
+
+    checkbox.setChecked(False)
+    assert widget.viewer.text_overlay.visible is False
+
+    checkbox.setChecked(True)
+    assert widget.viewer.text_overlay.visible is True
+
+
 @pytest.mark.parametrize(
     "mode", ["all", "visible_no_contours", "visible_with_contours"]
 )
@@ -226,7 +247,9 @@ class TestOrthoViewsIntegration:
         widget, _ = visualization_widget
         assert not widget.show_ortho_views.isChecked()
 
-    @patch("napari_track_edit.application_menus.visualization_widget._VIEWER_MANAGERS", {})
+    @patch(
+        "napari_track_edit.application_menus.visualization_widget._VIEWER_MANAGERS", {}
+    )
     @patch(
         "napari_track_edit.application_menus.visualization_widget.initialize_ortho_views"
     )

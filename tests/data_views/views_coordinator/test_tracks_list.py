@@ -7,10 +7,12 @@ and the load_motile_run bug fix (must call MotileRun.load, not Tracks.load).
 import warnings
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 from funtracks.data_model import SolutionTracks, Tracks
 from funtracks.import_export import write_to_geff
 from qtpy.QtWidgets import QDialog
+from tracksdata.nodes import Mask
 
 from napari_track_edit.data_views.views_coordinator.tracks_list import (
     TracksButton,
@@ -76,6 +78,21 @@ class TestTracksListAddRemove:
         item = tracks_list.tracks_list.item(0)
         tracks_list.remove_tracks(item)
         assert tracks_list.tracks_list.count() == 0
+
+    def test_remove_last_tracks_emits_cleared(self, tracks_list, motile_run):
+        emitted = []
+        tracks_list.tracks_cleared.connect(lambda: emitted.append(True))
+        tracks_list.add_tracks(motile_run, "run1", select=False)
+        tracks_list.remove_tracks(tracks_list.tracks_list.item(0))
+        assert emitted == [True]
+
+    def test_remove_one_of_two_does_not_emit_cleared(self, tracks_list, motile_run):
+        emitted = []
+        tracks_list.tracks_cleared.connect(lambda: emitted.append(True))
+        tracks_list.add_tracks(motile_run, "run1", select=False)
+        tracks_list.add_tracks(motile_run, "run2", select=False)
+        tracks_list.remove_tracks(tracks_list.tracks_list.item(0))
+        assert emitted == []
 
     def test_selection_changed_emits_signal(self, tracks_list, motile_run):
         emitted = []
@@ -145,6 +162,36 @@ class TestTracksListAddRemove:
         converted = emitted[0][0]
         assert converted.features.tracklet_key in converted.graph.node_attr_keys()
         assert converted.features.lineage_key in converted.graph.node_attr_keys()
+
+    def test_view_tracks_segmentation_follows_edits(self, tracks_list, graph_2d):
+        """The emitted tracks must own their segmentation, not borrow the old one.
+
+        A GraphArrayView renders from, and listens to, the single graph object
+        it was built with. Handing the original view to the converted tracks
+        left it bound to the graph of the tracks in the list, so an edit made
+        through the converted tracks (painting a label) never invalidated its
+        cache: the pixels snapped back while the centroid moved.
+        """
+        plain_tracks = Tracks(graph_2d, ndim=3, time_attr="t", tracklet_attr="track_id")
+        assert plain_tracks.segmentation is not None
+
+        emitted = []
+        tracks_list.view_tracks.connect(lambda t, n: emitted.append((t, n)))
+        tracks_list.add_tracks(plain_tracks, "plain", select=True)
+        converted = emitted[0][0]
+
+        assert converted.segmentation.graph is converted.graph_solution
+
+        node = 1
+        time = converted.get_time(node)
+        assert (np.asarray(converted.segmentation[time]) == node).any()
+
+        old_mask = converted.get_mask(node)
+        converted.update_mask(
+            node, Mask(np.zeros_like(old_mask.mask), bbox=old_mask.bbox)
+        )
+
+        assert not (np.asarray(converted.segmentation[time]) == node).any()
 
     def test_view_tracks_passes_through_motile_run(self, tracks_list, motile_run):
         """A MotileRun is already a SolutionTracks, so it must be emitted

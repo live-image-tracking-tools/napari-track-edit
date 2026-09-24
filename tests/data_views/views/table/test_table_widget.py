@@ -1,5 +1,9 @@
+from unittest.mock import patch
+
 import pandas as pd
 import pytest
+from qtpy.QtCore import QEvent, QPointF, Qt
+from qtpy.QtGui import QMouseEvent
 from qtpy.QtWidgets import QApplication
 
 from napari_track_edit.data_views.views.table.custom_table_widget import (
@@ -107,6 +111,51 @@ def test_center_from_table_triggers_viewer(colored_table_widget, qtbot):
 
     with qtbot.waitSignal(tracks_viewer.center_node, timeout=1000):
         widget.center_node(index)
+
+
+def test_pick_track_id_from_table(colored_table_widget, qtbot):
+    """pick_track_id adopts the row's tracklet id without selecting the node."""
+    widget, tracks_viewer = colored_table_widget
+    table = widget._table_widget
+
+    # find the row holding node 6: it is the only node of track 5 and sits at t=4
+    row = next(
+        i for i in range(table.model().rowCount()) if widget._table["ID"][i] == 6
+    )
+    index = table.model().index(row, 0)
+
+    tracks_viewer.selected_nodes.reset()
+    widget.pick_track_id(index)
+
+    assert tracks_viewer.selected_track == tracks_viewer.tracks.get_track_id(6)
+    assert len(tracks_viewer.selected_nodes) == 0
+
+
+def test_alt_click_routes_to_pick_track_id(colored_table_widget, qtbot):
+    """ALT/OPTION + click on a row picks its tracklet id instead of selecting it."""
+    widget, tracks_viewer = colored_table_widget
+    table = widget._table_widget
+
+    index = table.model().index(0, 0)
+    pos = QPointF(table.visualRect(index).center())
+    event = QMouseEvent(
+        QEvent.MouseButtonPress,
+        pos,
+        Qt.LeftButton,
+        Qt.LeftButton,
+        Qt.AltModifier,
+    )
+
+    with (
+        patch.object(widget, "pick_track_id") as pick_mock,
+        patch.object(widget, "center_node") as center_mock,
+    ):
+        table.mousePressEvent(event)
+        assert pick_mock.call_count == 1
+        center_mock.assert_not_called()
+
+    # the selection is left untouched by the pick
+    assert len(table.selectionModel().selectedRows()) == 0
 
 
 def test_center_from_tracksviewer_scrolls_table(colored_table_widget, qtbot):
