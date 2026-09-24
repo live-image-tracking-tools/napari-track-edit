@@ -398,7 +398,9 @@ class TrackLabels(ContourLabels):
     def _on_paint(self, event):
         """Listen to the paint event and check which track_ids have changed"""
 
-        _, updated_pixels = self._parse_paint_event(event.value)
+        updated_pixels = self._parse_paint_event(event.value)
+        if not updated_pixels:
+            return
 
         # Every entry covers exactly one time point, so more than one distinct time
         # means the brush spanned frames, which is not allowed.
@@ -421,10 +423,6 @@ class TrackLabels(ContourLabels):
             else:
                 self._ensure_valid_label()
                 target_value = self.selected_label
-
-            updated_pixels = self._parse_paint_event(event.value)
-            if not updated_pixels:
-                return
 
             with self.events.selected_label.blocker():
                 try:

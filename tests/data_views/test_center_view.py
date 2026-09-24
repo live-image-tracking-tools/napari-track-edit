@@ -459,7 +459,7 @@ class TestExtraViewerDims:
         assert tuple(viewer.dims.point[1:]) == (0, 5, 10, 10)
         assert viewer.dims.point[0] == 2.0
         points_layer = tracks_viewer.tracking_layers.points_layer
-        assert points_layer.node_index_dict[1] in points_layer._indices_view
+        assert points_layer.node_index_dict[1] in visible_point_indices(points_layer)
 
     def test_centering_survives_a_roll(self, viewer, tmp_path):
         """A roll leaves dims.point indexed by world axis, so the node still lands
