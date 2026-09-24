@@ -50,7 +50,7 @@ def test_start_tracking_creates_empty_tracks(scratch_app, mode, layer_type):
 
     tracks_viewer = widget.tracks_viewer
     assert tracks_viewer.tracks is not None
-    assert tracks_viewer.tracks.graph.num_nodes() == 0
+    assert tracks_viewer.tracks.graph_solution.num_nodes() == 0
 
     # the track layers exist and are empty
     points_layer = tracks_viewer.tracking_layers.points_layer

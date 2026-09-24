@@ -4,8 +4,8 @@ import napari
 import numpy as np
 import pytest
 import tracksdata as td
-from funtracks.data_model import SolutionTracks
-from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
+from funtracks.data_model import Tracks
+from funtracks.utils.tracksdata_utils import create_empty_graph
 from tracksdata.nodes._mask import Mask
 
 from motile_tracker.data_views.views.ortho_views import initialize_ortho_views
@@ -39,7 +39,7 @@ def _make_single_node_graph(
         pos: Node position in world coordinates [z, y, x].
         seg_bbox: Bounding box [z0, y0, x0, z1, y1, x1] for the node's mask.
             If provided, mask/bbox node attributes and shape metadata
-            are added so SolutionTracks can reconstruct the segmentation.
+            are added so Tracks can reconstruct the segmentation.
         seg_shape: Full segmentation array shape (t, z, y, x). Required when
             seg_bbox is provided.
     """
@@ -47,7 +47,7 @@ def _make_single_node_graph(
     if seg_bbox is not None:
         node_attributes += [td.DEFAULT_ATTR_KEYS.MASK, td.DEFAULT_ATTR_KEYS.BBOX]
 
-    graph = create_empty_graphview_graph(
+    graph = create_empty_graph(
         node_attributes=node_attributes,
         ndim=4,
         database=str(tmp_path / "graph.db"),
@@ -116,7 +116,7 @@ class TestCenterViewWithScale:
         )
 
         scale = [1.0, 0.5, 1.0, 1.0]  # t, z, y, x
-        tracks = SolutionTracks(graph=graph, scale=scale, ndim=4, time_attr="t")
+        tracks = Tracks(graph=graph, scale=scale, ndim=4, time_attr="t")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
@@ -155,7 +155,7 @@ class TestCenterViewWithScale:
         )
 
         scale = [1.0, 2.0, 1.0, 1.0]
-        tracks = SolutionTracks(graph=graph, scale=scale, ndim=4, time_attr="t")
+        tracks = Tracks(graph=graph, scale=scale, ndim=4, time_attr="t")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
@@ -197,7 +197,7 @@ class TestCenterViewWithScale:
         )
 
         scale = [1.0, 0.5, 1.0, 1.0]
-        tracks = SolutionTracks(graph=graph, scale=scale, ndim=4, time_attr="t")
+        tracks = Tracks(graph=graph, scale=scale, ndim=4, time_attr="t")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
@@ -229,7 +229,7 @@ class TestCenterViewWithScale:
             seg_shape=(2, 20, 20, 20),
         )
 
-        tracks = SolutionTracks(graph=graph, ndim=4, time_attr="t")
+        tracks = Tracks(graph=graph, ndim=4, time_attr="t")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
@@ -269,9 +269,7 @@ class TestCenterViewWithScale:
         # Node at world position [5, 10, 10] — no segmentation
         graph = _make_single_node_graph(tmp_path, pos=[5, 10, 10])
 
-        tracks = SolutionTracks(
-            graph=graph, scale=[1.0, 0.5, 1.0, 1.0], ndim=4, time_attr="t"
-        )
+        tracks = Tracks(graph=graph, scale=[1.0, 0.5, 1.0, 1.0], ndim=4, time_attr="t")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
@@ -311,9 +309,7 @@ class TestCenterViewWithScale:
         # Node at world position [5, 10, 10] — no segmentation
         graph = _make_single_node_graph(tmp_path, pos=[5, 10, 10])
 
-        tracks = SolutionTracks(
-            graph=graph, scale=[1.0, 0.5, 1.0, 1.0], ndim=4, time_attr="t"
-        )
+        tracks = Tracks(graph=graph, scale=[1.0, 0.5, 1.0, 1.0], ndim=4, time_attr="t")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
@@ -354,7 +350,7 @@ class TestCenterViewWithScale:
         )
 
         scale = [1.0, 0.5, 1.0, 1.0]  # z-scale = 0.5
-        tracks = SolutionTracks(graph=graph, scale=scale, ndim=4, time_attr="t")
+        tracks = Tracks(graph=graph, scale=scale, ndim=4, time_attr="t")
 
         # Show orthogonal views BEFORE adding tracks so they get the layers
         ortho_manager.show()
@@ -434,9 +430,7 @@ class TestExtraViewerDims:
             seg_bbox=[4, 9, 9, 6, 11, 11],
             seg_shape=(2, 20, 20, 20),
         )
-        tracks = SolutionTracks(
-            graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t"
-        )
+        tracks = Tracks(graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t")
         if extra_shape is not None:
             viewer.add_image(np.zeros(extra_shape, dtype=np.uint8), name="channels")
 
@@ -508,9 +502,7 @@ class TestOrthoViewsWithExtraDims:
             seg_bbox=[4, 9, 9, 6, 11, 11],
             seg_shape=(2, 20, 20, 20),
         )
-        tracks = SolutionTracks(
-            graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t"
-        )
+        tracks = Tracks(graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t")
         ortho_manager.show()
         qtbot.waitUntil(lambda: ortho_manager.is_shown(), timeout=2000)
 
@@ -558,9 +550,7 @@ class TestAxisLabels:
             seg_bbox=[4, 9, 9, 6, 11, 11],
             seg_shape=(2, 20, 20, 20),
         )
-        return SolutionTracks(
-            graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t"
-        )
+        return Tracks(graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t")
 
     def test_tracks_name_their_own_axes_only(self, viewer, tmp_path):
         tracks_viewer = TracksViewer.get_instance(viewer)
@@ -585,7 +575,7 @@ class TestAxisLabels:
         """The old hardcoded suffix gave 2D+time tracks ('z','y','x'), naming the
         time axis 'z'."""
 
-        graph = create_empty_graphview_graph(
+        graph = create_empty_graph(
             node_attributes=["pos", "area"],
             ndim=3,
             database=str(tmp_path / "graph2d.db"),
@@ -594,9 +584,7 @@ class TestAxisLabels:
             nodes=[{"t": 0, "pos": [10, 10], "area": 100.0, "solution": True}],
             indices=[1],
         )
-        tracks = SolutionTracks(
-            graph=graph, scale=[1.0, 1.0, 1.0], ndim=3, time_attr="t"
-        )
+        tracks = Tracks(graph=graph, scale=[1.0, 1.0, 1.0], ndim=3, time_attr="t")
 
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
@@ -632,9 +620,7 @@ class TestCenterViewInEditingMode:
             viewer.add_image(np.zeros((2, 20, 20, 20)), name="raw_image")
             graph = _make_single_node_graph(tmp_path, pos=[5, 10, 10])
 
-        tracks = SolutionTracks(
-            graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t"
-        )
+        tracks = Tracks(graph=graph, scale=[1.0, 1.0, 1.0, 1.0], ndim=4, time_attr="t")
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
         return tracks_viewer
