@@ -4,7 +4,7 @@ import dask.array as da
 import numpy as np
 import pytest
 import tracksdata as td
-from funtracks.utils.tracksdata_utils import create_empty_graphview_graph
+from funtracks.utils.tracksdata_utils import create_empty_graph
 
 from motile_tracker.motile.backend import MotileRun, SolverParams
 from motile_tracker.motile.menus.run_editor import RunEditor
@@ -104,7 +104,7 @@ def test_run_creation(make_napari_viewer, segmentation_2d):
     assert np.array_equal(run.input_segmentation, segmentation_2d)
     assert run.input_points is None
     assert tuple(run.scale) == (1, 2, 3)
-    assert isinstance(run.graph, td.graph.GraphView)
+    assert isinstance(run.graph_solution, td.graph.GraphView)
 
     # get_run creates run with Points layer
     points_data = np.array([[0, 10, 20], [1, 30, 40]])
@@ -202,7 +202,7 @@ def test_new_run(make_napari_viewer, segmentation_2d, qtbot):
 
     custom_params = SolverParams(max_edge_distance=999.0, max_children=5)
     existing_run = MotileRun(
-        graph=create_empty_graphview_graph(),
+        graph=create_empty_graph(),
         input_segmentation=segmentation_2d,
         run_name="existing_run",
         solver_params=custom_params,

@@ -191,7 +191,7 @@ class TrackLabels(ContourLabels):
         """
         tracks = self.tracks_viewer.tracks
         if tracks is not None:
-            nodes = tracks.graph.node_ids()
+            nodes = tracks.graph_solution.node_ids()
             track_ids = tracks.get_track_ids(nodes)
             # One vectorized colormap.map call for all nodes: colormap.map has a
             # large fixed per-call overhead (cache lookup, dtype, reshape), so a
@@ -466,7 +466,7 @@ class TrackLabels(ContourLabels):
                 _new_label(self, new_track_id=False)
 
             # if a node with the given label is already in the graph
-            if self.tracks_viewer.tracks.graph.has_node(self.selected_label):
+            if self.tracks_viewer.tracks.graph_solution.has_node(self.selected_label):
                 # Update the track id
                 self.tracks_viewer.selected_track = (
                     self.tracks_viewer.tracks.get_track_id(self.selected_label)

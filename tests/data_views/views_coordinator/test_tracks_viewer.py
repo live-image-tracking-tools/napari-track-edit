@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import napari
 import pytest
-from funtracks.data_model import SolutionTracks
+from funtracks.data_model import Tracks
 
 from motile_tracker.data_views.views.layers.track_graph import TrackGraph
 from motile_tracker.data_views.views.layers.track_labels import TrackLabels
@@ -50,7 +50,7 @@ class TestNodeOperations:
 
         tracks_viewer.delete_node()
 
-        assert not tracks.graph.has_node(node_to_delete)
+        assert not tracks.graph_solution.has_node(node_to_delete)
 
     def test_delete_multiple_nodes(self, tracks_viewer_setup, click_node):
         """Test deleting multiple selected nodes removes all of them."""
@@ -65,7 +65,7 @@ class TestNodeOperations:
         tracks_viewer.delete_node()
 
         for node in nodes_to_delete:
-            assert not tracks.graph.has_node(node)
+            assert not tracks.graph_solution.has_node(node)
 
     def test_delete_node_with_no_tracks(self, viewer):
         """Test delete_node does nothing when no tracks are loaded."""
@@ -83,7 +83,7 @@ class TestEdgeOperations:
         viewer, tracks_viewer, tracks = tracks_viewer_setup
 
         # Test 1: Delete edge between two connected nodes
-        edges = tracks.graph.edge_list()
+        edges = tracks.graph_solution.edge_list()
         if not edges:
             pytest.skip("No edges in test graph")
 
@@ -94,17 +94,17 @@ class TestEdgeOperations:
         tracks_viewer.delete_edge()
 
         # Verify the edge was actually deleted from the graph
-        assert not tracks.graph.has_edge(source, target)
+        assert not tracks.graph_solution.has_edge(source, target)
 
         # Test 2: Delete edge with wrong number of selections
-        single_node = list(tracks.graph.node_ids())[0]
+        single_node = list(tracks.graph_solution.node_ids())[0]
         click_node(tracks_viewer, single_node)
 
-        edge_count_before = tracks.graph.num_edges()
+        edge_count_before = tracks.graph_solution.num_edges()
         tracks_viewer.delete_edge()
 
         # Should not have deleted anything
-        assert tracks.graph.num_edges() == edge_count_before
+        assert tracks.graph_solution.num_edges() == edge_count_before
 
     def test_swap_nodes(self, viewer, graph_2d_without_segmentation, click_node):
         """Test swapping predecessors of two nodes updates the graph correctly.
@@ -130,9 +130,7 @@ class TestEdgeOperations:
             [{"source_id": 7, "target_id": 6, "solution": True}]
         )
 
-        tracks = SolutionTracks(
-            graph=graph_2d_without_segmentation, ndim=3, time_attr="t"
-        )
+        tracks = Tracks(graph=graph_2d_without_segmentation, ndim=3, time_attr="t")
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
 
@@ -143,10 +141,10 @@ class TestEdgeOperations:
         tracks_viewer.swap_nodes()
 
         # After swap: predecessors are exchanged (4->6, 7->5)
-        assert tracks.graph.has_edge(4, 6)
-        assert tracks.graph.has_edge(7, 5)
-        assert not tracks.graph.has_edge(4, 5)
-        assert not tracks.graph.has_edge(7, 6)
+        assert tracks.graph_solution.has_edge(4, 6)
+        assert tracks.graph_solution.has_edge(7, 5)
+        assert not tracks.graph_solution.has_edge(4, 5)
+        assert not tracks.graph_solution.has_edge(7, 6)
 
     def test_create_edge_sorts_by_time(self, viewer, graph_2d, click_node):
         """Test create_edge orders nodes by time (earlier -> later).
@@ -167,7 +165,7 @@ class TestEdgeOperations:
         tracks_viewer.create_edge()
 
         # Edge must go from earlier (2) to later (6), regardless of selection order
-        assert tracks.graph.has_edge(2, 6)
+        assert tracks.graph_solution.has_edge(2, 6)
 
     def test_create_edge_with_force(self, viewer, graph_2d, monkeypatch, click_node):
         """Test create_edge handles forceable errors by retrying with force=True.
@@ -194,9 +192,9 @@ class TestEdgeOperations:
         tracks_viewer.create_edge()
 
         # New edge should be in the graph
-        assert tracks.graph.has_edge(2, 4)
+        assert tracks.graph_solution.has_edge(2, 4)
         # Conflicting edge should have been removed by force
-        assert not tracks.graph.has_edge(3, 4)
+        assert not tracks.graph_solution.has_edge(3, 4)
 
     def test_set_division_makes_and_breaks_division(self, viewer, graph_2d, click_node):
         """Test set_division connects a mother to two daughters and back again.
@@ -213,18 +211,18 @@ class TestEdgeOperations:
         click_node(tracks_viewer, 4, append=True)
 
         tracks_viewer.set_division()
-        assert tracks.graph.has_edge(4, 5)
-        assert tracks.graph.has_edge(4, 6)
+        assert tracks.graph_solution.has_edge(4, 5)
+        assert tracks.graph_solution.has_edge(4, 6)
 
         # Running it again on the same trio breaks the division
         tracks_viewer.set_division()
-        assert not tracks.graph.has_edge(4, 5)
-        assert not tracks.graph.has_edge(4, 6)
+        assert not tracks.graph_solution.has_edge(4, 5)
+        assert not tracks.graph_solution.has_edge(4, 6)
 
         # Undo restores the division
         tracks_viewer.undo()
-        assert tracks.graph.has_edge(4, 5)
-        assert tracks.graph.has_edge(4, 6)
+        assert tracks.graph_solution.has_edge(4, 5)
+        assert tracks.graph_solution.has_edge(4, 6)
 
     def test_set_division_invalid_selection_warns(self, viewer, graph_2d, click_node):
         """Test set_division shows a warning instead of raising on a bad selection."""
@@ -244,8 +242,8 @@ class TestEdgeOperations:
 
         warning.assert_called_once()
         assert "exactly one node to be earlier" in warning.call_args[0][2]
-        assert not tracks.graph.has_edge(2, 5)
-        assert not tracks.graph.has_edge(3, 5)
+        assert not tracks.graph_solution.has_edge(2, 5)
+        assert not tracks.graph_solution.has_edge(3, 5)
 
     def test_set_division_without_three_nodes_warns(self, viewer, graph_2d, click_node):
         """Test set_division warns instead of raising when not exactly 3 nodes are selected.
@@ -363,7 +361,7 @@ class TestDisplayModes:
         assert tracks_viewer.visible == "all"
 
         # Test 3: Lineage mode with selection
-        node = list(tracks.graph.node_ids())[0]
+        node = list(tracks.graph_solution.node_ids())[0]
         click_node(tracks_viewer, node)
         tracks_viewer.set_display_mode("lineage")
         assert tracks_viewer.mode == "lineage"
@@ -382,7 +380,7 @@ class TestDisplayModes:
         viewer, tracks_viewer, tracks = tracks_viewer_setup
 
         # Select a node and switch to lineage mode
-        node = list(tracks.graph.node_ids())[0]
+        node = list(tracks.graph_solution.node_ids())[0]
         click_node(tracks_viewer, node)
         tracks_viewer.set_display_mode("lineage")
 
@@ -402,7 +400,7 @@ class TestSelectionManagement:
         viewer, tracks_viewer, tracks = tracks_viewer_setup
 
         # Test 1: Center on single node
-        node = list(tracks.graph.node_ids())[0]
+        node = list(tracks.graph_solution.node_ids())[0]
         click_node(tracks_viewer, node)
 
         with patch.object(tracks_viewer, "center_on_node") as center_mock:
@@ -412,7 +410,7 @@ class TestSelectionManagement:
 
         # Test 2: No centering with multiple nodes
         tracks_viewer.selected_nodes.reset()
-        nodes = list(tracks.graph.node_ids())[:2]
+        nodes = list(tracks.graph_solution.node_ids())[:2]
         for i, node in enumerate(nodes):
             click_node(tracks_viewer, node, append=(i > 0))
 
@@ -426,7 +424,7 @@ class TestSelectionManagement:
         viewer, tracks_viewer, tracks = tracks_viewer_setup
 
         # Test 1: Update selected_track from selection
-        node = list(tracks.graph.node_ids())[0]
+        node = list(tracks.graph_solution.node_ids())[0]
         click_node(tracks_viewer, node)
         tracks_viewer.update_selection()
 
@@ -446,7 +444,7 @@ class TestSelectionManagement:
         # Test 3: Selecting another node still moves it
         other = next(
             n
-            for n in tracks.graph.node_ids()
+            for n in tracks.graph_solution.node_ids()
             if tracks.get_track_id(n) != expected_track_id
         )
         click_node(tracks_viewer, other)
@@ -477,7 +475,7 @@ class TestPickTrackId:
         # track 5 has no node in frame 0, so a fresh label is offered to paint with
         seg_layer = tracks_viewer.tracking_layers.seg_layer
         assert seg_layer.selected_label != 6
-        assert not tracks.graph.has_node(seg_layer.selected_label)
+        assert not tracks.graph_solution.has_node(seg_layer.selected_label)
 
     def test_picks_the_node_itself_in_the_current_frame(self, tracks_viewer_setup):
         """A node in the current frame becomes the label to paint with directly."""
@@ -508,7 +506,7 @@ class TestPickTrackId:
 
         assert tracks_viewer.selected_track == tracks.get_track_id(2)
         assert seg_layer.selected_label != 2
-        assert not tracks.graph.has_node(seg_layer.selected_label)
+        assert not tracks.graph_solution.has_node(seg_layer.selected_label)
 
     def test_without_segmentation(self, viewer, graph_2d_without_segmentation):
         """Without a seg layer the track id is set directly and the signal fires."""
@@ -664,18 +662,18 @@ class TestUndoRedo:
         # Do a real action: delete unconnected node 3
         click_node(tracks_viewer, 3)
         tracks_viewer.delete_node()
-        assert not tracks.graph.has_node(3)
+        assert not tracks.graph_solution.has_node(3)
 
         # Undo: node 3 should be restored
         tracks_viewer.undo()
-        assert tracks.graph.has_node(3)
+        assert tracks.graph_solution.has_node(3)
 
         # Redo: node 3 should be gone again
         tracks_viewer.redo()
-        assert not tracks.graph.has_node(3)
+        assert not tracks.graph_solution.has_node(3)
 
         tracks_viewer.undo()
-        assert tracks.graph.has_node(3)
+        assert tracks.graph_solution.has_node(3)
 
     def test_undo_redo_with_no_tracks(self, viewer):
         """Test undo/redo do nothing when no tracks are loaded."""
@@ -691,7 +689,7 @@ class TestLayerCreation:
 
     def test_layers_present_after_update_tracks(self, viewer, solution_tracks_2d):
         """Test that points, tracks graph, and seg layers are added to the viewer
-        after calling update_tracks with a SolutionTracks that has segmentation."""
+        after calling update_tracks with a Tracks that has segmentation."""
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
 
