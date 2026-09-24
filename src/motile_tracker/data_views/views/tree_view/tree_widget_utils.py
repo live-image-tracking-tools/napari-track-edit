@@ -91,10 +91,10 @@ def extract_sorted_tracks(
         'state', 'symbol', and 'x_axis_pos'
     """
 
-    if tracks is None or tracks.graph is None:
+    if tracks is None or tracks.graph_solution is None:
         return None
 
-    solution_nx_graph = tracks.graph
+    solution_nx_graph = tracks.graph_solution
     time_key = tracks.features.time_key
     tracklet_key = tracks.features.tracklet_key
 

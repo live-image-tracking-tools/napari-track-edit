@@ -354,7 +354,7 @@ class TreeWidget(QWidget):
         if self.tracks_viewer.tracks is None:
             self.graph = None
         else:
-            self.graph = self.tracks_viewer.tracks.graph
+            self.graph = self.tracks_viewer.tracks.graph_solution
 
         # check whether we have regionprop measurements and therefore should activate the
         # feature button
