@@ -10,9 +10,10 @@ from fonticon_fa6 import FA6S
 from funtracks.data_model import SolutionTracks, Tracks
 from funtracks.import_export import import_from_geff
 from napari._qt.qt_resources import QColoredSVGIcon
-from qtpy.QtCore import Signal
+from qtpy.QtCore import Qt, Signal
 from qtpy.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -29,6 +30,7 @@ from qtpy.QtWidgets import (
 )
 from superqt.fonticon import icon as qticon
 
+from motile_tracker.example_data import sample_tracks_path
 from motile_tracker.import_export.geff_io import write_geff_over
 from motile_tracker.import_export.menus.export_dialog import ExportDialog
 from motile_tracker.import_export.menus.import_dialog import (
@@ -434,6 +436,27 @@ class TracksList(QGroupBox):
         self.add_tracks(tracks, name, select=True)
         if source_path is not None:
             self.tracks_loaded.emit(tracks, source_path)
+
+    def load_sample_tracks(self, sample_name: str) -> None:
+        """Load one of the example tracks (see SAMPLE_TRACKS), downloading it
+        first if it is not present yet, and add it to the list.
+
+        Args:
+            sample_name (str): A key of SAMPLE_TRACKS
+        """
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            geff_dir = sample_tracks_path(sample_name)
+            tracks = import_from_geff(geff_dir)
+        except Exception as e:  # noqa: BLE001
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(
+                self, "Error", f"Failed to load example {sample_name}: {e}"
+            )
+            return
+        QApplication.restoreOverrideCursor()
+        self.add_tracks(tracks, sample_name, select=True)
+        self.tracks_loaded.emit(tracks, geff_dir)
 
     def _load_from_dialog(
         self,

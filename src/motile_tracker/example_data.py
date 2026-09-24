@@ -1,9 +1,12 @@
 import logging
 import shutil
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 from urllib.request import urlretrieve
 
+import gdown
 import numpy as np
 import tifffile
 import zarr
@@ -13,6 +16,9 @@ from napari.types import LayerData
 from skimage.measure import regionprops
 
 logger = logging.getLogger(__name__)
+
+# Region of Fluo-N2DL-HeLa used for the crop: (y, x) slices
+HELA_CROP = (slice(90, 300), slice(700, 1040))
 
 
 def Mouse_Embryo_Membrane() -> list[LayerData]:
@@ -113,13 +119,9 @@ def read_ctc_dataset(
     zarr_store = zarr.open(store=ds_zarr, mode="a")  # Open in append mode ('a')
     raw_data = zarr_store["01"]
     seg_data = zarr_store["01_ST"]
-    min_y = 90
-    min_x = 700
-    max_y = 300
-    max_x = 1040
     if crop_region:
-        raw_data = raw_data[:, min_y:max_y, min_x:max_x]
-        seg_data = seg_data[:, min_y:max_y, min_x:max_x]
+        raw_data = raw_data[(slice(None), *HELA_CROP)]
+        seg_data = seg_data[(slice(None), *HELA_CROP)]
     else:
         raw_data = raw_data[:]
         seg_data = seg_data[:]
@@ -298,3 +300,110 @@ def convert_to_zarr(
         file.unlink()
 
     tiff_path.rmdir()
+
+
+def Fluo_N2DL_HeLa_crop_raw() -> LayerData:
+    """Loads only the cropped raw data of Fluo-N2DL-HeLa (see Fluo_N2DL_HeLa_crop),
+    downloading the dataset first if it is not present.
+
+    Returns:
+        LayerData: An image layer of the cropped 01 training raw data
+    """
+    ds_name = "Fluo-N2DL-HeLa"
+    data_dir = Path(AppDirs("motile-tracker").user_data_dir)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    ds_zarr = data_dir / (ds_name + ".zarr")
+    if not ds_zarr.exists():
+        logger.info("Downloading %s", ds_name)
+        download_ctc_dataset(ds_name, data_dir)
+    raw_data = zarr.open(store=ds_zarr, mode="r")["01"][(slice(None), *HELA_CROP)]
+    return (raw_data, {"name": "01_raw"}, "image")
+
+
+def Mouse_Embryo_Membrane_raw() -> LayerData:
+    """Loads only the raw data of Mouse_Embryo_Membrane, downloading the dataset
+    first if it is not present.
+
+    Returns:
+        LayerData: An image layer of the membrane raw data
+    """
+    ds_name = "Mouse_Embryo_Membrane"
+    data_dir = Path(AppDirs("motile-tracker").user_data_dir)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    ds_zarr = data_dir / (ds_name + ".zarr")
+    if not ds_zarr.exists():
+        logger.info("Downloading %s", ds_name)
+        download_zenodo_dataset(ds_name, "imaging.tif", "segmentation.tif", data_dir)
+    raw_data = zarr.open(store=ds_zarr, path="01_membrane", dimension_separator="/")[:]
+    return (raw_data, {"name": "01_membrane"}, "image")
+
+
+class SampleTracks(NamedTuple):
+    """Example tracks shown in the welcome widget, with their raw data."""
+
+    url: str  # Google Drive folder with the geff
+    store_name: str  # name of the geff store in the user data dir
+    raw_name: str  # name of the raw data layer
+    load_raw: Callable[[], LayerData]
+
+
+# Example tracks, by display name.
+# TODO: the drive folders are missing their zarr metadata files. Until they are
+# re-uploaded, the store names point at local test geffs, so the download is
+# skipped when those are present.
+SAMPLE_TRACKS: dict[str, SampleTracks] = {
+    "Hela cells (2D)": SampleTracks(
+        "https://drive.google.com/drive/folders/1zRRS4TmfRgFCr11MMWmzNnKSNTDVitJl",
+        "test_data_2D.geff",
+        "01_raw",
+        Fluo_N2DL_HeLa_crop_raw,
+    ),
+    "Mouse embryo (3D)": SampleTracks(
+        "https://drive.google.com/drive/folders/1FyZ6KGjCdE3o0R9LpKFpOGtJHMZWLDEQ",
+        "test_data_3D.geff",
+        "01_membrane",
+        Mouse_Embryo_Membrane_raw,
+    ),
+}
+
+
+def sample_tracks_path(name: str) -> Path:
+    """Return the local path to the example tracks geff with the given name,
+    downloading it from Google Drive into the appdir "user data dir" first if it
+    is not present yet.
+
+    Args:
+        name (str): A key of SAMPLE_TRACKS
+
+    Returns:
+        Path: Path to the geff store
+    """
+    url, store_name, _, _ = SAMPLE_TRACKS[name]
+    data_dir = Path(AppDirs("motile-tracker").user_data_dir)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    store_path = data_dir / store_name
+    if not store_path.exists():
+        logger.info("Downloading %s", name)
+        download_drive_folder(url, store_path)
+    return store_path
+
+
+def download_drive_folder(url: str, output: Path) -> None:
+    """Download a public Google Drive folder to the given path. The folder is
+    first downloaded next to the output and only moved into place once complete,
+    so an interrupted download is not mistaken for existing data.
+
+    Args:
+        url (str): Url of the Google Drive folder
+        output (Path): Path to store the folder contents at
+    """
+    tmp_output = output.with_name(output.name + ".download")
+    if tmp_output.exists():
+        shutil.rmtree(tmp_output)
+    files = gdown.download_folder(
+        url=url, output=str(tmp_output), quiet=True, use_cookies=False
+    )
+    if not files:
+        shutil.rmtree(tmp_output, ignore_errors=True)
+        raise RuntimeError(f"Failed to download {url}")
+    tmp_output.rename(output)
