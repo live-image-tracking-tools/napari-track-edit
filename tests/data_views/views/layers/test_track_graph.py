@@ -90,12 +90,12 @@ def test_showing_all_twice_does_not_rebuild_the_graph(tracks_layer, monkeypatch)
     tracks_layer.update_track_visibility("all")
 
     assert len(rebuilds) == 0
-    assert tracks_layer.graph == tracks_layer.tracks_layer_graph
+    assert tracks_layer.graph == tracks_layer.full_division_edges
 
 
 def test_repeating_a_lineage_does_not_rebuild_the_graph(tracks_layer, monkeypatch):
     """The same lineage, given in a different order, is the same visible set."""
-    visible = list(tracks_layer.tracks_layer_graph.keys())
+    visible = list(tracks_layer.full_division_edges.keys())
     tracks_layer.update_track_visibility(visible)
     rebuilds = count_graph_rebuilds(tracks_layer, monkeypatch)
 
@@ -108,7 +108,7 @@ def test_repeating_a_lineage_does_not_rebuild_the_graph(tracks_layer, monkeypatc
 def test_changing_the_visible_set_does_rebuild_the_graph(tracks_layer, monkeypatch):
     """The guard must not swallow a real change."""
     tracks_layer.update_track_visibility("all")
-    full_graph = dict(tracks_layer.tracks_layer_graph)
+    full_graph = dict(tracks_layer.full_division_edges)
     assert len(full_graph) > 0, "fixture has no division, so nothing to hide"
     rebuilds = count_graph_rebuilds(tracks_layer, monkeypatch)
 
@@ -129,6 +129,12 @@ def test_visibility_emits_a_colour_event(tracks_layer):
     without an explicit assignment the new opacities would never be uploaded -
     and the graph assignment that used to do it by accident is now skipped.
     """
+    # The layer starts in "all" mode already, so hide a track first to force a
+    # real transition back to "all" - otherwise the visible-set guard skips the
+    # update entirely, which is exactly what test_showing_all_twice... covers.
+    one_track = [next(iter(tracks_layer.full_division_edges))]
+    tracks_layer.update_track_visibility(one_track)
+
     events = []
     tracks_layer.events.color_by.connect(lambda event: events.append(event))
 
@@ -136,6 +142,28 @@ def test_visibility_emits_a_colour_event(tracks_layer):
 
     assert len(events) == 1
     assert np.all(tracks_layer.track_colors[:, 3] == 1)
+
+
+def test_repeating_the_visible_set_does_not_rewrite_alpha(tracks_layer, monkeypatch):
+    """The guard on the visible set covers the colour write too, not just the graph.
+
+    Selecting a different node within the same visible set (e.g. clicking around
+    while in "all" mode) must not re-walk and re-upload the colour buffer either.
+    """
+    one_track = [next(iter(tracks_layer.full_division_edges))]
+    tracks_layer.update_track_visibility(one_track)
+
+    calls = []
+    original = tracks_layer._set_track_alpha
+    monkeypatch.setattr(
+        tracks_layer,
+        "_set_track_alpha",
+        lambda *a, **k: (calls.append(1), original(*a, **k))[1],
+    )
+
+    tracks_layer.update_track_visibility(one_track)
+
+    assert len(calls) == 0
 
 
 def test_hiding_tracks_sets_only_their_alpha(tracks_layer):
@@ -153,7 +181,7 @@ def test_hiding_tracks_sets_only_their_alpha(tracks_layer):
 def test_graph_display_is_restored_after_an_empty_lineage(tracks_layer):
     """A lineage without divisions disables the graph; 'all' must re-enable it."""
     track_ids = [int(tid) for tid in np.unique(tracks_layer.properties["track_id"])]
-    childless = [tid for tid in track_ids if tid not in tracks_layer.tracks_layer_graph]
+    childless = [tid for tid in track_ids if tid not in tracks_layer.full_division_edges]
     assert childless, "fixture has no track without a parent edge"
 
     tracks_layer.update_track_visibility(childless[:1])
@@ -165,11 +193,11 @@ def test_graph_display_is_restored_after_an_empty_lineage(tracks_layer):
 
 def test_refresh_resets_the_remembered_graph(tracks_layer, monkeypatch):
     """After a refresh the layer holds a fresh graph, so the key must be reset."""
-    tracks_layer.update_track_visibility([next(iter(tracks_layer.tracks_layer_graph))])
+    tracks_layer.update_track_visibility([next(iter(tracks_layer.full_division_edges))])
     tracks_layer._refresh()
     rebuilds = count_graph_rebuilds(tracks_layer, monkeypatch)
 
     tracks_layer.update_track_visibility("all")
 
     assert len(rebuilds) == 0
-    assert tracks_layer.graph == tracks_layer.tracks_layer_graph
+    assert tracks_layer.graph == tracks_layer.full_division_edges
