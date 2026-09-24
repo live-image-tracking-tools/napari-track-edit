@@ -70,6 +70,22 @@ def test_start_tracking_creates_empty_tracks(scratch_app, mode, layer_type):
     assert tracks_viewer.selected_track != 0
 
 
+def test_start_tracking_with_labels_keeps_background_transparent(scratch_app):
+    """The first label to paint with must not be 0, the background label.
+
+    Regression guard: on a graph without nodes the next node id used to be 0, so the
+    background got the track color (one opaque block) and painting only erased.
+    """
+
+    _viewer, widget, _table, _tree = scratch_app
+    widget.size_layer_dropdown.setCurrentText("img")
+    widget._start_tracking("labels")
+
+    seg_layer = widget.tracks_viewer.tracking_layers.seg_layer
+    assert seg_layer.selected_label != 0
+    assert seg_layer.colormap.map(np.array([0]))[0][3] == 0
+
+
 def test_start_buttons_require_a_size_layer(make_napari_viewer):
     """The start buttons are only enabled once an Image/Labels layer is selected."""
 
