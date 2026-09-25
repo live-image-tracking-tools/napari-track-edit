@@ -1,7 +1,9 @@
 import logging
 import shutil
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 from urllib.request import urlretrieve
 
 import numpy as np
@@ -21,6 +23,50 @@ CTC_URL_TEMPLATE = (
     "http://data.celltrackingchallenge.net/training-datasets/{ds_name}.zip"
 )
 
+# Region of Fluo-N2DL-HeLa used for the crop: (y, x) slices
+HELA_CROP = (slice(90, 300), slice(700, 1040))
+
+
+def user_data_dir() -> Path:
+    """The appdir "user data dir", where all example data is cached. Created if
+    it does not exist yet.
+    """
+    data_dir = Path(AppDirs("motile-tracker").user_data_dir)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
+
+
+def _ensure_dataset(ds_name: str, data_dir: Path, download: Callable[[], None]) -> Path:
+    """Return the path to a dataset's zarr, downloading the dataset first if it
+    is not there yet.
+
+    Args:
+        ds_name (str): Dataset name, the zarr is named after it
+        data_dir (Path): The directory the dataset is cached in
+        download (Callable[[], None]): Fetches and converts the dataset
+
+    Returns:
+        Path: Path to the zarr holding the dataset
+    """
+    ds_zarr = data_dir / (ds_name + ".zarr")
+    if not ds_zarr.exists():
+        logger.info("Downloading %s", ds_name)
+        download()
+    return ds_zarr
+
+
+def _zenodo_raw_layer(ds_zarr: Path) -> LayerData:
+    """The membrane intensity layer of a zenodo dataset zarr."""
+    raw_data = zarr.open(store=ds_zarr, path="01_membrane", dimension_separator="/")[:]
+    return (raw_data, {"name": "01_membrane"}, "image")
+
+
+def _ctc_raw_layer(ds_zarr: Path, crop_region: bool) -> LayerData:
+    """The 01 training intensity layer of a CTC dataset zarr."""
+    raw_data = zarr.open(store=ds_zarr, mode="r")["01"]
+    raw_data = raw_data[(slice(None), *HELA_CROP)] if crop_region else raw_data[:]
+    return (raw_data, {"name": "01_raw"}, "image")
+
 
 def Mouse_Embryo_Membrane() -> list[LayerData]:
     """Loads the Mouse Embryo Membrane raw data and segmentation data from
@@ -31,9 +77,7 @@ def Mouse_Embryo_Membrane() -> list[LayerData]:
             layer
     """
     ds_name = "Mouse_Embryo_Membrane"
-    appdir = AppDirs("motile-tracker")
-    data_dir = Path(appdir.user_data_dir)
-    data_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = user_data_dir()
     raw_name = "imaging.tif"
     label_name = "segmentation.tif"
     return read_zenodo_dataset(ds_name, raw_name, label_name, data_dir)
@@ -48,11 +92,7 @@ def Fluo_N2DL_HeLa() -> list[LayerData]:
         list[LayerData]: An image layer of 01 training raw data and a labels
             layer of 01 training silver truth labels
     """
-    ds_name = "Fluo-N2DL-HeLa"
-    appdir = AppDirs("motile-tracker")
-    data_dir = Path(appdir.user_data_dir)
-    data_dir.mkdir(parents=True, exist_ok=True)
-    return read_ctc_dataset(ds_name, data_dir)
+    return read_ctc_dataset("Fluo-N2DL-HeLa", user_data_dir())
 
 
 def Fluo_N2DL_HeLa_crop() -> list[LayerData]:
@@ -64,11 +104,7 @@ def Fluo_N2DL_HeLa_crop() -> list[LayerData]:
         list[LayerData]: An image layer of 01 training raw data and a labels
             layer of 01 training silver truth labels
     """
-    ds_name = "Fluo-N2DL-HeLa"
-    appdir = AppDirs("motile-tracker")
-    data_dir = Path(appdir.user_data_dir)
-    data_dir.mkdir(parents=True, exist_ok=True)
-    return read_ctc_dataset(ds_name, data_dir, crop_region=True)
+    return read_ctc_dataset("Fluo-N2DL-HeLa", user_data_dir(), crop_region=True)
 
 
 def read_zenodo_dataset(
@@ -87,13 +123,12 @@ def read_zenodo_dataset(
         list[LayerData]: An image layer of raw data and a segmentation labels
             layer
     """
-    ds_zarr = data_dir / (ds_name + ".zarr")
-    if not ds_zarr.exists():
-        logger.info("Downloading %s", ds_name)
-        download_zenodo_dataset(ds_name, raw_name, label_name, data_dir)
-
-    raw_data = zarr.open(store=ds_zarr, path="01_membrane", dimension_separator="/")[:]
-    raw_layer_data = (raw_data, {"name": "01_membrane"}, "image")
+    ds_zarr = _ensure_dataset(
+        ds_name,
+        data_dir,
+        lambda: download_zenodo_dataset(ds_name, raw_name, label_name, data_dir),
+    )
+    raw_layer_data = _zenodo_raw_layer(ds_zarr)
     seg_data = zarr.open(ds_zarr, path="01_labels", dimension_separator="/")[:]
     seg_layer_data = (seg_data, {"name": "01_labels"}, "labels")
     return [raw_layer_data, seg_layer_data]
@@ -113,24 +148,13 @@ def read_ctc_dataset(
         list[LayerData]: An image layer of 01 training raw data and a labels
             layer of 01 training silver truth labels
     """
-    ds_zarr = data_dir / (ds_name + ".zarr")
-    if not ds_zarr.exists():
-        logger.info("Downloading %s", ds_name)
-        download_ctc_dataset(ds_name, data_dir)
+    ds_zarr = _ensure_dataset(
+        ds_name, data_dir, lambda: download_ctc_dataset(ds_name, data_dir)
+    )
     zarr_store = zarr.open(store=ds_zarr, mode="a")  # Open in append mode ('a')
-    raw_data = zarr_store["01"]
+    raw_layer_data = _ctc_raw_layer(ds_zarr, crop_region)
     seg_data = zarr_store["01_ST"]
-    min_y = 90
-    min_x = 700
-    max_y = 300
-    max_x = 1040
-    if crop_region:
-        raw_data = raw_data[:, min_y:max_y, min_x:max_x]
-        seg_data = seg_data[:, min_y:max_y, min_x:max_x]
-    else:
-        raw_data = raw_data[:]
-        seg_data = seg_data[:]
-    raw_layer_data = (raw_data, {"name": "01_raw"}, "image")
+    seg_data = seg_data[(slice(None), *HELA_CROP)] if crop_region else seg_data[:]
     seg_layer_data = (seg_data, {"name": "01_ST"}, "labels")
 
     # Check if 'points' dataset exists in the zarr file
@@ -305,3 +329,142 @@ def convert_to_zarr(
         file.unlink()
 
     tiff_path.rmdir()
+
+
+def Fluo_N2DL_HeLa_crop_raw() -> LayerData:
+    """Loads only the cropped raw data of Fluo-N2DL-HeLa (see Fluo_N2DL_HeLa_crop),
+    downloading the dataset first if it is not present.
+
+    Returns:
+        LayerData: An image layer of the cropped 01 training raw data
+    """
+    ds_name = "Fluo-N2DL-HeLa"
+    data_dir = user_data_dir()
+    ds_zarr = _ensure_dataset(
+        ds_name, data_dir, lambda: download_ctc_dataset(ds_name, data_dir)
+    )
+    return _ctc_raw_layer(ds_zarr, crop_region=True)
+
+
+def Mouse_Embryo_Membrane_raw() -> LayerData:
+    """Loads only the raw data of Mouse_Embryo_Membrane, downloading the dataset
+    first if it is not present.
+
+    Returns:
+        LayerData: An image layer of the membrane raw data
+    """
+    ds_name = "Mouse_Embryo_Membrane"
+    data_dir = user_data_dir()
+    ds_zarr = _ensure_dataset(
+        ds_name,
+        data_dir,
+        lambda: download_zenodo_dataset(
+            ds_name, "imaging.tif", "segmentation.tif", data_dir
+        ),
+    )
+    return _zenodo_raw_layer(ds_zarr)
+
+
+class SampleTracks(NamedTuple):
+    """Example tracks shown in the welcome widget, with their raw data."""
+
+    url: str  # download url of a zip holding the geff store
+    store_name: str  # name of the geff store in the zip and in the user data dir
+    raw_name: str  # name of the raw data layer
+    raw_zarr: str  # name of the zarr the raw data is cached in
+    raw_size: str  # download size of the raw data, shown before downloading it
+    load_raw: Callable[[], LayerData]
+
+
+def _drive_download_url(file_id: str) -> str:
+    """Direct-download URL for a Google Drive file (skips the preview page)."""
+    return (
+        f"https://drive.usercontent.google.com/download?id={file_id}"
+        "&export=download&confirm=t"
+    )
+
+
+# Example tracks, by display name. They are zipped, because Google Drive drops the
+# hidden zarr metadata files (.zattrs, ...) of uploaded folders.
+SAMPLE_TRACKS: dict[str, SampleTracks] = {
+    "Hela cells (2D)": SampleTracks(
+        _drive_download_url("1wI1IHtxvbXB6Tg75zozxnFbeTITBefSW"),
+        "hela2D_crop_tracks.geff",
+        "01_raw",
+        "Fluo-N2DL-HeLa.zarr",
+        "190 MB",
+        Fluo_N2DL_HeLa_crop_raw,
+    ),
+    "Mouse embryo (3D)": SampleTracks(
+        _drive_download_url("1zTiI4FRiSyOomaN-eV_HBTqQoawUCPWi"),
+        "mouse3D_tracks.geff",
+        "01_membrane",
+        "Mouse_Embryo_Membrane.zarr",
+        "250 MB",
+        Mouse_Embryo_Membrane_raw,
+    ),
+}
+
+
+def sample_tracks_path(name: str) -> Path:
+    """Return the local path to the example tracks geff with the given name,
+    downloading it from Google Drive into the appdir "user data dir" first if it
+    is not present yet.
+
+    Args:
+        name (str): A key of SAMPLE_TRACKS
+
+    Returns:
+        Path: Path to the geff store
+    """
+    store_name = SAMPLE_TRACKS[name].store_name
+    store_path = user_data_dir() / store_name
+    if not store_path.exists():
+        logger.info("Downloading %s", name)
+        download_zipped_store(SAMPLE_TRACKS[name].url, store_path)
+    return store_path
+
+
+def raw_data_is_downloaded(name: str) -> bool:
+    """Whether the raw data belonging to a sample is already on disk, so that
+    clicking the sample does not trigger a large download unannounced.
+
+    Args:
+        name (str): A key of SAMPLE_TRACKS
+
+    Returns:
+        bool: True if the zarr holding the raw data exists
+    """
+    return (user_data_dir() / SAMPLE_TRACKS[name].raw_zarr).exists()
+
+
+def download_zipped_store(url: str, output: Path) -> None:
+    """Download a zip holding a store named like the output, and unpack it there.
+
+    The zip is downloaded and unpacked next to the output, and only moved into
+    place once complete, so an interrupted download is not mistaken for existing
+    data.
+
+    Args:
+        url (str): Download url of the zip
+        output (Path): Path to put the store at. The zip must contain a directory
+            with the same name.
+    """
+    tmp_dir = output.with_name(output.name + ".download")
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    tmp_dir.mkdir()
+    try:
+        zip_path = tmp_dir / "download.zip"
+        urlretrieve(url, filename=zip_path)  # noqa: S310 - fixed https url
+        if not zipfile.is_zipfile(zip_path):
+            # Google Drive serves an html page instead of the file when the
+            # download is blocked (quota exceeded, permissions changed, ...).
+            raise RuntimeError(f"Google Drive refused the download of {url}")
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(tmp_dir)
+        store = tmp_dir / output.name
+        if not store.is_dir():
+            raise RuntimeError(f"{url} does not contain {output.name}")
+        store.rename(output)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)

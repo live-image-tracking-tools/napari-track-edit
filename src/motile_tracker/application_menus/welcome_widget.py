@@ -1,7 +1,3 @@
-import urllib.request
-import zipfile
-from pathlib import Path
-
 import napari
 from qtpy.QtCore import Qt, QUrl
 from qtpy.QtGui import QDesktopServices
@@ -14,47 +10,23 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from motile_tracker.example_data import SAMPLE_TRACKS, raw_data_is_downloaded
+
 DOCS_URL = "https://funkelab.github.io/motile_tracker"
 KEYBINDINGS_URL = f"{DOCS_URL}/key_bindings.html"
 TUTORIAL_URL = "https://github.com/funkelab/motile_tracker/blob/main/assets/motile-tracker_tutorial.pdf"
 
-
-def _drive_download_url(file_id: str) -> str:
-    """Direct-download URL for a Google Drive file (skips the preview page)."""
-    return (
-        f"https://drive.usercontent.google.com/download?id={file_id}"
-        "&export=download&confirm=t"
-    )
-
-
-# Zipped example geff datasets, as (link label, file name, download url)
-EXAMPLE_GEFFS = (
-    (
-        "2D",
-        "hela2D_crop_tracks.geff.zip",
-        _drive_download_url("1wI1IHtxvbXB6Tg75zozxnFbeTITBefSW"),
-    ),
-    (
-        "3D",
-        "mouse3D_tracks.geff.zip",
-        _drive_download_url("1zTiI4FRiSyOomaN-eV_HBTqQoawUCPWi"),
-    ),
-)
-# Links use this scheme to trigger an in-app download instead of navigating.
-DOWNLOAD_SCHEME = "geff-download"
-LOAD_HINT = (
-    "Unzip the file, then load the .geff from the Tracks List menu "
-    '(select "Tracks (geff)" and press Load).'
-)
+# Links use this scheme to load an example instead of navigating to a page.
+EXAMPLE_SCHEME = "load-example"
 
 
 class WelcomeWidget(QWidget):
     """Getting started widget with links and basic information to get started with the tool."""
 
-    def __init__(self, _viewer: napari.Viewer):
-
-        super().__init__()  # viewer is actually not used for this widget, but kept in to
-        # match the expected signature for menu widgets.
+    def __init__(self, viewer: napari.Viewer):
+        super().__init__()
+        self.viewer = viewer
 
         content_widget = QWidget()
         layout = QVBoxLayout(content_widget)
@@ -70,10 +42,9 @@ class WelcomeWidget(QWidget):
         layout.addWidget(title)
 
         # Top links
-        download_links = "&nbsp;&nbsp;".join(
-            f'<a href="{DOWNLOAD_SCHEME}:{label}">'
-            f"<b>📥 Download {label} example</b></a>"
-            for label, _, _ in EXAMPLE_GEFFS
+        example_links = "&nbsp;&nbsp;".join(
+            f'<a href="{EXAMPLE_SCHEME}:{name}"><b>🔬 {name}</b></a>'
+            for name in SAMPLE_TRACKS
         )
         links_html = f"""
         <p style="margin: 8px 0; line-height: 1.8;">
@@ -82,7 +53,7 @@ class WelcomeWidget(QWidget):
             <a href="{TUTORIAL_URL}"><b>🎓 Tutorial</b></a>
         </p>
         <p style="margin: 8px 0; line-height: 1.8;">
-            {download_links}
+            <b>Example data:</b>&nbsp;&nbsp;{example_links}
         </p>
         """
         links = QTextBrowser()
@@ -129,44 +100,71 @@ class WelcomeWidget(QWidget):
         self.setLayout(layout)
 
     def _on_link_clicked(self, url: QUrl) -> None:
-        """Open documentation links in a browser, download example data in-app."""
-        if url.scheme() != DOWNLOAD_SCHEME:
+        """Open documentation links in a browser, load examples in the app."""
+        if url.scheme() == EXAMPLE_SCHEME:
+            self._load_example(url.path())
+        else:
             QDesktopServices.openUrl(url)
-            return
-        for label, filename, download_url in EXAMPLE_GEFFS:
-            if label == url.path():
-                self._download(filename, download_url)
-                return
 
-    def _download(self, filename: str, url: str) -> None:
-        """Download a dataset to the user's Downloads folder."""
-        dest = Path.home() / "Downloads" / filename
-        if dest.exists():
-            QMessageBox.information(
-                self,
-                "Already downloaded",
-                f"{filename} is already in your Downloads folder:\n{dest}\n\n"
-                f"{LOAD_HINT}",
-            )
-            return
+    def _load_example(self, sample_name: str) -> None:
+        """Load one of the sample tracks and its raw data, downloading them
+        first if needed.
 
+        The TracksViewer is looked up on click rather than on construction, so
+        the widget does not depend on the order in which the menus are created.
+
+        Args:
+            sample_name (str): A key of SAMPLE_TRACKS
+        """
+        if not self._confirm_raw_download(sample_name):
+            return
+        tracks_list = TracksViewer.get_instance(self.viewer).tracks_list
+        self._add_raw_layer(sample_name)
+        tracks_list.load_sample_tracks(sample_name)
+
+    def _confirm_raw_download(self, sample_name: str) -> bool:
+        """Ask before fetching the raw data for the first time, because it is a
+        few hundred megabytes and the viewer is unresponsive while it downloads.
+
+        Args:
+            sample_name (str): A key of SAMPLE_TRACKS
+
+        Returns:
+            bool: True if the example should be loaded
+        """
+        sample = SAMPLE_TRACKS[sample_name]
+        if sample.raw_name in self.viewer.layers or raw_data_is_downloaded(sample_name):
+            return True
+        answer = QMessageBox.question(
+            self,
+            "Download example data",
+            f"The images for {sample_name} still have to be downloaded "
+            f"({sample.raw_size}). The viewer will be unresponsive until the "
+            "download finishes.\n\nDownload them now?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        return answer == QMessageBox.Yes
+
+    def _add_raw_layer(self, sample_name: str) -> None:
+        """Add the raw data belonging to a sample to the viewer, downloading it
+        first if needed. Skipped if a layer with that name is already present.
+        Added before the tracks, so that the tracks layers are drawn on top.
+
+        Args:
+            sample_name (str): A key of SAMPLE_TRACKS
+        """
+        sample = SAMPLE_TRACKS[sample_name]
+        if sample.raw_name in self.viewer.layers:
+            return
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            urllib.request.urlretrieve(url, dest)  # noqa: S310 - fixed https url
-            if not zipfile.is_zipfile(dest):
-                # Google Drive serves an html page instead of the file when the
-                # download is blocked (quota exceeded, permissions changed, ...).
-                dest.unlink(missing_ok=True)
-                raise RuntimeError(
-                    "Google Drive refused the download, try again later."
-                )
+            data, meta, _ = sample.load_raw()
         except Exception as e:  # noqa: BLE001 - surfaced to the user in a dialog
-            QMessageBox.critical(self, "Download failed", str(e))
-        else:
-            QMessageBox.information(
-                self,
-                "Download complete",
-                f"Saved to:\n{dest}\n\n{LOAD_HINT}",
+            QMessageBox.warning(
+                self, "Error", f"Failed to load raw data for {sample_name}: {e}"
             )
+            return
         finally:
             QApplication.restoreOverrideCursor()
+        self.viewer.add_image(data, **meta)
