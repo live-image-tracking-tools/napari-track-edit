@@ -258,6 +258,7 @@ When inspecting a tracking result, you may notice mistakes that you want to corr
 | Click on a point or label  | Select this node (center view if necessary)  |
 | `SHIFT` + click on point or label  | Add this node to selection  |
 | `CTRL`/`CMD` + click on point or label  | Center view on node |
+| `ALT`/`OPTION` + click on point or label  | Use this node's Tracklet ID as the current one (like the pipette, but without changing selection or time point) |
 | Mouse drag with point layer selection tool active  | Select multiple nodes at once   |
 | `Q` | Toggle between viewing all nodes in the points/labels or only those for the currently selected lineages or groups  |
 | `T` | Center orthogonal views to mouse cursor location.
@@ -270,6 +271,7 @@ When inspecting a tracking result, you may notice mistakes that you want to corr
 | Click on a point or label | Select this node (center view if necessary) |
 | `SHIFT` + click on node | Add this node to selection |
 | `CTRL`/`CMD` + click on node  | Center view on node |
+| `ALT`/`OPTION` + click on node  | Use this node's Tracklet ID as the current one (like the pipette, but without changing selection or time point) |
 | Scroll | Zoom in or out
 | Scroll + `X` / Right mouse click + drag horizontally | Restrict zoom to the x-axis of the Lineage View |
 | Scroll + `Y` / Right mouse click + drag vertically | Restrict zoom to the y-axis of the Lineage View |

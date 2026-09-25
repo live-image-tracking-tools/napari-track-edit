@@ -27,7 +27,7 @@ class ParamView(QWidget):
         """
         super().__init__()
         self.param_name = param_name
-        field = solver_params.model_fields[param_name]
+        field = type(solver_params).model_fields[param_name]
         self.title = field.title
         self.param_label = QLabel(self.title)
         self.param_label.setToolTip(field.description)

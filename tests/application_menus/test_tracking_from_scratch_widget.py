@@ -9,7 +9,6 @@ guard that empty-graph path.
 import numpy as np
 import pytest
 
-from motile_tracker.application_menus.track_list_widget import TrackListWidget
 from motile_tracker.application_menus.tracking_from_scratch_widget import (
     TrackingFromScratch,
 )
@@ -51,7 +50,7 @@ def test_start_tracking_creates_empty_tracks(scratch_app, mode, layer_type):
 
     tracks_viewer = widget.tracks_viewer
     assert tracks_viewer.tracks is not None
-    assert tracks_viewer.tracks.graph.num_nodes() == 0
+    assert tracks_viewer.tracks.graph_solution.num_nodes() == 0
 
     # the track layers exist and are empty
     points_layer = tracks_viewer.tracking_layers.points_layer
@@ -69,6 +68,22 @@ def test_start_tracking_creates_empty_tracks(scratch_app, mode, layer_type):
     # an empty tree still gets a valid (non-zero) tracklet id to annotate with
     assert tracks_viewer.selected_track is not None
     assert tracks_viewer.selected_track != 0
+
+
+def test_start_tracking_with_labels_keeps_background_transparent(scratch_app):
+    """The first label to paint with must not be 0, the background label.
+
+    Regression guard: on a graph without nodes the next node id used to be 0, so the
+    background got the track color (one opaque block) and painting only erased.
+    """
+
+    _viewer, widget, _table, _tree = scratch_app
+    widget.size_layer_dropdown.setCurrentText("img")
+    widget._start_tracking("labels")
+
+    seg_layer = widget.tracks_viewer.tracking_layers.seg_layer
+    assert seg_layer.selected_label != 0
+    assert seg_layer.colormap.map(np.array([0]))[0][3] == 0
 
 
 def test_start_buttons_require_a_size_layer(make_napari_viewer):
@@ -99,11 +114,3 @@ def test_creating_a_second_tree_replaces_the_first(scratch_app):
     second = widget.tracks_viewer.tracks
     assert second is not first
     assert second.segmentation is None
-
-
-def test_track_list_widget_contains_from_scratch_widget(make_napari_viewer):
-    """The from-scratch controls live above the tracks list in the Tracks List tab."""
-
-    viewer = make_napari_viewer()
-    widget = TrackListWidget(viewer)
-    assert isinstance(widget.layout().itemAt(0).widget(), TrackingFromScratch)

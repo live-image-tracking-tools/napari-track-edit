@@ -30,7 +30,7 @@ The following columns have to be selected:
 - parent_id: id of the directly connected predecessor (parent) of the object. Should be empty if the object is at the start of a lineage.
 - seg_id: label value in the segmentation image data (if provided) that corresponds to the object id.
 
-From this, a `SolutionTracks object`_ is generated, containing a networkx graph representing the tracking result, and optionally
+From this, a `Tracks object`_ is generated, containing a networkx graph representing the tracking result, and optionally
 a segmentation. The networkx graph is directed, with nodes representing detections and
 edges going from a detection in time t to the same object in t+n (edges go forward in time).
 Nodes must have an attribute representing time, by default named "t" but a different name
@@ -62,4 +62,4 @@ Labels, and Tracks) to visualize the provided tracks:
 We plan to incorporate loaders from standard formats in the future to make this process easier,
 and incorporate the loading into the user interface.
 
-.. _SolutionTracks object: https://funkelab.github.io/funtracks/latest/reference/funtracks/data_model/solution_tracks/#funtracks.data_model.solution_tracks.SolutionTracks
+.. _Tracks object: https://funkelab.github.io/funtracks/latest/reference/funtracks/data_model/tracks/#funtracks.data_model.tracks.Tracks
