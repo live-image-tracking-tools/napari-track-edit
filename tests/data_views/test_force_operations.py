@@ -389,7 +389,8 @@ def test_invalid_edge_force(
     tracks_viewer.force = False
 
     monkeypatch.setattr(
-        "motile_tracker.data_views.views_coordinator.tracks_viewer.confirm_force_operation",
+        "motile_tracker.data_views.views_coordinator.tracks_viewer."
+        "confirm_force_operation",
         lambda message: confirm_response,
     )
 
@@ -489,8 +490,11 @@ def test_connect_horizontal_nodes_blocked(
     click_node(tracks_viewer, 3)
     click_node(tracks_viewer, 4, append=True)
 
-    warning_mock = MagicMock(return_value=QMessageBox.Ok)
-    monkeypatch.setattr(QMessageBox, "warning", warning_mock)
+    warning_mock = MagicMock()
+    monkeypatch.setattr(
+        "motile_tracker.data_views.views_coordinator.tracks_viewer.show_warning",
+        warning_mock,
+    )
     confirm_mock = MagicMock()
     monkeypatch.setattr(
         "motile_tracker.data_views.views_coordinator.tracks_viewer."
@@ -502,6 +506,6 @@ def test_connect_horizontal_nodes_blocked(
     tracks_viewer.connect_nodes()
 
     warning_mock.assert_called_once()
-    assert "Cannot connect nodes" in warning_mock.call_args.args[1]
+    assert "Cannot connect nodes" in warning_mock.call_args.args[0]
     confirm_mock.assert_not_called()  # never offered as a forceable action
     assert tracks_viewer.tracks.graph_solution.num_edges() == num_edges_before

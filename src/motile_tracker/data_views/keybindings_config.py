@@ -66,6 +66,11 @@ KEYBINDINGS = {
         "qt_modifiers": Qt.ShiftModifier,
         "targets": ["tracks_viewer"],
     },
+    "disconnect_nodes": {
+        "napari_keys": ["b"],
+        "qt_keys": [Qt.Key_B],
+        "targets": ["tracks_viewer"],
+    },
     "set_division": {
         "napari_keys": ["y"],
         "qt_keys": [Qt.Key_Y],

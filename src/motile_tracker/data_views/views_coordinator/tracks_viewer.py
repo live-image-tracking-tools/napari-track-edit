@@ -15,9 +15,9 @@ from funtracks.user_actions import (
     UserMergeNodes,
     UserSetDivision,
     UserSwapPredecessors,
-    is_connected_chain,
     get_track_id_options,
 )
+from napari.utils.notifications import show_warning
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
@@ -653,13 +653,10 @@ class TracksViewer:
         return track_id_per_time
 
     def connect_nodes(self, event=None, linear: bool | None = None):
-        """Connect the currently selected nodes into a single track, or break them
-        apart again if they are already connected.
+        """Connect the currently selected nodes into a single track.
 
-        Which of the two happens depends on the selection: only when there is nothing
-        left to connect - every consecutive pair in time order already has an edge -
-        does this disconnect them. In every other case the nodes are connected as far
-        as they can be, leaving the pairs that are connected already alone.
+        The nodes are sorted by time and connected pairwise, leaving the pairs that
+        are connected already alone. See :meth:`disconnect_nodes` for the inverse.
 
         Args:
             event: Unused, present so this can be used as a keybinding callback.
@@ -667,7 +664,7 @@ class TracksViewer:
                 so that the result is one linear track. If False, they are kept and
                 divisions are created instead. If None (the default), the user is
                 asked which of the two they want, but only when the choice makes a
-                difference for this selection. Ignored when disconnecting.
+                difference for this selection.
         """
 
         if self.tracks is None:
@@ -676,14 +673,6 @@ class TracksViewer:
             return
 
         nodes = [int(node) for node in self.selected_nodes.as_list]
-
-        if is_connected_chain(self.tracks, nodes):
-            # nothing left to connect, so the button breaks the chain apart instead
-            try:
-                UserDisconnectNodes(self.tracks, nodes)
-            except InvalidActionError as e:
-                QMessageBox.warning(None, "Cannot disconnect nodes", str(e))
-            return
 
         if linear is None:
             if UserConnectNodes.has_division_choice(self.tracks, nodes):
@@ -703,7 +692,7 @@ class TracksViewer:
                 if force:
                     UserConnectNodes(self.tracks, nodes, linear=linear, force=True)
             else:
-                QMessageBox.warning(None, "Cannot connect nodes", str(e))
+                show_warning(f"Cannot connect nodes: {e}")
 
     def connect_nodes_with_divisions(self, event=None):
         """Connect the selected nodes, keeping existing outgoing edges as divisions."""
@@ -715,6 +704,21 @@ class TracksViewer:
         outgoing edges of the nodes that get a new child."""
 
         self.connect_nodes(linear=True)
+
+    def disconnect_nodes(self, event=None):
+        """Break every existing edge in the currently selected nodes,
+        including skip edges."""
+
+        if self.tracks is None:
+            return
+        if len(self.selected_nodes) < 2:
+            return
+
+        nodes = [int(node) for node in self.selected_nodes.as_list]
+        try:
+            UserDisconnectNodes(self.tracks, nodes)
+        except InvalidActionError as e:
+            show_warning(f"Cannot disconnect nodes: {e}")
 
     def undo(self, event=None):
         if self.tracks is None:
