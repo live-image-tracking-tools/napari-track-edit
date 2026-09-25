@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 import numpy as np
 import pytest
 from qtpy.QtCore import QUrl
-from qtpy.QtWidgets import QTextBrowser
+from qtpy.QtWidgets import QProgressDialog, QTextBrowser, QWidget
 
 from motile_tracker import example_data
 from motile_tracker.application_menus import welcome_widget as welcome_module
@@ -22,6 +22,7 @@ from motile_tracker.application_menus.welcome_widget import (
 )
 from motile_tracker.data_views.views_coordinator.tracks_list import TracksList
 from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from motile_tracker.download_progress import MB, DownloadCancelled, download_progress
 from motile_tracker.example_data import (
     CTC_URL_TEMPLATE,
     SAMPLE_TRACKS,
@@ -77,7 +78,7 @@ def user_data_dir(tmp_path, monkeypatch) -> Path:
 def _fake_urlretrieve(downloads: list[str], content: dict[str, bytes]):
     """An urlretrieve that writes a zip with the given files, recording the urls."""
 
-    def urlretrieve(url, filename):
+    def urlretrieve(url, filename, reporthook=None):
         downloads.append(url)
         with zipfile.ZipFile(filename, "w") as zip_ref:
             for name, data in content.items():
@@ -117,7 +118,7 @@ def test_sample_tracks_path_downloads_if_missing(user_data_dir, monkeypatch):
 def test_refused_download_leaves_no_data(user_data_dir, monkeypatch):
     """Google Drive serving an html page instead of the zip is an error."""
 
-    def urlretrieve(url, filename):
+    def urlretrieve(url, filename, reporthook=None):
         Path(filename).write_text("<html>quota exceeded</html>")
 
     monkeypatch.setattr(example_data, "urlretrieve", urlretrieve)
@@ -141,7 +142,9 @@ def test_tracks_list_load_sample_tracks(
     geff_path = tmp_path / "sample.geff"
     write_geff_over(solution_tracks_2d, geff_path)
     module = "motile_tracker.data_views.views_coordinator.tracks_list"
-    monkeypatch.setattr(f"{module}.sample_tracks_path", lambda name: geff_path)
+    monkeypatch.setattr(
+        f"{module}.sample_tracks_path", lambda name, reporthook=None: geff_path
+    )
 
     # a modal error dialog would block the test, so fail on it instead
     def fail(parent, title, text):
@@ -247,7 +250,7 @@ def test_example_after_closing_tracks_list(make_napari_viewer, qtbot, monkeypatc
 
     welcome = WelcomeWidget(viewer)
     qtbot.addWidget(welcome)
-    monkeypatch.setattr(welcome, "_add_raw_layer", lambda name: None)
+    monkeypatch.setattr(welcome, "_add_raw_layer", lambda name: True)
     monkeypatch.setattr(tracks_list, "load_sample_tracks", MagicMock())
     _click_example(welcome, HELA)
 
@@ -258,3 +261,31 @@ def test_example_after_closing_tracks_list(make_napari_viewer, qtbot, monkeypatc
     manager.initialize_menu({"Tracks List": MENU_WIDGETS["Tracks List"]})
     assert manager.menu_widgets["Tracks List"].widget().tracks_list is tracks_list
     assert tracks_list.tracks_list.count() == 1
+
+
+def test_download_progress_reports_bytes(qtbot):
+    """The report hook drives the bar while bytes come in, and switches to a
+    busy indicator once the file is in and is being unpacked."""
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    with download_progress(parent, "test data") as reporthook:
+        dialog = parent.findChild(QProgressDialog)
+        reporthook(1, 10 * MB, 100 * MB)
+        assert (dialog.minimum(), dialog.maximum()) == (0, 100 * MB)
+        assert dialog.value() == 10 * MB
+        assert "10 / 100 MB" in dialog.labelText()
+
+        reporthook(10, 10 * MB, 100 * MB)  # all bytes received
+        assert dialog.maximum() == 0  # busy indicator
+        assert "Preparing" in dialog.labelText()
+
+
+def test_download_progress_cancel(qtbot):
+    """Pressing cancel interrupts the download through the report hook."""
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    with download_progress(parent, "test data") as reporthook:
+        reporthook(1, 1024, 1024 * 1024)
+        parent.findChild(QProgressDialog).cancel()
+        with pytest.raises(DownloadCancelled):
+            reporthook(2, 1024, 1024 * 1024)

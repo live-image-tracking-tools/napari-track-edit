@@ -26,6 +26,9 @@ CTC_URL_TEMPLATE = (
 # Region of Fluo-N2DL-HeLa used for the crop: (y, x) slices
 HELA_CROP = (slice(90, 300), slice(700, 1040))
 
+# Signature of the `urlretrieve` report hook: (block number, block size, total size)
+ReportHook = Callable[[int, int, int], None]
+
 
 def user_data_dir() -> Path:
     """The appdir "user data dir", where all example data is cached. Created if
@@ -192,7 +195,11 @@ def read_ctc_dataset(
 
 
 def download_zenodo_dataset(
-    ds_name: str, raw_name: str, label_name: str, data_dir: Path
+    ds_name: str,
+    raw_name: str,
+    label_name: str,
+    data_dir: Path,
+    reporthook: ReportHook | None = None,
 ) -> None:
     """Download a sample dataset from zenodo doi and unzip it, then delete the zip. Then convert the tiffs to
     zarrs for the first training set consisting of 3D membrane intensity images and segmentation.
@@ -202,6 +209,7 @@ def download_zenodo_dataset(
         raw_name (str): Name of the file that contains the intensity data
         label_name (str): Name of the file that contains the label data
         data_dir (Path): The directory in which to store the data.
+        reporthook (ReportHook | None): Called with the download progress.
     """
     ds_file_raw = data_dir / raw_name
     ds_file_labels = data_dir / label_name
@@ -212,9 +220,9 @@ def download_zenodo_dataset(
     zip_filename_labels = data_dir / "segmentation.zip"
 
     if not zip_filename_raw.is_file():
-        urlretrieve(url_raw, filename=zip_filename_raw)
+        urlretrieve(url_raw, filename=zip_filename_raw, reporthook=reporthook)
     if not zip_filename_labels.is_file():
-        urlretrieve(url_labels, filename=zip_filename_labels)
+        urlretrieve(url_labels, filename=zip_filename_labels, reporthook=reporthook)
 
     with zipfile.ZipFile(zip_filename_raw, "r") as zip_ref:
         zip_ref.extractall(data_dir)
@@ -228,7 +236,9 @@ def download_zenodo_dataset(
     convert_4d_arr_to_zarr(ds_file_labels, ds_zarr, "01_labels")
 
 
-def download_ctc_dataset(ds_name: str, data_dir: Path) -> None:
+def download_ctc_dataset(
+    ds_name: str, data_dir: Path, reporthook: ReportHook | None = None
+) -> None:
     """Download a dataset from the Cell Tracking Challenge
     and unzip it, then delete the zip. Then convert the tiffs to
     zarrs for the first training set images and silver truth.
@@ -236,13 +246,14 @@ def download_ctc_dataset(ds_name: str, data_dir: Path) -> None:
     Args:
         ds_name (str): Dataset name, according to the CTC
         data_dir (Path): The directory in which to store the data.
+        reporthook (ReportHook | None): Called with the download progress.
     """
     ds_dir = data_dir / ds_name
     ds_zarr = data_dir / (ds_name + ".zarr")
     ctc_url = CTC_URL_TEMPLATE.format(ds_name=ds_name)
     zip_filename = data_dir / f"{ds_name}.zip"
     if not zip_filename.is_file():
-        urlretrieve(ctc_url, filename=zip_filename)
+        urlretrieve(ctc_url, filename=zip_filename, reporthook=reporthook)
     with zipfile.ZipFile(zip_filename, "r") as zip_ref:
         zip_ref.extractall(data_dir)
     zip_filename.unlink()
@@ -331,9 +342,12 @@ def convert_to_zarr(
     tiff_path.rmdir()
 
 
-def Fluo_N2DL_HeLa_crop_raw() -> LayerData:
+def Fluo_N2DL_HeLa_crop_raw(reporthook: ReportHook | None = None) -> LayerData:
     """Loads only the cropped raw data of Fluo-N2DL-HeLa (see Fluo_N2DL_HeLa_crop),
     downloading the dataset first if it is not present.
+
+    Args:
+        reporthook (ReportHook | None): Called with the download progress.
 
     Returns:
         LayerData: An image layer of the cropped 01 training raw data
@@ -341,14 +355,19 @@ def Fluo_N2DL_HeLa_crop_raw() -> LayerData:
     ds_name = "Fluo-N2DL-HeLa"
     data_dir = user_data_dir()
     ds_zarr = _ensure_dataset(
-        ds_name, data_dir, lambda: download_ctc_dataset(ds_name, data_dir)
+        ds_name,
+        data_dir,
+        lambda: download_ctc_dataset(ds_name, data_dir, reporthook),
     )
     return _ctc_raw_layer(ds_zarr, crop_region=True)
 
 
-def Mouse_Embryo_Membrane_raw() -> LayerData:
+def Mouse_Embryo_Membrane_raw(reporthook: ReportHook | None = None) -> LayerData:
     """Loads only the raw data of Mouse_Embryo_Membrane, downloading the dataset
     first if it is not present.
+
+    Args:
+        reporthook (ReportHook | None): Called with the download progress.
 
     Returns:
         LayerData: An image layer of the membrane raw data
@@ -359,7 +378,7 @@ def Mouse_Embryo_Membrane_raw() -> LayerData:
         ds_name,
         data_dir,
         lambda: download_zenodo_dataset(
-            ds_name, "imaging.tif", "segmentation.tif", data_dir
+            ds_name, "imaging.tif", "segmentation.tif", data_dir, reporthook
         ),
     )
     return _zenodo_raw_layer(ds_zarr)
@@ -373,7 +392,7 @@ class SampleTracks(NamedTuple):
     raw_name: str  # name of the raw data layer
     raw_zarr: str  # name of the zarr the raw data is cached in
     raw_size: str  # download size of the raw data, shown before downloading it
-    load_raw: Callable[[], LayerData]
+    load_raw: Callable[..., LayerData]  # takes an optional report hook
 
 
 def _drive_download_url(file_id: str) -> str:
@@ -406,13 +425,14 @@ SAMPLE_TRACKS: dict[str, SampleTracks] = {
 }
 
 
-def sample_tracks_path(name: str) -> Path:
+def sample_tracks_path(name: str, reporthook: ReportHook | None = None) -> Path:
     """Return the local path to the example tracks geff with the given name,
     downloading it from Google Drive into the appdir "user data dir" first if it
     is not present yet.
 
     Args:
         name (str): A key of SAMPLE_TRACKS
+        reporthook (ReportHook | None): Called with the download progress.
 
     Returns:
         Path: Path to the geff store
@@ -421,7 +441,7 @@ def sample_tracks_path(name: str) -> Path:
     store_path = user_data_dir() / store_name
     if not store_path.exists():
         logger.info("Downloading %s", name)
-        download_zipped_store(SAMPLE_TRACKS[name].url, store_path)
+        download_zipped_store(SAMPLE_TRACKS[name].url, store_path, reporthook)
     return store_path
 
 
@@ -438,7 +458,9 @@ def raw_data_is_downloaded(name: str) -> bool:
     return (user_data_dir() / SAMPLE_TRACKS[name].raw_zarr).exists()
 
 
-def download_zipped_store(url: str, output: Path) -> None:
+def download_zipped_store(
+    url: str, output: Path, reporthook: ReportHook | None = None
+) -> None:
     """Download a zip holding a store named like the output, and unpack it there.
 
     The zip is downloaded and unpacked next to the output, and only moved into
@@ -449,13 +471,14 @@ def download_zipped_store(url: str, output: Path) -> None:
         url (str): Download url of the zip
         output (Path): Path to put the store at. The zip must contain a directory
             with the same name.
+        reporthook (ReportHook | None): Called with the download progress.
     """
     tmp_dir = output.with_name(output.name + ".download")
     shutil.rmtree(tmp_dir, ignore_errors=True)
     tmp_dir.mkdir()
     try:
         zip_path = tmp_dir / "download.zip"
-        urlretrieve(url, filename=zip_path)  # noqa: S310 - fixed https url
+        urlretrieve(url, filename=zip_path, reporthook=reporthook)  # noqa: S310
         if not zipfile.is_zipfile(zip_path):
             # Google Drive serves an html page instead of the file when the
             # download is blocked (quota exceeded, permissions changed, ...).

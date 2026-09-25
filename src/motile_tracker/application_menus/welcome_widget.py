@@ -2,7 +2,6 @@ import napari
 from qtpy.QtCore import Qt, QUrl
 from qtpy.QtGui import QDesktopServices
 from qtpy.QtWidgets import (
-    QApplication,
     QLabel,
     QMessageBox,
     QTextBrowser,
@@ -11,6 +10,7 @@ from qtpy.QtWidgets import (
 )
 
 from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from motile_tracker.download_progress import DownloadCancelled, download_progress
 from motile_tracker.example_data import SAMPLE_TRACKS, raw_data_is_downloaded
 
 DOCS_URL = "https://funkelab.github.io/motile_tracker"
@@ -119,12 +119,13 @@ class WelcomeWidget(QWidget):
         if not self._confirm_raw_download(sample_name):
             return
         tracks_list = TracksViewer.get_instance(self.viewer).tracks_list
-        self._add_raw_layer(sample_name)
+        if not self._add_raw_layer(sample_name):
+            return  # cancelled or failed, the tracks alone are not useful
         tracks_list.load_sample_tracks(sample_name)
 
     def _confirm_raw_download(self, sample_name: str) -> bool:
         """Ask before fetching the raw data for the first time, because it is a
-        few hundred megabytes and the viewer is unresponsive while it downloads.
+        few hundred megabytes and can take minutes on a slow connection.
 
         Args:
             sample_name (str): A key of SAMPLE_TRACKS
@@ -139,32 +140,36 @@ class WelcomeWidget(QWidget):
             self,
             "Download example data",
             f"The images for {sample_name} still have to be downloaded "
-            f"({sample.raw_size}). The viewer will be unresponsive until the "
-            "download finishes.\n\nDownload them now?",
+            f"({sample.raw_size}), which can take a few minutes.\n\n"
+            "Download them now?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
         )
         return answer == QMessageBox.Yes
 
-    def _add_raw_layer(self, sample_name: str) -> None:
+    def _add_raw_layer(self, sample_name: str) -> bool:
         """Add the raw data belonging to a sample to the viewer, downloading it
         first if needed. Skipped if a layer with that name is already present.
         Added before the tracks, so that the tracks layers are drawn on top.
 
         Args:
             sample_name (str): A key of SAMPLE_TRACKS
+
+        Returns:
+            bool: False if the user cancelled the download, or it failed
         """
         sample = SAMPLE_TRACKS[sample_name]
         if sample.raw_name in self.viewer.layers:
-            return
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+            return True
         try:
-            data, meta, _ = sample.load_raw()
+            with download_progress(self, f"images of {sample_name}") as reporthook:
+                data, meta, _ = sample.load_raw(reporthook)
+        except DownloadCancelled:
+            return False
         except Exception as e:  # noqa: BLE001 - surfaced to the user in a dialog
             QMessageBox.warning(
                 self, "Error", f"Failed to load raw data for {sample_name}: {e}"
             )
-            return
-        finally:
-            QApplication.restoreOverrideCursor()
+            return False
         self.viewer.add_image(data, **meta)
+        return True

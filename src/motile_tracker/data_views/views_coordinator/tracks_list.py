@@ -9,10 +9,9 @@ from fonticon_fa6 import FA6S
 from funtracks.data_model import SolutionTracks, Tracks
 from funtracks.import_export import import_from_geff
 from napari._qt.qt_resources import QColoredSVGIcon
-from qtpy.QtCore import Qt, Signal
+from qtpy.QtCore import Signal
 from qtpy.QtWidgets import (
     QAbstractItemView,
-    QApplication,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -29,6 +28,7 @@ from qtpy.QtWidgets import (
 )
 from superqt.fonticon import icon as qticon
 
+from motile_tracker.download_progress import DownloadCancelled, download_progress
 from motile_tracker.example_data import sample_tracks_path, user_data_dir
 from motile_tracker.import_export.geff_io import write_geff_over
 from motile_tracker.import_export.menus.export_dialog import ExportDialog
@@ -443,17 +443,17 @@ class TracksList(QGroupBox):
         Args:
             sample_name (str): A key of SAMPLE_TRACKS
         """
-        QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            geff_dir = sample_tracks_path(sample_name)
-            tracks = import_from_geff(geff_dir)
+            with download_progress(self, f"tracks of {sample_name}") as reporthook:
+                geff_dir = sample_tracks_path(sample_name, reporthook)
+                tracks = import_from_geff(geff_dir)
+        except DownloadCancelled:
+            return
         except Exception as e:  # noqa: BLE001 - surfaced to the user in a dialog
             QMessageBox.critical(
                 self, "Error", f"Failed to load example {sample_name}: {e}"
             )
             return
-        finally:
-            QApplication.restoreOverrideCursor()
         self.add_tracks(tracks, sample_name, select=True)
         self.tracks_loaded.emit(tracks, geff_dir)
 
