@@ -170,7 +170,7 @@ class ExportDialog:
                     return False
                 seg_path = Path(seg_dialog.selectedFiles()[0])
 
-            nodes = tracks.graph.node_ids()
+            nodes = tracks.graph_solution.node_ids()
             track_ids = tracks.get_track_ids(nodes)
             # Single vectorized colormap.map call (per-call overhead makes
             # per-node mapping O(nodes) slow); these colors are export-only and

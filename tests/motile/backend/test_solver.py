@@ -51,6 +51,41 @@ def test_solve_chunked(segmentation_3d):
     }
 
 
+def test_solve_chunked_multiple_windows():
+    """Test chunked solving over a track spanning more than one window.
+
+    segmentation_3d only has 2 timepoints, so test_solve_chunked never
+    actually exercises more than a single window (window_size=3 >= total
+    frames). This test uses a points-list track spanning 6 frames with
+    window_size=3, overlap_size=1, forcing 3 windows, and checks the chunked
+    result exactly matches a full (non-chunked) solve — including the edges
+    that cross window boundaries.
+    """
+    points = np.array([[t, 10.0 + t, 10.0, 10.0] for t in range(6)])
+
+    params_full = SolverParams()
+    params_full.appear_cost = None
+    params_full.iou_cost = None
+    params_full.max_edge_distance = 5.0
+    full_solution = solve(params_full, points)
+
+    params_chunked = SolverParams()
+    params_chunked.appear_cost = None
+    params_chunked.iou_cost = None
+    params_chunked.max_edge_distance = 5.0
+    params_chunked.window_size = 3
+    params_chunked.overlap_size = 1
+    chunked_solution = solve(params_chunked, points)
+
+    assert set(full_solution.node_ids()) == set(chunked_solution.node_ids())
+    assert {tuple(e) for e in full_solution.edge_list()} == {
+        tuple(e) for e in chunked_solution.edge_list()
+    }
+    # Should be one continuous track of all 6 nodes, not fragmented at window seams.
+    assert chunked_solution.num_nodes() == 6
+    assert chunked_solution.num_edges() == 5
+
+
 def test_solve_chunked_overlap_required():
     """Test that overlap_size must be at least 1."""
     params = SolverParams()

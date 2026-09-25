@@ -6,14 +6,16 @@ from typing import Optional
 import napari
 import pandas as pd
 from funtracks.actions import AddNode, BasicAction, DeleteNode
-from funtracks.data_model import SolutionTracks
+from funtracks.data_model import Tracks
 from funtracks.exceptions import InvalidActionError
 from funtracks.user_actions import (
     UserAddEdge,
     UserDeleteEdge,
     UserDeleteNodes,
+    UserMergeNodes,
     UserSetDivision,
     UserSwapPredecessors,
+    get_track_id_options,
 )
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
@@ -38,6 +40,7 @@ from motile_tracker.data_views.views_coordinator.node_selection_history import (
 from motile_tracker.data_views.views_coordinator.tracks_list import TracksList
 from motile_tracker.data_views.views_coordinator.user_dialogs import (
     confirm_force_operation,
+    select_merge_track_id,
 )
 
 BASE_TEXT = (
@@ -110,7 +113,7 @@ class TracksViewer:
             NodeType.SPLIT: "triangle_up",
         }
         self.mode = "all"
-        self.tracks: SolutionTracks | None = None
+        self.tracks: Tracks | None = None
         self.visible: list | str = []
         self.tracking_layers = TracksLayerGroup(self.viewer, self.tracks, "", self)
         self.center_node.connect(self.tracking_layers.center_view)
@@ -278,7 +281,8 @@ class TracksViewer:
             self.collection_widget._refresh()
 
         if len(self.selected_nodes) > 0 and any(
-            not self.tracks.graph.has_node(node) for node in self.selected_nodes
+            not self.tracks.graph_solution.has_node(node)
+            for node in self.selected_nodes
         ):
             self.selected_nodes.reset()
 
@@ -312,7 +316,7 @@ class TracksViewer:
             tracks.refresh.disconnect(self._refresh)
             tracks.action_applied.disconnect(self._on_action_applied)
 
-    def update_tracks(self, tracks: SolutionTracks, name: str) -> None:
+    def update_tracks(self, tracks: Tracks, name: str) -> None:
         """Stop viewing a previous set of tracks and replace it with a new one.
         Will create new segmentation and tracks layers and add them to the viewer.
 
@@ -438,7 +442,7 @@ class TracksViewer:
         keep the previous list of nodes visible to not have an entirely empty viewer.
         """
 
-        if self.tracks is None or self.tracks.graph is None:
+        if self.tracks is None or self.tracks.graph_solution is None:
             self.visible = []
             return
         if self.mode == "lineage":
@@ -446,17 +450,23 @@ class TracksViewer:
             # filter those
             if len(self.selected_nodes) == 0 and self.visible is not None:
                 prev_visible = [
-                    node for node in self.visible if self.tracks.graph.has_node(node)
+                    node
+                    for node in self.visible
+                    if self.tracks.graph_solution.has_node(node)
                 ]
                 self.visible = []
                 for node_id in prev_visible:
-                    self.visible += extract_lineage_tree(self.tracks.graph, node_id)
+                    self.visible += extract_lineage_tree(
+                        self.tracks.graph_solution, node_id
+                    )
                     if set(prev_visible).issubset(self.visible):
                         break
             else:
                 self.visible = []
                 for node in self.selected_nodes:
-                    self.visible += extract_lineage_tree(self.tracks.graph, node)
+                    self.visible += extract_lineage_tree(
+                        self.tracks.graph_solution, node
+                    )
         elif self.mode == "group":
             if (
                 self.collection_widget is not None
@@ -510,7 +520,7 @@ class TracksViewer:
         """
 
         node = int(node)
-        if self.tracks is None or not self.tracks.graph.has_node(node):
+        if self.tracks is None or not self.tracks.graph_solution.has_node(node):
             return
 
         seg_layer = self.tracking_layers.seg_layer
@@ -611,6 +621,55 @@ class TracksViewer:
         except InvalidActionError as e:
             QMessageBox.warning(None, "Cannot set division", str(e))
 
+    def merge_horizontally(self, event=None):
+        """Merge every set of selected nodes that shares a time point into one node.
+
+        The user picks which of the tracklet ids in a set the merged node should keep.
+        Sets that offer the same tracklet ids are asked about only once. Cancelling any
+        of the dialogs cancels the whole merge.
+        """
+
+        if self.tracks is None:
+            return
+        nodes = [int(node) for node in self.selected_nodes.as_list]
+        try:
+            options = get_track_id_options(self.tracks, nodes)
+            track_id_per_time = self._ask_merge_track_ids(options, self.colormap)
+            if track_id_per_time is None:
+                return  # the user cancelled, so merge nothing at all
+            UserMergeNodes(self.tracks, nodes, track_ids=track_id_per_time)
+        except InvalidActionError as e:
+            QMessageBox.warning(None, "Cannot merge nodes", str(e))
+
+    @staticmethod
+    def _ask_merge_track_ids(
+        options: dict[int, list[int]], colormap
+    ) -> dict[int, int] | None:
+        """Ask the user which tracklet id to keep in each set of nodes to merge.
+
+        Args:
+            options: A mapping from time point to the tracklet ids to choose from.
+            colormap: The colormap used to color the tracklet id options.
+
+        Returns:
+            A mapping from time point to the chosen tracklet id, or None if the user
+            cancelled any of the dialogs.
+        """
+
+        # Time points offering the same tracklet ids can be answered in one dialog
+        times_per_option: dict[tuple[int, ...], list[int]] = {}
+        for time, track_ids in options.items():
+            times_per_option.setdefault(tuple(track_ids), []).append(time)
+
+        track_id_per_time: dict[int, int] = {}
+        for track_ids, times in times_per_option.items():
+            track_id = select_merge_track_id(list(track_ids), times, colormap)
+            if track_id is None:
+                return None
+            for time in times:
+                track_id_per_time[time] = track_id
+        return track_id_per_time
+
     def create_edge(self, event=None):
         """Add an edge between the two currently selected nodes"""
 
@@ -628,7 +687,7 @@ class TracksViewer:
 
             node1, node2 = int(node1), int(node2)
 
-            if self.tracks.graph.out_degree(node1) >= 2:
+            if self.tracks.graph_solution.out_degree(node1) >= 2:
                 QMessageBox.warning(
                     None,
                     "Cannot add edge",
