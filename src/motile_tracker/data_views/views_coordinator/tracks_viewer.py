@@ -21,6 +21,11 @@ from napari.utils.notifications import show_warning
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
+from motile_tracker.data_views.colormap import (
+    TrackColormap,
+    color_feature_available,
+    make_color_source,
+)
 from motile_tracker.data_views.dims_utils import TracksDims
 from motile_tracker.data_views.keybindings_config import (
     KEYMAP,
@@ -68,6 +73,7 @@ class TracksViewer:
     tracks_updated = Signal(Optional[bool])  # noqa: UP007 UP045
     update_track_id = Signal()
     mode_updated = Signal()
+    colormap_updated = Signal()
     center_node = Signal(int)  # emitted when any component wants to center on a node
     node_selection_updated = Signal(bool)
 
@@ -103,11 +109,8 @@ class TracksViewer:
                 del TracksViewer._instance
 
         viewer.window._qt_window.destroyed.connect(_clear_if_current)
-        self.colormap = napari.utils.colormaps.label_colormap(
-            49,
-            seed=0.5,
-            background_value=0,
-        )
+        self.colormap = TrackColormap()
+        self.color_feature_key: str | None = None
 
         self.symbolmap: dict[NodeType, str] = {
             NodeType.END: "x",
@@ -190,6 +193,41 @@ class TracksViewer:
         """Set the current colormap on the TracksList, so that it can be exported."""
         self.tracks_list.colormap = self.colormap
 
+    def set_color_feature(self, feature_key: str | None, refresh: bool = True) -> None:
+        """Color every view by the given node feature and trigger refresh so that the
+        update is immediately visible.
+
+        Args:
+            feature_key: A node feature key, or None for the default (the
+                tracklet id - see `TrackColormap.feature_key`).
+            refresh: Set False while tracks are being swapped in, where the
+                caller rebuilds the views itself anyway.
+        """
+
+        # Fall back before committing anything: a feature the graph has no
+        # column for raises in the colormap, and self.color_feature_key would
+        # otherwise already hold the bad key, so every later _refresh raises too.
+        if self.tracks is not None and not color_feature_available(
+            self.tracks, feature_key
+        ):
+            feature_key = self.tracks.features.tracklet_key
+
+        self.color_feature_key = feature_key
+        self.colormap.set_feature(
+            feature_key, make_color_source(self.tracks, feature_key)
+        )
+        if refresh and self.tracks is not None:
+            self._refresh()
+        self.colormap_updated.emit()
+
+    def _validate_color_feature(self) -> None:
+        """Fall back to track ids if the feature being colored by is gone."""
+
+        if self.tracks is None or self.color_feature_key is None:
+            return
+        if not color_feature_available(self.tracks, self.color_feature_key):
+            self.set_color_feature(self.tracks.features.tracklet_key, refresh=False)
+
     def set_keybinds(self):
         bind_keymap(self.viewer, KEYMAP, self)
 
@@ -217,11 +255,16 @@ class TracksViewer:
         self.update_track_id.emit()
 
     def set_track_id_color(self, track_id: int) -> None:
-        """Update self.track_id color with the rgba color or given track_id, or a list of
-        0 if the provided  track_id is None"""
+        """Update self.track_id_color with the rgba color of the given track_id.
+
+        Shows the tracklet ID color when the colormap feature is set to tracklet ID,
+        transparent otherwise to avoid confusion.
+        """
 
         self.track_id_color = (
-            [0, 0, 0, 0] if track_id is None else self.colormap.map(track_id)
+            self.colormap.map(track_id)
+            if track_id is not None and self.colormap.colors_by_track_id
+            else [0, 0, 0, 0]
         )
 
     def update_track_df(
@@ -288,6 +331,8 @@ class TracksViewer:
         ):
             self.selected_nodes.reset()
 
+        self._validate_color_feature()
+        self.colormap.set_tracks(self.tracks)
         self.tracking_layers._refresh()
 
         self.update_track_df(initialization=False, refresh_view=refresh_view)
@@ -334,6 +379,12 @@ class TracksViewer:
         self._disconnect_tracks()
 
         self.tracks = tracks
+        # Forget outgoing tracks first, because they might have a different value bound
+        # to tracklet_key
+        self.colormap.set_tracks(None)
+        self.set_color_feature(tracks.features.tracklet_key, refresh=False)
+        self.colormap.set_tracks(tracks)
+        self.selected_nodes.deleted_items.clear()  # Reset deleted nodes when switching tracks
 
         # listen to refresh signals from the tracks
         self.tracks.refresh.connect(self._refresh)
@@ -382,6 +433,12 @@ class TracksViewer:
         # the dataframe of the tracks that just went away would survive
         self.track_df = pd.DataFrame()
         self.axis_order = []
+
+        # the mirror of what update_tracks does on the way in: without this the
+        # colormap keeps the outgoing tracks and a color per node alive, and
+        # color_feature_key keeps naming a feature of tracks that are gone
+        self.colormap.set_tracks(None)
+        self.color_feature_key = None
 
         # remove the layers before clearing the selection: clearing emits
         # selection_updated, and the update_selection that follows would otherwise
