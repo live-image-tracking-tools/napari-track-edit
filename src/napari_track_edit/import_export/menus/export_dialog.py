@@ -13,7 +13,7 @@ from qtpy.QtWidgets import (
     QVBoxLayout,
 )
 
-from motile_tracker.data_views.colormap import TrackColormap
+from napari_track_edit.data_views.colormap import TrackColormap
 
 
 class ExportTypeDialog(QDialog):

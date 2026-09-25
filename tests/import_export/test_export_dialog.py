@@ -488,7 +488,7 @@ def test_export_csv_colors_follow_the_selected_feature(
     with (
         mock_file_dialog(tmp_path / "tracks.csv"),
         patch(
-            "motile_tracker.import_export.menus.export_dialog.export_to_csv"
+            "napari_track_edit.import_export.menus.export_dialog.export_to_csv"
         ) as mock_export,
     ):
         ExportDialog.show_export_dialog(
