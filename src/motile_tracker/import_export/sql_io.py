@@ -40,11 +40,6 @@ SQL_SUFFIX = ".db"
 
 DRIVERNAME = "sqlite"
 
-# The value a tracksdata id column holds before anything has computed it. Shared
-# by tracklet, lineage and track id columns, and what funtracks checks for when
-# deciding whether existing ids can be trusted.
-UNCOMPUTED_ID = -1
-
 # How many nodes to read when cross-checking two position attributes against
 # each other. The question is whether a column means anything at all, which a
 # spread of a few hundred rows answers as well as all of them would.
@@ -219,10 +214,10 @@ def tracks_from_sql(path: Path, scale: list[float] | None = None) -> Tracks:
 
     Opening is **not** read-only. ``Tracks`` adds the ``solution`` node and edge
     attribute keys if the graph has none, which is an ``ALTER TABLE``, and it
-    computes and writes back any track ids the graph only pretends to have (see
-    :func:`_repair_uncomputed_lineage_ids`). A database written by nTE already
-    has everything, so nothing happens; a foreign database is written to by
-    being opened. Copy the file first if that matters.
+    computes and writes back any track ids the graph only pretends to have. A
+    database written by nTE already has everything, so nothing happens; a
+    foreign database is written to by being opened. Copy the file first if that
+    matters.
 
     A database that records no scale opens without one. Tracks with no scale are
     an ordinary state throughout the application - loading a geff produces them
@@ -251,7 +246,6 @@ def tracks_from_sql(path: Path, scale: list[float] | None = None) -> Tracks:
         scale=scale,
         ndim=described.get("ndim"),
     )
-    _repair_uncomputed_lineage_ids(tracks)
     return tracks
 
 
@@ -406,48 +400,3 @@ def _pos_is_populated(graph: td.graph.BaseGraph) -> bool:
 
     values = graph.filter(node_ids=sample).node_attrs(attr_keys=["pos"])["pos"]
     return any(np.asarray(value).any() for value in values)
-
-
-def _repair_uncomputed_lineage_ids(tracks: Tracks) -> None:
-    """Recompute lineage ids that the graph only pretends to have.
-
-    TODO: this is a workaround for a funtracks bug and belongs there, not here.
-    ``Tracks._ensure_track_features`` sentinel-checks only the *tracklet* key
-    (via ``_has_uncomputed_track_ids``), so a graph whose tracklet ids are real
-    but whose lineage column was never filled in takes the "activate, do not
-    compute" branch, and the -1 default is then served as a genuine lineage id.
-    Every node reports lineage -1, which silently breaks lineage display mode
-    and groups. An Ultrack database is exactly this shape: valid tracklet_id,
-    untouched lineage_id. funtracks should apply the same sentinel check to the
-    lineage key that it already applies to the tracklet key. Once it does,
-    delete this function, its call in :func:`tracks_from_sql`, the
-    ``UNCOMPUTED_ID`` constant and the lineage tests in
-    ``TestUltrackShapedDatabase``.
-
-    The check runs on ``graph_solution``, which is already in memory by the time
-    ``Tracks`` returns, so it costs no extra database read - the same read
-    funtracks does for the tracklet key. The recompute, if needed, does write
-    the repaired ids back to the database.
-
-    Args:
-        tracks (Tracks): Freshly constructed tracks to check and, if needed, fix.
-    """
-    lineage_key = tracks.features.lineage_key
-    solution = tracks.graph_solution
-    if (
-        lineage_key is None
-        or solution.num_nodes() == 0
-        or lineage_key not in solution.node_attr_keys()
-    ):
-        return
-
-    values = solution.node_attrs(attr_keys=[lineage_key])[lineage_key]
-    if not bool((values == UNCOMPUTED_ID).any()):
-        return
-
-    warn(
-        f'Lineage ids ("{lineage_key}") in this database were never computed. '
-        f"Computing them from the graph and writing them back.",
-        stacklevel=2,
-    )
-    tracks.enable_features([lineage_key])

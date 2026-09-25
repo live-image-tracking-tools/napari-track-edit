@@ -4,7 +4,6 @@ No Qt here: sql_io deliberately holds no widgets, so the format itself can be
 tested without a running application.
 """
 
-import warnings
 from pathlib import Path
 
 import numpy as np
@@ -244,11 +243,9 @@ class TestForeignDatabase:
 class TestUltrackShapedDatabase:
     """The shape an Ultrack database arrives in.
 
-    Three things are wrong with it in ways that raise nothing: the scale sits at
-    the top level of the metadata, the "pos" column exists but was never filled
-    in while the real coordinates live in per-axis columns, and the lineage
-    column holds nothing but the uncomputed sentinel next to perfectly good
-    tracklet ids.
+    Two things are wrong with it in ways that raise nothing: the scale sits at
+    the top level of the metadata, and the "pos" column exists but was never
+    filled in while the real coordinates live in per-axis columns.
     """
 
     @pytest.fixture
@@ -273,7 +270,6 @@ class TestUltrackShapedDatabase:
                 "x": [float(pos[1]) for pos in positions],
                 # The column Ultrack leaves behind: present, allocated, zero.
                 "pos": [np.zeros(2, dtype=float) for _ in node_ids],
-                "lineage_id": [sql_io.UNCOMPUTED_ID] * len(node_ids),
             },
             node_ids=node_ids,
         )
@@ -302,49 +298,6 @@ class TestUltrackShapedDatabase:
 
     def test_scale_is_recovered(self, ultrack_db):
         assert tracks_from_sql(ultrack_db).scale == [1.0, 0.5, 0.25]
-
-    def test_uncomputed_lineage_ids_are_replaced(self, ultrack_db):
-        """An all-sentinel lineage column must not be served as real lineages.
-
-        funtracks sentinel-checks the tracklet key but not the lineage key, so
-        without the repair every node reports lineage -1 and lineage mode and
-        groups are wrong while looking fine.
-        """
-        with pytest.warns(UserWarning, match="never computed"):
-            reopened = tracks_from_sql(ultrack_db)
-
-        lineage_key = reopened.features.lineage_key
-        values = reopened.graph_solution.node_attrs(attr_keys=[lineage_key])[
-            lineage_key
-        ]
-        assert sql_io.UNCOMPUTED_ID not in values.to_list()
-        # graph_2d is one lineage plus one unconnected node.
-        assert len(set(values.to_list())) == 2
-
-    def test_repaired_lineage_ids_reach_the_database(self, ultrack_db):
-        """The repair is a real edit, so reopening must not need it again."""
-        with pytest.warns(UserWarning, match="never computed"):
-            reopened = tracks_from_sql(ultrack_db)
-        close_database(reopened)
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", UserWarning)
-            tracks_from_sql(ultrack_db)
-
-    def test_good_tracklet_ids_are_kept(self, ultrack_db, tracks_2d):
-        """Repairing lineages must not discard the tracklet ids that were fine.
-
-        Ultrack's tracklets are the one part of its output worth keeping, and
-        the recompute path funtracks takes for a bad tracklet column would
-        renumber them.
-        """
-        with pytest.warns(UserWarning, match="never computed"):
-            reopened = tracks_from_sql(ultrack_db)
-
-        node_ids = sorted(reopened.graph_solution.node_ids())
-        assert list(reopened.get_track_ids(node_ids)) == list(
-            tracks_2d.get_track_ids(node_ids)
-        )
 
 
 class TestPositionSniffing:
