@@ -401,3 +401,35 @@ class TestFeatureWithoutAGraphColumn:
         with_ghost_feature.set_color_feature(GHOST)
 
         with_ghost_feature._refresh()  # must not raise
+
+
+class TestClearTracks:
+    """clear_tracks is the mirror of update_tracks, colormap included."""
+
+    def test_forgets_the_colors_of_the_tracks_that_went_away(self, grouped):
+        grouped.set_color_feature(GROUP)
+        assert len(grouped.colormap.nodes) > 0
+
+        grouped.clear_tracks()
+
+        assert len(grouped.colormap.nodes) == 0
+
+    def test_resets_the_feature_being_colored_by(self, grouped):
+        grouped.set_color_feature(GROUP)
+
+        grouped.clear_tracks()
+
+        assert grouped.color_feature_key is None
+
+    def test_loading_tracks_again_colors_them(self, grouped, solution_tracks_3d):
+        grouped.set_color_feature(GROUP)
+        grouped.clear_tracks()
+
+        grouped.update_tracks(tracks=solution_tracks_3d, name="test")
+
+        assert grouped.color_feature_key == solution_tracks_3d.features.tracklet_key
+        nodes = solution_tracks_3d.graph_solution.node_ids()
+        # every node has a color again (the colormap also holds the label the
+        # labels layer has minted to paint with, so this is a subset check)
+        assert set(nodes) <= set(grouped.colormap.nodes)
+        assert (grouped.colormap.get_colors(nodes)[:, 3] == 1.0).all()

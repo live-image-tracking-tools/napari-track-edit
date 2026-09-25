@@ -429,6 +429,12 @@ class TracksViewer:
         self.track_df = pd.DataFrame()
         self.axis_order = []
 
+        # the mirror of what update_tracks does on the way in: without this the
+        # colormap keeps the outgoing tracks and a color per node alive, and
+        # color_feature_key keeps naming a feature of tracks that are gone
+        self.colormap.set_tracks(None)
+        self.color_feature_key = None
+
         # remove the layers before clearing the selection: clearing emits
         # selection_updated, and the update_selection that follows would otherwise
         # recolour layers that are about to be thrown away
