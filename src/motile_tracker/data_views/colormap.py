@@ -150,22 +150,52 @@ def make_color_source(tracks: Tracks | None, feature_key: str | None) -> ColorSo
     return CategoricalColorSource()
 
 
+def color_feature_available(tracks: Tracks | None, feature_key: str | None) -> bool:
+    """Whether `feature_key`'s values can actually be read off `tracks`.
+
+    `tracks.features` only *describes* features; it is a plain dict that
+    nothing keeps in sync with the graph (`FeatureDict.from_json` rebuilds it
+    from saved metadata without consulting the graph), so a feature can be
+    described without having a column to read. Coloring by one of those raises
+    KeyError in `get_nodes_attr`, so callers check here first - the tree view
+    does the same thing inline (see `extract_sorted_tracks`).
+
+    None (one flat color) reads nothing, so it is always available.
+    """
+    if feature_key is None:
+        return True
+    if tracks is None:
+        return False
+    return (
+        feature_key in tracks.features
+        and feature_key in tracks.graph_solution.node_attr_keys()
+    )
+
+
 def categorical_feature_keys(tracks: Tracks | None) -> list[str]:
     """The node features that can currently drive coloring: tracklet id, lineage id, and
     every group (solution is excluded for now).
+
+    Features with no column on the graph are left out - see
+    `color_feature_available`. The column set is fetched once here rather than
+    per key, since reading it can hit the database.
     """
     if tracks is None:
         return []
     features = tracks.features
+    attr_keys = set(tracks.graph_solution.node_attr_keys())
     keys: list[str] = [
         key
         for key in (features.tracklet_key, features.lineage_key)
-        if key is not None and key in features
+        if key is not None and key in features and key in attr_keys
     ]
     keys += [
         key
         for key, feature in features.node_features.items()
-        if feature["value_type"] == "bool" and key != "solution" and key not in keys
+        if feature["value_type"] == "bool"
+        and key != "solution"
+        and key not in keys
+        and key in attr_keys
     ]
     return keys
 

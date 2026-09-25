@@ -18,7 +18,11 @@ from funtracks.user_actions import (
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
-from motile_tracker.data_views.colormap import TrackColormap, make_color_source
+from motile_tracker.data_views.colormap import (
+    TrackColormap,
+    color_feature_available,
+    make_color_source,
+)
 from motile_tracker.data_views.dims_utils import TracksDims
 from motile_tracker.data_views.keybindings_config import (
     KEYMAP,
@@ -195,6 +199,14 @@ class TracksViewer:
                 caller rebuilds the views itself anyway.
         """
 
+        # Fall back before committing anything: a feature the graph has no
+        # column for raises in the colormap, and self.color_feature_key would
+        # otherwise already hold the bad key, so every later _refresh raises too.
+        if self.tracks is not None and not color_feature_available(
+            self.tracks, feature_key
+        ):
+            feature_key = self.tracks.features.tracklet_key
+
         self.color_feature_key = feature_key
         self.colormap.set_feature(
             feature_key, make_color_source(self.tracks, feature_key)
@@ -208,7 +220,7 @@ class TracksViewer:
 
         if self.tracks is None or self.color_feature_key is None:
             return
-        if self.color_feature_key not in self.tracks.features:
+        if not color_feature_available(self.tracks, self.color_feature_key):
             self.set_color_feature(self.tracks.features.tracklet_key, refresh=False)
 
     def set_keybinds(self):

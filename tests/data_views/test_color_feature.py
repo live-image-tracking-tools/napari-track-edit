@@ -14,6 +14,7 @@ from motile_tracker.data_views.colormap import (
     PINK,
     BinaryColorSource,
     CategoricalColorSource,
+    categorical_feature_keys,
 )
 from motile_tracker.data_views.views.table.custom_table_widget import (
     ColoredTableWidget,
@@ -357,3 +358,46 @@ def test_switching_to_tracks_that_name_their_track_id_differently(tracks_viewer)
     tracks_viewer.update_tracks(tracks=incoming, name="other")  # must not raise
 
     assert tracks_viewer.color_feature_key == "track_id"
+
+
+GHOST = "ghost_group"
+
+
+@pytest.fixture
+def with_ghost_feature(tracks_viewer):
+    """Tracks whose feature dict describes a feature the graph has no column for.
+
+    `FeatureDict` is a plain dict that nothing keeps in sync with the graph -
+    `from_json` rebuilds it from saved metadata - so loaded tracks can end up
+    like this. `add_feature` (what the groups widget uses) would add the
+    column, which is why this writes the dict directly.
+    """
+    tracks_viewer.tracks.features[GHOST] = {
+        "feature_type": "node",
+        "value_type": "bool",
+        "num_values": 1,
+        "display_name": GHOST,
+        "default_value": False,
+    }
+    return tracks_viewer
+
+
+class TestFeatureWithoutAGraphColumn:
+    def test_is_not_offered(self, with_ghost_feature):
+        assert GHOST not in categorical_feature_keys(with_ghost_feature.tracks)
+
+    def test_selecting_it_anyway_falls_back_to_track_ids(self, with_ghost_feature):
+        # nothing in the UI can reach this now, but the fallback is what keeps
+        # a bad key from being committed by any other caller
+        with_ghost_feature.set_color_feature(GHOST)
+
+        tracklet_key = with_ghost_feature.tracks.features.tracklet_key
+        assert with_ghost_feature.color_feature_key == tracklet_key
+        assert isinstance(
+            with_ghost_feature.colormap.color_source, CategoricalColorSource
+        )
+
+    def test_does_not_wedge_every_later_refresh(self, with_ghost_feature):
+        with_ghost_feature.set_color_feature(GHOST)
+
+        with_ghost_feature._refresh()  # must not raise
