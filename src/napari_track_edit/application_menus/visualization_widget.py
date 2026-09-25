@@ -7,8 +7,10 @@ from qtpy.QtCore import QSignalBlocker
 from qtpy.QtWidgets import (
     QButtonGroup,
     QCheckBox,
+    QComboBox,
     QGroupBox,
     QHBoxLayout,
+    QLabel,
     QRadioButton,
     QSizePolicy,
     QVBoxLayout,
@@ -16,6 +18,10 @@ from qtpy.QtWidgets import (
 )
 from superqt import QLabeledDoubleSlider
 
+from napari_track_edit.data_views.colormap import (
+    categorical_feature_keys,
+    feature_display_name,
+)
 from napari_track_edit.data_views.views.ortho_views import initialize_ortho_views
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
@@ -72,6 +78,67 @@ class VisualizationConfigWidget(QWidget):
         layout.setSpacing(6)
         layout.addWidget(box)
         layout.addStretch(0)
+
+
+class ColorByWidget(QWidget):
+    """A "Color by" label and the dropdown picking the feature to color by.
+
+    Selecting an entry goes through `TracksViewer.set_color_feature`, which
+    updates the shared colormap *and* rebuilds the labels, points, tracks,
+    tree and table.
+
+    Currently, only categorical features are offered (see `categorical_feature_keys`),
+    plus "None", which paints every node one flat color.
+    """
+
+    def __init__(self, tracks_viewer: TracksViewer):
+        super().__init__()
+
+        self.tracks_viewer = tracks_viewer
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+
+        self.combo = QComboBox()
+        self.combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.combo.setToolTip(
+            "Node feature used to color the labels, points, tracks, tree and table."
+        )
+        self.combo.currentIndexChanged.connect(self._on_selected)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 0, 8, 0)
+        layout.setSpacing(8)
+        layout.addWidget(QLabel("Color by"))
+        layout.addWidget(self.combo, stretch=1)
+
+        self.tracks_viewer.tracks_updated.connect(self._populate)
+        self.tracks_viewer.colormap_updated.connect(self._populate)
+        self._populate()
+
+    def showEvent(self, event):
+        # To ensure that the groups are up to date
+        self._populate()
+        super().showEvent(event)
+
+    def _populate(self, *_args) -> None:
+        """Rebuild the entries and show the feature currently in use."""
+
+        keys = [None, *categorical_feature_keys(self.tracks_viewer.tracks)]
+        current = self.tracks_viewer.color_feature_key
+        with QSignalBlocker(self.combo):
+            self.combo.clear()
+            for key in keys:
+                self.combo.addItem(
+                    feature_display_name(self.tracks_viewer.tracks, key), key
+                )
+            self.combo.setCurrentIndex(keys.index(current) if current in keys else 0)
+        self.combo.setEnabled(self.tracks_viewer.tracks is not None)
+
+    def _on_selected(self, index: int) -> None:
+        if index < 0:
+            return
+        feature_key = self.combo.itemData(index)
+        if feature_key != self.tracks_viewer.color_feature_key:
+            self.tracks_viewer.set_color_feature(feature_key)
 
 
 class ModeWidget(QWidget):
@@ -172,10 +239,14 @@ class VisualizationWidget(QWidget):
 
         self.background_widget.setEnabled(False)  # initially disabled
 
+        self.color_by_widget = ColorByWidget(self.tracks_viewer)
+
         main_layout.addWidget(self.mode_widget)
         main_layout.addWidget(self.highlight_widget)
         main_layout.addWidget(self.foreground_widget)
         main_layout.addWidget(self.background_widget)
+
+        main_layout.addWidget(self.color_by_widget)
 
         self.show_ortho_views = QCheckBox("Orthogonal views")
         self.show_ortho_views.stateChanged.connect(self.initialize_ortho_views)
@@ -189,7 +260,7 @@ class VisualizationWidget(QWidget):
         main_layout.addWidget(self.show_viewer_overlay)
         main_layout.addStretch(1)
 
-        self.setMaximumHeight(360)
+        self.setMaximumHeight(400)
 
     def toggle_viewer_text_overlay(self, checked: bool):
         """Change the visibility of the text overlay"""

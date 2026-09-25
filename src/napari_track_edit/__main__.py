@@ -6,6 +6,27 @@ import napari
 
 from napari_track_edit.application_menus.main_app import StartupWidget
 
+LOG_FORMAT = "%(asctime)s [%(filename)s:%(lineno)d] %(levelname)-8s %(message)s"
+
+
+def _configure_logging() -> None:
+    """Send napari_track_edit's log records to the console.
+
+    Configures our own package logger rather than the root logger, so napari,
+    vispy and the rest of the dependency tree keep their own levels.
+
+    Called from main(), not from an ``if __name__ == "__main__"`` block: the
+    installed ``napari-track-edit`` command imports this module and calls
+    main(), so such a block only runs for ``python -m napari_track_edit``.
+    """
+    logger = logging.getLogger("napari_track_edit")
+    if logger.handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
+
 
 def _activate_on_macos(viewer: napari.Viewer) -> None:
     """Force the napari window (and its menu bar) to take focus on macOS.
@@ -23,6 +44,8 @@ def _activate_on_macos(viewer: napari.Viewer) -> None:
 
 
 def main():
+    _configure_logging()
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--mode",
@@ -40,9 +63,4 @@ def main():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(filename)s:%(lineno)d] %(levelname)-8s %(message)s",
-    )
-    logging.getLogger("napari_track_edit").setLevel(logging.DEBUG)
     sys.exit(main())

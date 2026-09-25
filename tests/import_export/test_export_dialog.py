@@ -1,9 +1,9 @@
 from unittest.mock import MagicMock, patch
 
-import napari
 import numpy as np
 import pytest
 
+from napari_track_edit.data_views.colormap import GREY, PINK, TrackColormap
 from napari_track_edit.import_export.menus.export_dialog import (
     ExportDialog,
     ExportTypeDialog,
@@ -25,11 +25,11 @@ def fake_parent(qtbot):
 
 @pytest.fixture
 def colormap():
-    """A napari colormap mock that vectorizes like the real one: map() is called
-    once with the whole track-id array and returns an (N, 4) RGBA array."""
-    cmap = MagicMock(spec=napari.utils.Colormap)
-    cmap.map.side_effect = lambda tids: np.tile(
-        [0.0, 0.0, 0.0, 1.0], (len(np.atleast_1d(tids)), 1)
+    """A TrackColormap stub that vectorizes like the real one: get_colors() is
+    called once with the whole node array and returns an (N, 4) RGBA array."""
+    cmap = MagicMock(spec=TrackColormap)
+    cmap.get_colors.side_effect = lambda nodes: np.tile(
+        [0.0, 0.0, 0.0, 1.0], (len(np.atleast_1d(nodes)), 1)
     )
     return cmap
 
@@ -442,3 +442,64 @@ def test_export_geff_error(
 
     assert result is False
     mock_warning.assert_called_once()
+
+
+GROUP = "my_group"
+IN_GROUP = (1, 2)
+
+
+def test_export_csv_colors_follow_the_selected_feature(
+    solution_tracks_2d_without_segmentation,
+    fake_parent,
+    tmp_path,
+    accept_type_dialog,
+    mock_file_dialog,
+):
+    """The exported colors are the ones the nodes are actually showing.
+
+    Regression test: the export used to hand track ids to `colormap.map`,
+    which is only the right question while the colormap is coloring by track
+    id. With a group selected, `BinaryColorSource.map` read every non-zero
+    track id as True and every node came out the same color.
+    """
+    tracks = solution_tracks_2d_without_segmentation
+    tracks.add_feature(
+        GROUP,
+        {
+            "feature_type": "node",
+            "value_type": "bool",
+            "num_values": 1,
+            "display_name": GROUP,
+            "default_value": False,
+        },
+    )
+    for node in tracks.graph_solution.node_ids():
+        tracks.graph_solution.nodes[node][GROUP] = node in IN_GROUP
+
+    colormap = TrackColormap()
+    colormap.set_tracks(tracks)
+    colormap.set_feature(GROUP)
+
+    def configure(dialog):
+        dialog.export_type_combo.setCurrentText("CSV")
+
+    accept_type_dialog(configure)
+
+    with (
+        mock_file_dialog(tmp_path / "tracks.csv"),
+        patch(
+            "motile_tracker.import_export.menus.export_dialog.export_to_csv"
+        ) as mock_export,
+    ):
+        ExportDialog.show_export_dialog(
+            fake_parent,
+            tracks,
+            name="G",
+            nodes_to_keep=set(tracks.graph_solution.node_ids()),
+            colormap=colormap,
+        )
+
+    color_dict = mock_export.call_args.kwargs["color_dict"]
+    for node in tracks.graph_solution.node_ids():
+        expected = PINK if node in IN_GROUP else GREY
+        assert np.allclose(color_dict[node][:3], expected), node

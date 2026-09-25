@@ -12,12 +12,19 @@ from funtracks.user_actions import (
     UserAddEdge,
     UserDeleteEdge,
     UserDeleteNodes,
+    UserMergeNodes,
     UserSetDivision,
     UserSwapPredecessors,
+    get_track_id_options,
 )
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
+from napari_track_edit.data_views.colormap import (
+    TrackColormap,
+    color_feature_available,
+    make_color_source,
+)
 from napari_track_edit.data_views.dims_utils import TracksDims
 from napari_track_edit.data_views.keybindings_config import (
     KEYMAP,
@@ -40,6 +47,7 @@ from napari_track_edit.data_views.views_coordinator.node_selection_history impor
 from napari_track_edit.data_views.views_coordinator.tracks_list import TracksList
 from napari_track_edit.data_views.views_coordinator.user_dialogs import (
     confirm_force_operation,
+    select_merge_track_id,
 )
 
 BASE_TEXT = (
@@ -65,6 +73,7 @@ class TracksViewer:
     tracks_updated = Signal(Optional[bool])  # noqa: UP007 UP045
     update_track_id = Signal()
     mode_updated = Signal()
+    colormap_updated = Signal()
     center_node = Signal(int)  # emitted when any component wants to center on a node
     node_selection_updated = Signal(bool)
 
@@ -100,11 +109,8 @@ class TracksViewer:
                 del TracksViewer._instance
 
         viewer.window._qt_window.destroyed.connect(_clear_if_current)
-        self.colormap = napari.utils.colormaps.label_colormap(
-            49,
-            seed=0.5,
-            background_value=0,
-        )
+        self.colormap = TrackColormap()
+        self.color_feature_key: str | None = None
 
         self.symbolmap: dict[NodeType, str] = {
             NodeType.END: "x",
@@ -187,6 +193,41 @@ class TracksViewer:
         """Set the current colormap on the TracksList, so that it can be exported."""
         self.tracks_list.colormap = self.colormap
 
+    def set_color_feature(self, feature_key: str | None, refresh: bool = True) -> None:
+        """Color every view by the given node feature and trigger refresh so that the
+        update is immediately visible.
+
+        Args:
+            feature_key: A node feature key, or None for the default (the
+                tracklet id - see `TrackColormap.feature_key`).
+            refresh: Set False while tracks are being swapped in, where the
+                caller rebuilds the views itself anyway.
+        """
+
+        # Fall back before committing anything: a feature the graph has no
+        # column for raises in the colormap, and self.color_feature_key would
+        # otherwise already hold the bad key, so every later _refresh raises too.
+        if self.tracks is not None and not color_feature_available(
+            self.tracks, feature_key
+        ):
+            feature_key = self.tracks.features.tracklet_key
+
+        self.color_feature_key = feature_key
+        self.colormap.set_feature(
+            feature_key, make_color_source(self.tracks, feature_key)
+        )
+        if refresh and self.tracks is not None:
+            self._refresh()
+        self.colormap_updated.emit()
+
+    def _validate_color_feature(self) -> None:
+        """Fall back to track ids if the feature being colored by is gone."""
+
+        if self.tracks is None or self.color_feature_key is None:
+            return
+        if not color_feature_available(self.tracks, self.color_feature_key):
+            self.set_color_feature(self.tracks.features.tracklet_key, refresh=False)
+
     def set_keybinds(self):
         bind_keymap(self.viewer, KEYMAP, self)
 
@@ -214,11 +255,16 @@ class TracksViewer:
         self.update_track_id.emit()
 
     def set_track_id_color(self, track_id: int) -> None:
-        """Update self.track_id color with the rgba color or given track_id, or a list of
-        0 if the provided  track_id is None"""
+        """Update self.track_id_color with the rgba color of the given track_id.
+
+        Shows the tracklet ID color when the colormap feature is set to tracklet ID,
+        transparent otherwise to avoid confusion.
+        """
 
         self.track_id_color = (
-            [0, 0, 0, 0] if track_id is None else self.colormap.map(track_id)
+            self.colormap.map(track_id)
+            if track_id is not None and self.colormap.colors_by_track_id
+            else [0, 0, 0, 0]
         )
 
     def update_track_df(
@@ -285,6 +331,8 @@ class TracksViewer:
         ):
             self.selected_nodes.reset()
 
+        self._validate_color_feature()
+        self.colormap.set_tracks(self.tracks)
         self.tracking_layers._refresh()
 
         self.update_track_df(initialization=False, refresh_view=refresh_view)
@@ -331,6 +379,12 @@ class TracksViewer:
         self._disconnect_tracks()
 
         self.tracks = tracks
+        # Forget outgoing tracks first, because they might have a different value bound
+        # to tracklet_key
+        self.colormap.set_tracks(None)
+        self.set_color_feature(tracks.features.tracklet_key, refresh=False)
+        self.colormap.set_tracks(tracks)
+        self.selected_nodes.deleted_items.clear()  # Reset deleted nodes when switching tracks
 
         # listen to refresh signals from the tracks
         self.tracks.refresh.connect(self._refresh)
@@ -379,6 +433,12 @@ class TracksViewer:
         # the dataframe of the tracks that just went away would survive
         self.track_df = pd.DataFrame()
         self.axis_order = []
+
+        # the mirror of what update_tracks does on the way in: without this the
+        # colormap keeps the outgoing tracks and a color per node alive, and
+        # color_feature_key keeps naming a feature of tracks that are gone
+        self.colormap.set_tracks(None)
+        self.color_feature_key = None
 
         # remove the layers before clearing the selection: clearing emits
         # selection_updated, and the update_selection that follows would otherwise
@@ -619,6 +679,55 @@ class TracksViewer:
             UserSetDivision(self.tracks, tuple(nodes))
         except InvalidActionError as e:
             QMessageBox.warning(None, "Cannot set division", str(e))
+
+    def merge_horizontally(self, event=None):
+        """Merge every set of selected nodes that shares a time point into one node.
+
+        The user picks which of the tracklet ids in a set the merged node should keep.
+        Sets that offer the same tracklet ids are asked about only once. Cancelling any
+        of the dialogs cancels the whole merge.
+        """
+
+        if self.tracks is None:
+            return
+        nodes = [int(node) for node in self.selected_nodes.as_list]
+        try:
+            options = get_track_id_options(self.tracks, nodes)
+            track_id_per_time = self._ask_merge_track_ids(options, self.colormap)
+            if track_id_per_time is None:
+                return  # the user cancelled, so merge nothing at all
+            UserMergeNodes(self.tracks, nodes, track_ids=track_id_per_time)
+        except InvalidActionError as e:
+            QMessageBox.warning(None, "Cannot merge nodes", str(e))
+
+    @staticmethod
+    def _ask_merge_track_ids(
+        options: dict[int, list[int]], colormap
+    ) -> dict[int, int] | None:
+        """Ask the user which tracklet id to keep in each set of nodes to merge.
+
+        Args:
+            options: A mapping from time point to the tracklet ids to choose from.
+            colormap: The colormap used to color the tracklet id options.
+
+        Returns:
+            A mapping from time point to the chosen tracklet id, or None if the user
+            cancelled any of the dialogs.
+        """
+
+        # Time points offering the same tracklet ids can be answered in one dialog
+        times_per_option: dict[tuple[int, ...], list[int]] = {}
+        for time, track_ids in options.items():
+            times_per_option.setdefault(tuple(track_ids), []).append(time)
+
+        track_id_per_time: dict[int, int] = {}
+        for track_ids, times in times_per_option.items():
+            track_id = select_merge_track_id(list(track_ids), times, colormap)
+            if track_id is None:
+                return None
+            for time in times:
+                track_id_per_time[time] = track_id
+        return track_id_per_time
 
     def create_edge(self, event=None):
         """Add an edge between the two currently selected nodes"""

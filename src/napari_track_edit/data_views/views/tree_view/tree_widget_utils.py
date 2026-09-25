@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-import napari.layers
-import numpy as np
 import pandas as pd
 import polars as pl
 import tracksdata as td
 from funtracks.data_model import Tracks
 from tracksdata.constants import DEFAULT_ATTR_KEYS
 
+from napari_track_edit.data_views.colormap import TrackColormap
 from napari_track_edit.data_views.node_type import NodeType
 
 
@@ -69,7 +68,7 @@ def get_tracklets(
 
 def extract_sorted_tracks(
     tracks: Tracks,
-    colormap: napari.utils.CyclicLabelColormap,
+    colormap: TrackColormap,
     prev_axis_order: list[int] | None = None,
 ) -> pd.DataFrame | None:
     """
@@ -80,8 +79,9 @@ def extract_sorted_tracks(
     Args:
         tracks (funtracks.data_model.Tracks): A tracks object containing a graph
             to be converted into a dataframe.
-        colormap (napari.utils.CyclicLabelColormap): The colormap to use to
-            extract the color of each node from the track ID
+        colormap (TrackColormap): Colors tree-view nodes per node via
+            colormap.get_colors(node_ids), so the tree follows whichever
+            feature the colormap is coloring by, like every other view.
         prev_axis_order (list[int], Optional). The previous axis order.
 
     Returns:
@@ -152,22 +152,21 @@ def extract_sorted_tracks(
         node_to_track_id,
     )
 
-    # Map every track id to its color in one vectorized colormap.map call, then
-    # look up per tracklet. colormap.map has a large fixed per-call overhead, so
-    # a single array call is far faster than calling it once per tracklet.
-    unique_track_ids = list(set(node_to_track_id.values()))
-    tid_to_color = dict(
-        zip(unique_track_ids, colormap.map(np.asarray(unique_track_ids)), strict=True)
+    # Look colors up per node in one call, rather than per tracklet: nodes in one
+    # tracklet share a color only when coloring by track id, and the colormap may
+    # be coloring by any node feature (e.g. group membership, which splits a
+    # tracklet). Scaled to the 0-255 RGBA the tree plot expects here, vectorized:
+    # per node inside the loop below that costs ~17ms on a 14k-node graph.
+    node_to_color = dict(
+        zip(node_ids_list, colormap.get_colors(node_ids_list) * 255, strict=True)
     )
 
     for node_set in tracklets:
         # Sort nodes in each tracklet by time using the precomputed dict
         sorted_nodes = sorted(node_set, key=lambda node: node_to_time[node])
 
-        # track_id and color are the same for all nodes in a node_set
         parent_track_id = None
         track_id = node_to_track_id[sorted_nodes[0]]
-        color = np.concatenate((tid_to_color[track_id][:3] * 255, [255]))
 
         for node in sorted_nodes:
             if node in parent_nodes:
@@ -184,7 +183,7 @@ def extract_sorted_tracks(
                 "t": node_to_time[node],
                 "node_id": node,
                 "track_id": track_id,
-                "color": color,
+                "color": node_to_color[node],
                 "parent_id": 0,
                 "parent_track_id": 0,
                 "state": state,

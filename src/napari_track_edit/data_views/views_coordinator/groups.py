@@ -454,6 +454,12 @@ class CollectionWidget(QWidget):
         group_name = self.collection_list.itemWidget(item).name.text()
         self.collection_list.takeItem(row)
 
+        # fall back to coloring by tracklet ID if this group was used for coloring
+        if self.tracks_viewer.color_feature_key == group_name:
+            self.tracks_viewer.set_color_feature(
+                self.tracks_viewer.tracks.features.tracklet_key
+            )
+
         # remove from the features dict and graph schema
         if group_name in self.tracks_viewer.tracks.features:
             del self.tracks_viewer.tracks.features[group_name]

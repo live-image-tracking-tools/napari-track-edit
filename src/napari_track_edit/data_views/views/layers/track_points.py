@@ -74,8 +74,7 @@ class TrackPoints(ZOnlyPoints):
         else:
             points = np.empty((0, self.tracks_viewer.tracks.ndim))
 
-        track_ids = self.tracks_viewer.tracks.get_track_ids(self.nodes)
-        colors = self._map_track_colors(track_ids)
+        colors = self._map_node_colors(self.nodes)
         symbols = self.get_symbols(
             self.tracks_viewer.tracks, self.tracks_viewer.symbolmap
         )
@@ -88,10 +87,7 @@ class TrackPoints(ZOnlyPoints):
             symbol=symbols,
             face_color=colors,
             size=self.default_size,
-            properties={
-                "node_id": self.nodes,
-                "track_id": track_ids,
-            },  # TODO: use features
+            properties={"node_id": self.nodes},
             border_color=[1, 1, 1, 1],
             blending="translucent",
         )
@@ -213,15 +209,14 @@ class TrackPoints(ZOnlyPoints):
 
         self.node_index_dict = {node: idx for idx, node in enumerate(self.nodes)}
 
-        track_ids = self.tracks_viewer.tracks.get_track_ids(self.nodes)
         self.data = self.tracks_viewer.tracks.get_positions(self.nodes, incl_time=True)
         self.data_updated.emit()  # emit update signal for the orthogonal views to connect to
 
         self.symbol = self.get_symbols(
             self.tracks_viewer.tracks, self.tracks_viewer.symbolmap
         )
-        self.face_color = self._map_track_colors(track_ids)
-        self.properties = {"node_id": self.nodes, "track_id": track_ids}
+        self.face_color = self._map_node_colors(self.nodes)
+        self.properties = {"node_id": self.nodes}
         self.size = self.default_size
         self.border_color = [1, 1, 1, 1]
 
@@ -343,21 +338,20 @@ class TrackPoints(ZOnlyPoints):
                     node_id = self.nodes[point]
                     self.tracks_viewer.selected_nodes.add(node_id, True)
 
-    def _map_track_colors(self, track_ids: list[int]) -> np.ndarray:
-        """Map track ids to an (N, 4) array of face colors in a single colormap call.
+    def _map_node_colors(self, nodes: list[int]) -> np.ndarray:
+        """Look up an (N, 4) array of face colors, one per node.
 
-        colormap.map has a large fixed per-call overhead (cache lookup, dtype, reshape),
-        so mapping the whole array at once is ~290x faster than calling it per node (or
-        even once per unique track id): for ~37k nodes / 142 unique ids, ~1ms vs ~300ms.
+        Per node rather than per track id, so the points follow whichever
+        feature the colormap is set to.
 
         With no nodes (an empty tracks graph, e.g. when tracking from scratch) a single
         white color is returned instead of a (0, 4) array: napari's ColorManager treats
         the color argument as *the* current color when the layer holds no data, and
         feeding it an empty array raises in `transform_color`.
         """
-        if len(track_ids) == 0:
+        if len(nodes) == 0:
             return np.ones((1, 4))
-        return self.tracks_viewer.colormap.map(np.asarray(track_ids))
+        return self.tracks_viewer.colormap.get_colors(np.asarray(nodes))
 
     def get_symbols(self, tracks: Tracks, symbolmap: dict[NodeType, str]) -> list[str]:
         statemap = {

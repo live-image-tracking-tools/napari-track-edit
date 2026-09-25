@@ -154,7 +154,7 @@ def test_label_colormap_rebuild(benchmark, build_app, shared_tracks):
         return (tv.tracking_layers.seg_layer,), {}
 
     benchmark.pedantic(
-        lambda seg: seg._get_colormap(),
+        lambda seg: seg.track_colormap.to_direct_colormap(),
         setup=setup,
         rounds=ROUNDS,
         iterations=1,
