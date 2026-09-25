@@ -46,7 +46,7 @@ def default_save_dir() -> Path:
     tracks land somewhere the application already owns rather than in the
     user's home directory.
     """
-    return Path(AppDirs("motile-tracker").user_data_dir)
+    return Path(AppDirs("napari-track-edit").user_data_dir)
 
 
 class TracksButton(QWidget):

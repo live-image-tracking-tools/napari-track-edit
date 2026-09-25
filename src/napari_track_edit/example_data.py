@@ -24,7 +24,7 @@ def Mouse_Embryo_Membrane() -> list[LayerData]:
             layer
     """
     ds_name = "Mouse_Embryo_Membrane"
-    appdir = AppDirs("motile-tracker")
+    appdir = AppDirs("napari-track-edit")
     data_dir = Path(appdir.user_data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     raw_name = "imaging.tif"
@@ -42,7 +42,7 @@ def Fluo_N2DL_HeLa() -> list[LayerData]:
             layer of 01 training silver truth labels
     """
     ds_name = "Fluo-N2DL-HeLa"
-    appdir = AppDirs("motile-tracker")
+    appdir = AppDirs("napari-track-edit")
     data_dir = Path(appdir.user_data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     return read_ctc_dataset(ds_name, data_dir)
@@ -58,7 +58,7 @@ def Fluo_N2DL_HeLa_crop() -> list[LayerData]:
             layer of 01 training silver truth labels
     """
     ds_name = "Fluo-N2DL-HeLa"
-    appdir = AppDirs("motile-tracker")
+    appdir = AppDirs("napari-track-edit")
     data_dir = Path(appdir.user_data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     return read_ctc_dataset(ds_name, data_dir, crop_region=True)
