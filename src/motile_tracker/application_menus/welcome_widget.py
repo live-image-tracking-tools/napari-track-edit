@@ -9,7 +9,7 @@ from qtpy.QtWidgets import (
 
 DOCS_URL = "https://funkelab.github.io/motile_tracker"
 KEYBINDINGS_URL = f"{DOCS_URL}/key_bindings.html"
-TUTORIAL_URL = "https://github.com/funkelab/motile_tracker/blob/main/assets/motile-tracker_tutorial.pdf"
+TUTORIAL_URL = "https://github.com/live-image-tracking-tools/napari-track-edit/blob/main/assets/napari-track-edit_tutorial.pdf"
 
 
 class WelcomeWidget(QWidget):
