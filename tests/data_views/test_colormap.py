@@ -23,7 +23,7 @@ def _tracks_subset(tracks, nodes):
             return list(nodes)
 
     class TracksSubset:
-        graph = NodeSubsetGraph()
+        graph_solution = NodeSubsetGraph()
         features = tracks.features
 
         def get_nodes_attr(self, nodes, attr):
@@ -102,7 +102,7 @@ class TestTrackColormapSetTracks:
         cmap = TrackColormap()
         cmap.set_tracks(solution_tracks_2d)
 
-        nodes = solution_tracks_2d.graph.node_ids()
+        nodes = solution_tracks_2d.graph_solution.node_ids()
         assert set(cmap.nodes) == set(nodes)
         for node in nodes:
             assert cmap.get_color(node) is not None
@@ -130,7 +130,7 @@ class TestTrackColormapSetTracks:
         cmap = TrackColormap()
         cmap.set_tracks(solution_tracks_2d)
 
-        for node in solution_tracks_2d.graph.node_ids():
+        for node in solution_tracks_2d.graph_solution.node_ids():
             assert cmap.get_alpha(node) == 1.0
 
     def test_preserves_alpha_for_nodes_still_present(self, solution_tracks_2d):
@@ -268,7 +268,7 @@ class TestTrackColormapDefaultAlpha:
         cmap = TrackColormap(default_alpha=0.5)
         cmap.set_tracks(solution_tracks_2d)
 
-        for node in solution_tracks_2d.graph.node_ids():
+        for node in solution_tracks_2d.graph_solution.node_ids():
             assert cmap.get_alpha(node) == 0.5
 
     def test_add_node_uses_configured_default_alpha(self, solution_tracks_2d):
@@ -343,7 +343,7 @@ class TestTrackColormapDirectColormap:
         cmap.set_tracks(solution_tracks_2d)
         direct = cmap.to_direct_colormap()
 
-        for node in solution_tracks_2d.graph.node_ids():
+        for node in solution_tracks_2d.graph_solution.node_ids():
             assert node in direct.color_dict
 
     def test_produces_direct_colormap_with_all_nodes(self, solution_tracks_2d):
@@ -352,7 +352,7 @@ class TestTrackColormapDirectColormap:
 
         direct = cmap.to_direct_colormap()
 
-        for node in solution_tracks_2d.graph.node_ids():
+        for node in solution_tracks_2d.graph_solution.node_ids():
             assert node in direct.color_dict
 
     def test_none_key_maps_to_transparent(self, solution_tracks_2d):
@@ -669,8 +669,8 @@ def _add_group_feature(tracks, name, members):
             "default_value": False,
         },
     )
-    for node in tracks.graph.node_ids():
-        tracks.graph.nodes[node][name] = node in members
+    for node in tracks.graph_solution.node_ids():
+        tracks.graph_solution.nodes[node][name] = node in members
     return name
 
 

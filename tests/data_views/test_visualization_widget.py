@@ -467,7 +467,7 @@ class TestColorByWidget:
         widget.color_by_widget.combo.setCurrentIndex(0)
 
         assert tracks_viewer.color_feature_key is None
-        nodes = list(tracks_viewer.tracks.graph.node_ids())
+        nodes = list(tracks_viewer.tracks.graph_solution.node_ids())
         colors = tracks_viewer.colormap.get_colors(nodes)
         assert np.all(colors[:, :3] == colors[0, :3])
 

@@ -53,7 +53,7 @@ def _view_colors(tracks_viewer):
     """
 
     layers = tracks_viewer.tracking_layers
-    nodes = list(tracks_viewer.tracks.graph.node_ids())
+    nodes = list(tracks_viewer.tracks.graph_solution.node_ids())
     seg = layers.seg_layer.colormap.color_dict
     points = layers.points_layer
     tracks_layer = layers.tracks_layer
@@ -262,8 +262,8 @@ def grouped(tracks_viewer):
             "default_value": False,
         },
     )
-    for node in tracks.graph.node_ids():
-        tracks.graph.nodes[node][GROUP] = node in IN_GROUP
+    for node in tracks.graph_solution.node_ids():
+        tracks.graph_solution.nodes[node][GROUP] = node in IN_GROUP
     return tracks_viewer
 
 

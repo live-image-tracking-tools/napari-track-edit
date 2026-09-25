@@ -336,7 +336,7 @@ class TrackColormap:
         knows about them.
         """
         self._tracks = tracks
-        nodes = tracks.graph.node_ids() if tracks is not None else []
+        nodes = tracks.graph_solution.node_ids() if tracks is not None else []
         values = self._feature_values(tracks, nodes) if tracks is not None else []
         if len(values) > 0:
             # One vectorized call - color_source.map has a large fixed
