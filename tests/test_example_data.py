@@ -79,12 +79,12 @@ def no_modal_dialogs(monkeypatch):
 
 @pytest.fixture
 def user_data_dir(tmp_path, monkeypatch) -> Path:
-    """Point the appdir "user data dir" at a temporary directory."""
+    """Point the platformdirs "user data dir" at a temporary directory."""
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     monkeypatch.setattr(
         example_data,
-        "AppDirs",
+        "PlatformDirs",
         lambda _: type("Dirs", (), {"user_data_dir": str(data_dir)}),
     )
     return data_dir

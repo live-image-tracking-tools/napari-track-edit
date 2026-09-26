@@ -1,9 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 import numpy as np
 import numpy.typing as npt
 from napari.layers import Points
 from napari.layers.points._slice import _PointSliceRequest
+from napari.layers.points.points import _PointsSlicingState
 
 
 @dataclass(frozen=True)
@@ -95,56 +96,36 @@ class _ZOnlyPointSliceRequest(_PointSliceRequest):
         return slice_indices.astype(int), scale
 
 
-try:
-    # Check which napari version is being used. In napari >= 0.7.0, slicing was refactored
-    # onto a separate slicing-state object, and the request is made via
-    # _PointsSlicingState.
-    from napari.layers.points.points import _PointsSlicingState
-except ImportError:  # napari < 0.7.0
-    _PointsSlicingState = None
+class _ZOnlyPointsSlicingState(_PointsSlicingState):
+    """Slicing state that builds a z-only out-of-slice request."""
+
+    def make_slice_request_internal(self, slice_input, data_slice):
+        return _ZOnlyPointSliceRequest(
+            slice_input=slice_input,
+            data=self.layer.data,
+            data_slice=data_slice,
+            projection_mode=self.layer.projection_mode,
+            out_of_slice_display=self.layer.out_of_slice_display,
+            size=self.layer.size,
+        )
 
 
-if _PointsSlicingState is not None:
-
-    class _ZOnlyPointsSlicingState(_PointsSlicingState):
-        """Slicing state that builds a z-only out-of-slice request for napari >= 0.7."""
-
-        def make_slice_request_internal(self, slice_input, data_slice):
-            return _ZOnlyPointSliceRequest(
-                slice_input=slice_input,
-                data=self.layer.data,
-                data_slice=data_slice,
-                projection_mode=self.layer.projection_mode,
-                out_of_slice_display=self.layer.out_of_slice_display,
-                size=self.layer.size,
-            )
-
-
-class ZOnlyPoints(Points):
+class _ZOnlyPoints(Points):
     """Points subclass that overrides the slice request to apply the out-of-slice display logic only along the last non displayed axis.
 
-    napari changed where the slice request is built between versions:
-
-    napari < 0.7.0:``_make_slice_request_internal``.
-    napari >= 0.7.0: separate ``_PointsSlicingState`` object, via ``_get_layer_slicing_state``, via ``make_slice_request_internal``
-
-    Hook into whichever mechanism the installed napari uses so the z-only
-    behavior works on both.
+    Since napari 0.7 the slice request is built by a separate
+    ``_PointsSlicingState`` object, reached via ``_get_layer_slicing_state``, so
+    hook in there.
     """
 
-    if _PointsSlicingState is not None:
+    def _get_layer_slicing_state(self, data, cache):
+        return _ZOnlyPointsSlicingState(layer=self, data=data, cache=cache)
 
-        def _get_layer_slicing_state(self, data, cache):
-            return _ZOnlyPointsSlicingState(layer=self, data=data, cache=cache)
 
-    else:
-
-        def _make_slice_request_internal(self, slice_input, data_slice):
-            return _ZOnlyPointSliceRequest(
-                slice_input=slice_input,
-                data=self.data,
-                data_slice=data_slice,
-                projection_mode=self.projection_mode,
-                out_of_slice_display=self.out_of_slice_display,
-                size=self.size,
-            )
+# napari 0.9 removed size-based out-of-slice display (deprecating
+# out_of_slice_display in favour of projection_mode) and slice margins are per
+# axis, so a thick slice along z alone already gives the z-only behaviour.
+_HAS_SIZE_BASED_OUT_OF_SLICE = "out_of_slice_display" in {
+    f.name for f in fields(_PointSliceRequest)
+}
+ZOnlyPoints = _ZOnlyPoints if _HAS_SIZE_BASED_OUT_OF_SLICE else Points

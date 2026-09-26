@@ -43,7 +43,7 @@ GEFF_SUFFIX = ".geff"
 def default_save_dir() -> Path:
     """Directory the save path starts in.
 
-    The same appdirs location the sample data is downloaded to, so that saved
+    The same platformdirs location the sample data is downloaded to, so that saved
     tracks land somewhere the application already owns rather than in the
     user's home directory.
     """
