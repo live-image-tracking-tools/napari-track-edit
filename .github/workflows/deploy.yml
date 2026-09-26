@@ -10,6 +10,9 @@ jobs:
     name: Build and publish Python 🐍 distributions 📦 to PyPI
     runs-on: ubuntu-latest
     if: contains(github.ref, 'tags')
+    permissions:
+      id-token: write
+      contents: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
