@@ -28,6 +28,7 @@ from qtpy.QtWidgets import (
 from superqt.fonticon import icon as qticon
 
 from napari_track_edit.application_menus.layer_dropdown import LayerDropdown
+from napari_track_edit.data_views.views.layers.click_utils import wait_for_release
 from napari_track_edit.data_views.views.layers.track_labels import TrackLabels
 from napari_track_edit.data_views.views.layers.track_points import TrackPoints
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
@@ -327,6 +328,7 @@ class CopyFromSourceWidget(QWidget):
 
         def callback(layer, event):
             if event.type == "mouse_press" and event.button == 2:
+                yield from wait_for_release(event)
                 self._copy_detection(event)
 
         return callback
@@ -606,7 +608,10 @@ class CopyFromSourceWidget(QWidget):
         actions = []
         if target_node == node:
             # the clicked label is the active tracklet's own: replace its pixels
-            actions += self._paint(t, spatial_coords, node, track_id)
+            paint = self._paint(t, spatial_coords, node, track_id)
+            if paint is None:
+                return
+            actions += paint
             actions += self._erase_outside(t, spatial_coords, node, track_id)
         else:
             if target_node is None:
@@ -619,7 +624,16 @@ class CopyFromSourceWidget(QWidget):
             else:
                 # the copy joins the node the active tracklet already has in this frame
                 actions.append(UserDeleteNodes(tracks, nodes=[node], _top_level=False))
-            actions += self._paint(t, spatial_coords, target_node, track_id)
+            paint = self._paint(t, spatial_coords, target_node, track_id)
+            if paint is None:
+                # the paint was refused or declined: undo the delete that already
+                # happened, so the clicked label is not lost without a replacement.
+                # Suppress view-centering on the refresh, as in _commit.
+                ActionGroup(tracks, actions).inverse()
+                with self.tracks_viewer.center_node.blocked():
+                    tracks.refresh.emit()
+                return
+            actions += paint
 
         self._commit(actions, node_to_select=target_node)
 
@@ -665,7 +679,7 @@ class CopyFromSourceWidget(QWidget):
         )
 
         actions = self._paint(t, spatial_coords, new_value, track_id)
-        self._commit(actions, node_to_select=new_value)
+        self._commit(actions or [], node_to_select=new_value)
 
     def _commit(self, actions: list, node_to_select: int | None) -> None:
         """Record the actions of one copy as a single undoable step, refresh the views
@@ -697,12 +711,14 @@ class CopyFromSourceWidget(QWidget):
         spatial_coords: tuple[np.ndarray, ...],
         new_value: int,
         track_id: int,
-    ) -> list:
+    ) -> list | None:
         """Paint the given pixels of frame ``t`` with ``new_value``, creating the node if
         it does not exist yet and shrinking (or deleting) the nodes that are overwritten.
 
         Returns the actions that were performed, for the caller to commit (see
-        ``_commit``); the list is empty if there was nothing to paint.
+        ``_commit``); the list is empty if there was nothing to paint. Returns None if
+        the paint was not allowed or the user declined to force it, so the caller can
+        revert what it already did.
         """
 
         tracks = self.tracks_viewer.tracks
@@ -742,7 +758,7 @@ class CopyFromSourceWidget(QWidget):
                     return [apply(True)]
             else:
                 show_info(str(e))
-        return []
+        return None
 
     def _erase_outside(
         self,

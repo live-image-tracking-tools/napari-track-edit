@@ -44,16 +44,31 @@ class _RightClickEvent:
         self.dims_displayed = [1, 2]
 
 
-def _drive_callbacks(layer, event):
-    """Run every mouse_drag_callback of a layer, driving generator callbacks the way
-    napari does."""
+def _drive_callbacks(layer, event, callbacks=None):
+    """Run the mouse_drag_callbacks of a layer (or the given callbacks), driving
+    generator callbacks the way napari does: all callbacks see the press, then the
+    generators are resumed with the release."""
 
-    for callback in list(layer.mouse_drag_callbacks):
+    callbacks = list(layer.mouse_drag_callbacks) if callbacks is None else callbacks
+    generators = []
+    for callback in callbacks:
         result = callback(layer, event)
         if hasattr(result, "__next__"):
             with contextlib.suppress(StopIteration):
-                while True:
-                    next(result)
+                next(result)
+                generators.append(result)
+
+    event.type = "mouse_release"
+    for generator in generators:
+        with contextlib.suppress(StopIteration):
+            while True:
+                next(generator)
+
+
+def _right_click(widget, layer, event):
+    """Right-click (press and release) with only the copy callback of the widget."""
+
+    _drive_callbacks(layer, event, callbacks=[widget._target_callback])
 
 
 @pytest.fixture
@@ -176,7 +191,7 @@ def test_right_click_on_target_copies_from_source(labels_app):
 
     target = widget._get_target_layer()
     # right-click in the middle of the source label at t=3 (world coordinates)
-    widget._target_callback(target, _RightClickEvent(position=(3, 51.5, 11.5)))
+    _right_click(widget, target, _RightClickEvent(position=(3, 51.5, 11.5)))
 
     assert tracks.graph.num_nodes() == n_nodes + 1
     node = next(
@@ -185,6 +200,30 @@ def test_right_click_on_target_copies_from_source(labels_app):
         if int(tracks.get_track_id(node)) == widget.tracks_viewer.selected_track
     )
     assert tracks.get_time(node) == 3
+
+
+def test_copy_waits_for_mouse_release(labels_app):
+    """The copy (and with it a possible 'force operation?' dialog) only runs once the
+    right button is released: a modal dialog opened during the press would take the
+    release away from the canvas and leave the viewer unresponsive."""
+
+    _viewer, widget, _source = labels_app
+    widget.source_layer_dropdown.setCurrentText("src")
+    widget.chain_btn.setChecked(True)
+
+    tracks = widget.tracks_viewer.tracks
+    n_nodes = tracks.graph.num_nodes()
+
+    target = widget._get_target_layer()
+    event = _RightClickEvent(position=(3, 51.5, 11.5))
+    generator = widget._target_callback(target, event)
+    next(generator)  # press
+    assert tracks.graph.num_nodes() == n_nodes
+
+    event.type = "mouse_release"
+    with contextlib.suppress(StopIteration):
+        next(generator)
+    assert tracks.graph.num_nodes() == n_nodes + 1
 
 
 def test_copy_labels_from_source(labels_app):
@@ -266,10 +305,10 @@ def test_right_click_on_target_copies_point(points_app):
     target = widget._get_target_layer()
 
     # nowhere near a source point: nothing is copied
-    widget._target_callback(target, _RightClickEvent(position=(2, 80.0, 80.0)))
+    _right_click(widget, target, _RightClickEvent(position=(2, 80.0, 80.0)))
     assert tracks.graph.num_nodes() == n_nodes
 
-    widget._target_callback(target, _RightClickEvent(position=(2, 30.0, 40.0)))
+    _right_click(widget, target, _RightClickEvent(position=(2, 30.0, 40.0)))
     assert tracks.graph.num_nodes() == n_nodes + 1
 
 
@@ -401,7 +440,7 @@ def test_click_on_existing_label_replaces_it_with_the_active_track(overlapping_s
     # the active tracklet has no node in this frame yet
     assert widget._current_track_node(0, active_track) is None
 
-    widget._target_callback(target, _RightClickEvent(position=(0, 65.5, 65.5)))
+    _right_click(widget, target, _RightClickEvent(position=(0, 65.5, 65.5)))
 
     # the clicked node is gone, the copy belongs to the still-active tracklet
     assert not tracks.graph.has_node(1)
@@ -415,6 +454,46 @@ def test_click_on_existing_label_replaces_it_with_the_active_track(overlapping_s
     np.testing.assert_array_equal(_frame(tracks) == new_node, expected)
 
 
+def test_declined_replace_keeps_the_clicked_label(overlapping_source, monkeypatch):
+    """If painting the copy is refused and the user declines to force it (e.g. a
+    downstream division), the clicked label is restored instead of being deleted without
+    a replacement, nothing is added to the history and the view does not jump."""
+
+    from funtracks.exceptions import InvalidActionError
+
+    from motile_tracker.application_menus import copy_from_source_widget as module
+
+    def refuse(*args, **kwargs):
+        raise InvalidActionError("downstream division detected", forceable=True)
+
+    monkeypatch.setattr(module, "UserUpdateSegmentation", refuse)
+    monkeypatch.setattr(
+        module, "confirm_force_operation", lambda message: (False, False)
+    )
+
+    _viewer, widget, _source = overlapping_source
+    tracks = widget.tracks_viewer.tracks
+    target = widget._get_target_layer()
+    frame_before = _frame(tracks).copy()
+    edges_before = sorted(tracks.graph.edge_list())
+    n_nodes = tracks.graph.num_nodes()
+    history = len(tracks.action_history.undo_stack)
+    # with a single selected node, a refresh re-centers the view on it
+    other = next(node for node in tracks.graph.node_ids() if node != 1)
+    widget.tracks_viewer.selected_nodes.add(other)
+    centered = []
+    widget.tracks_viewer.center_node.connect(centered.append)
+
+    _right_click(widget, target, _RightClickEvent(position=(0, 65.5, 65.5)))
+
+    assert centered == []  # the view does not jump back to the selection
+    assert tracks.graph.has_node(1)
+    assert tracks.graph.num_nodes() == n_nodes
+    assert sorted(tracks.graph.edge_list()) == edges_before
+    np.testing.assert_array_equal(_frame(tracks), frame_before)
+    assert len(tracks.action_history.undo_stack) == history
+
+
 def test_click_on_own_label_replaces_its_pixels_in_place(overlapping_source):
     """Clicking the active tracklet's own label keeps the node (and its edges): only its
     pixels are replaced by the copied ones."""
@@ -424,7 +503,7 @@ def test_click_on_own_label_replaces_its_pixels_in_place(overlapping_source):
     target = widget._get_target_layer()
 
     # first copy: the active tracklet gets a node in frame 0 (rows/cols 60-79)
-    widget._target_callback(target, _RightClickEvent(position=(0, 75.5, 75.5)))
+    _right_click(widget, target, _RightClickEvent(position=(0, 75.5, 75.5)))
     node = int(_frame(tracks)[75, 75])
     active_track = widget.tracks_viewer.selected_track
     assert int(tracks.get_track_id(node)) == active_track
@@ -432,7 +511,7 @@ def test_click_on_own_label_replaces_its_pixels_in_place(overlapping_source):
     # a second, shifted source label (rows/cols 70-89) over that same node
     source.data[0][60:80, 60:80] = 0
     source.data[0][70:90, 70:90] = 8
-    widget._target_callback(target, _RightClickEvent(position=(0, 75.5, 75.5)))
+    _right_click(widget, target, _RightClickEvent(position=(0, 75.5, 75.5)))
 
     # same node, same tracklet, pixels replaced by the new label
     assert tracks.graph.has_node(node)
@@ -456,7 +535,7 @@ def test_replace_of_another_track_is_refused_with_preserve_labels(overlapping_so
     before = _frame(tracks).copy()
     n_nodes = tracks.graph.num_nodes()
 
-    widget._target_callback(target, _RightClickEvent(position=(0, 65.5, 65.5)))
+    _right_click(widget, target, _RightClickEvent(position=(0, 65.5, 65.5)))
 
     assert tracks.graph.num_nodes() == n_nodes
     np.testing.assert_array_equal(_frame(tracks), before)
@@ -472,7 +551,7 @@ def test_own_label_can_be_replaced_with_preserve_labels(overlapping_source):
 
     # give the active tracklet a node in frame 0 (rows/cols 71-79, node 1 keeps 30-70)
     target.preserve_labels = True
-    widget._target_callback(target, _RightClickEvent(position=(0, 75.5, 75.5)))
+    _right_click(widget, target, _RightClickEvent(position=(0, 75.5, 75.5)))
     node = int(_frame(tracks)[75, 75])
     active_track = widget.tracks_viewer.selected_track
     assert node != 1
@@ -480,7 +559,7 @@ def test_own_label_can_be_replaced_with_preserve_labels(overlapping_source):
     # a second, shifted source label over that same node and over node 1
     source.data[0][60:80, 60:80] = 0
     source.data[0][50:90, 50:90] = 8
-    widget._target_callback(target, _RightClickEvent(position=(0, 75.5, 75.5)))
+    _right_click(widget, target, _RightClickEvent(position=(0, 75.5, 75.5)))
 
     frame = _frame(tracks)
     # the active tracklet's own label was replaced ...
@@ -502,7 +581,7 @@ def test_replace_as_new_track_deletes_the_clicked_node(overlapping_source):
     target = widget._get_target_layer()
     widget.new_track_on_copy_checkbox.setChecked(True)
 
-    widget._target_callback(target, _RightClickEvent(position=(0, 65.5, 65.5)))
+    _right_click(widget, target, _RightClickEvent(position=(0, 65.5, 65.5)))
 
     assert not tracks.graph.has_node(1)
     new_node = int(_frame(tracks)[65, 65])
@@ -523,7 +602,7 @@ def test_copy_onto_background_respects_preserve_labels(overlapping_source):
     target = widget._get_target_layer()
     target.preserve_labels = True
 
-    widget._target_callback(target, _RightClickEvent(position=(0, 75.5, 75.5)))
+    _right_click(widget, target, _RightClickEvent(position=(0, 75.5, 75.5)))
 
     frame = _frame(tracks)
     new_node = int(frame[75, 75])
@@ -545,7 +624,7 @@ def test_copy_onto_background_overwrites_without_preserve_labels(overlapping_sou
     tracks = widget.tracks_viewer.tracks
     target = widget._get_target_layer()
 
-    widget._target_callback(target, _RightClickEvent(position=(0, 75.5, 75.5)))
+    _right_click(widget, target, _RightClickEvent(position=(0, 75.5, 75.5)))
 
     frame = _frame(tracks)
     new_node = int(frame[75, 75])
@@ -568,14 +647,14 @@ def test_click_on_other_label_joins_the_active_track_node(overlapping_source):
     target = widget._get_target_layer()
 
     # the active tracklet gets a node in frame 0
-    widget._target_callback(target, _RightClickEvent(position=(0, 75.5, 75.5)))
+    _right_click(widget, target, _RightClickEvent(position=(0, 75.5, 75.5)))
     node = int(_frame(tracks)[75, 75])
     active_track = widget.tracks_viewer.selected_track
 
     # a source label on top of node 1, which belongs to a different tracklet
     source.data[0][60:80, 60:80] = 0
     source.data[0][30:40, 30:40] = 7
-    widget._target_callback(target, _RightClickEvent(position=(0, 35.5, 35.5)))
+    _right_click(widget, target, _RightClickEvent(position=(0, 35.5, 35.5)))
 
     assert not tracks.graph.has_node(1)
     assert int(tracks.get_track_id(node)) == active_track
@@ -611,7 +690,7 @@ def test_replace_is_undone_in_one_step(overlapping_source):
     before = _frame(tracks).copy()
     n_actions = len(tracks.action_history.undo_stack)
 
-    widget._target_callback(target, _RightClickEvent(position=(0, 65.5, 65.5)))
+    _right_click(widget, target, _RightClickEvent(position=(0, 65.5, 65.5)))
 
     assert not np.array_equal(_frame(tracks), before)
     assert len(tracks.action_history.undo_stack) == n_actions + 1
@@ -643,7 +722,7 @@ def test_copy_from_a_lazily_loaded_source(dask_source):
     tracks = widget.tracks_viewer.tracks
     n_nodes = tracks.graph_solution.num_nodes()
     target = widget._get_target_layer()
-    widget._target_callback(target, _RightClickEvent(position=(3, 51.5, 11.5)))
+    _right_click(widget, target, _RightClickEvent(position=(3, 51.5, 11.5)))
 
     assert tracks.graph_solution.num_nodes() == n_nodes + 1
     frame = np.asarray(tracks.segmentation[3])
@@ -709,7 +788,7 @@ class TestMultiChannelSource:
         target = widget._get_target_layer()
         # a point inside the label in both channels, at t=3
         event = _RightClickEvent(position=(channel, 3, 51.5, 11.5))
-        widget._target_callback(target, event)
+        _right_click(widget, target, event)
 
         assert tracks.graph.num_nodes() == n_nodes + 1
         node, copied_pixels = _copied_node(widget, t=3)
@@ -730,10 +809,10 @@ class TestMultiChannelSource:
 
         target = widget._get_target_layer()
         # (56, 16) is inside the 8x8 mask of channel 1, but background in channel 0
-        widget._target_callback(target, _RightClickEvent(position=(0, 3, 56.5, 16.5)))
+        _right_click(widget, target, _RightClickEvent(position=(0, 3, 56.5, 16.5)))
         assert tracks.graph.num_nodes() == n_nodes
 
-        widget._target_callback(target, _RightClickEvent(position=(1, 3, 56.5, 16.5)))
+        _right_click(widget, target, _RightClickEvent(position=(1, 3, 56.5, 16.5)))
         assert tracks.graph.num_nodes() == n_nodes + 1
 
     def test_segmentation_is_not_grown_for_the_channel_axis(

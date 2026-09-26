@@ -19,6 +19,7 @@ from napari_track_edit.data_views.views.layers.click_utils import (
     detect_click,
     detect_side_button,
     get_click_value,
+    wait_for_release,
 )
 from napari_track_edit.data_views.views.layers.contour_labels import ContourLabels
 from napari_track_edit.data_views.views.layers.out_of_slice_points import ZOnlyPoints
@@ -451,6 +452,8 @@ def copy_detection_hook(
             and event.type == "mouse_press"
             and event.button == 2
         ):
+            # copy on release, see wait_for_release
+            yield from wait_for_release(event)
             copy_detection(event)
 
     copied_layer.mouse_drag_callbacks.append(click)
