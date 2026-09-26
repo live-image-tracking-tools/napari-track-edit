@@ -22,6 +22,8 @@ Editing
      - Break the edge between two selected nodes, if it exists
    * - Y
      - Make or break a division between a parent node and its two children
+   * - H
+     - Merge each set of selected nodes that shares a time point into a single node.
    * - Z
      - Undo the last editing action
    * - R or Ctrl/Cmd+Shift+Z
