@@ -322,7 +322,7 @@ def test_keybindings_is_a_link_that_opens_the_panel(qtbot):
     assert KEYBINDINGS_LINK in welcome.links.toHtml()
     assert not welcome.links.openLinks()
 
-    welcome._open_link(QUrl(KEYBINDINGS_LINK))
+    welcome._on_link_clicked(QUrl(KEYBINDINGS_LINK))
 
     assert isinstance(welcome._motile_keybindings_panel, KeybindingsWidget)
     assert KEYBINDINGS_LINK in welcome.links.toHtml()  # still showing the links
@@ -337,7 +337,7 @@ def test_other_links_still_open_in_a_browser(qtbot):
     with patch(
         "motile_tracker.application_menus.welcome_widget.QDesktopServices.openUrl"
     ) as opened:
-        welcome._open_link(QUrl(DOCS_URL))
+        welcome._on_link_clicked(QUrl(DOCS_URL))
 
     assert opened.call_args[0][0].toString() == DOCS_URL
 

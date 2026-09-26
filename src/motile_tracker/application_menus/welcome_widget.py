@@ -63,17 +63,17 @@ class WelcomeWidget(QWidget):
             <b>Example data:</b>&nbsp;&nbsp;{example_links}
         </p>
         """
-        links = QTextBrowser()
-        links.setOpenLinks(False)  # handled in _on_link_clicked
-        links.anchorClicked.connect(self._on_link_clicked)
-        links.setHtml(links_html)
-        links.setMaximumHeight(100)
-        links.setStyleSheet(
+        self.links = QTextBrowser()
+        self.links.setOpenLinks(False)  # handled in _on_link_clicked
+        self.links.anchorClicked.connect(self._on_link_clicked)
+        self.links.setHtml(links_html)
+        self.links.setMaximumHeight(100)
+        self.links.setStyleSheet(
             "QTextBrowser { border: none; background: transparent; margin: 0px; padding: 0px; }"
         )
-        links.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        links.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        layout.addWidget(links)
+        self.links.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.links.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        layout.addWidget(self.links)
 
         # Content
         content = QTextBrowser()
