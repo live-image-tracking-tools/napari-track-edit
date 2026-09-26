@@ -8,8 +8,8 @@ from funtracks.data_model import Tracks
 from funtracks.utils.tracksdata_utils import create_empty_graph
 from tracksdata.nodes._mask import Mask
 
-from motile_tracker.data_views.views.ortho_views import initialize_ortho_views
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views.ortho_views import initialize_ortho_views
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 def visible_point_indices(layer: napari.layers.Points) -> np.ndarray:

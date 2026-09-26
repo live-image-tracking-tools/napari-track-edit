@@ -55,7 +55,7 @@ jobs:
       - name: Store benchmark results
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          name: motile_tracker benchmarks (pytest-benchmark)
+          name: napari_track_edit benchmarks (pytest-benchmark)
           tool: "pytest"
           output-file-path: output.json
           benchmark-data-dir-path: benchmarks

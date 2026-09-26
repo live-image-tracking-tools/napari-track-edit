@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 @pytest.fixture(autouse=True)
@@ -580,7 +580,7 @@ def test_paint_onto_existing_node_when_tracks_live_in_a_database(
     """
     from funtracks.data_model import SolutionTracks, Tracks
 
-    from motile_tracker.import_export.sql_io import (
+    from napari_track_edit.import_export.sql_io import (
         tracks_from_sql,
         write_tracks_to_sql,
     )

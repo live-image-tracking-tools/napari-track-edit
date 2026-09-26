@@ -5,7 +5,7 @@ from funtracks.data_model import Tracks
 from funtracks.utils.tracksdata_utils import create_empty_graph
 from tracksdata.nodes._mask import Mask
 
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 @pytest.fixture

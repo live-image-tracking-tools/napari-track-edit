@@ -14,9 +14,9 @@ import os
 import pytest
 from synthetic_data import PRESETS, generate_synthetic_tracks
 
-from motile_tracker.application_menus import StartupWidget
-from motile_tracker.data_views import TreeWidget
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.application_menus import StartupWidget
+from napari_track_edit.data_views import TreeWidget
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 # CI benchmarks only the `large` preset: the `small` preset's absolute times are so
 # short (~0.03-0.06s) that normal runner jitter reads as huge percent swings and

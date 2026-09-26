@@ -9,12 +9,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 from qtpy.QtCore import Qt
 
-from motile_tracker.application_menus.editing_selection_menu import SelectionWidget
-from motile_tracker.data_views.views_coordinator.groups import (
+from napari_track_edit.application_menus.editing_selection_menu import SelectionWidget
+from napari_track_edit.data_views.views_coordinator.groups import (
     CollectionButton,
     CollectionWidget,
 )
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 @pytest.fixture(autouse=True)
@@ -443,7 +443,7 @@ class TestRetrieveExistingGroups:
         assert widget.selected_collection.node_count.text() == "1 node(s)"
 
 
-@patch("motile_tracker.data_views.views_coordinator.groups.ExportDialog")
+@patch("napari_track_edit.data_views.views_coordinator.groups.ExportDialog")
 def test_export_button_shows_dialog(
     mock_export_dialog, viewer, solution_tracks_2d, qtbot, click_node
 ):

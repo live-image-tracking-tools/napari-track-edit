@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 
 from qtpy.QtCore import Qt
 
-from motile_tracker.application_menus.editing_selection_menu import SelectionWidget
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.application_menus.editing_selection_menu import SelectionWidget
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 def test_selection_widget_initialization(make_napari_viewer, solution_tracks_2d):

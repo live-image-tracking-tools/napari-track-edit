@@ -12,11 +12,11 @@ import pandas as pd
 import pytest
 from qtpy.QtCore import Qt
 
-from motile_tracker.data_views.views.tree_view.navigation_widget import (
+from napari_track_edit.data_views.views.tree_view.navigation_widget import (
     NavigationWidget,
 )
-from motile_tracker.data_views.views.tree_view.tree_widget import TreeWidget
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views.tree_view.tree_widget import TreeWidget
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 @pytest.fixture(autouse=True)

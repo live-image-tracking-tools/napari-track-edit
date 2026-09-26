@@ -6,7 +6,7 @@ from napari.components import ViewerModel
 from napari.layers import Points
 from napari.layers.points._slice import _PointSliceRequest
 
-from motile_tracker.data_views.views.layers.out_of_slice_points import ZOnlyPoints
+from napari_track_edit.data_views.views.layers.out_of_slice_points import ZOnlyPoints
 
 # napari < 0.9 renders points that "spill" into the current slice based on their
 # size, along every non-displayed axis, controlled by ``out_of_slice_display``.

@@ -14,7 +14,7 @@ def viewer(qapp):
     ``napari.plugins._initialize_plugins.cache_clear()`` for every test it runs,
     so a bare ``napari.Viewer()`` constructed afterwards re-runs plugin
     registration against the real app model and napari >= 0.7 raises
-    ``ValueError: Command 'motile-tracker.solve' already registered``. Within a
+    ``ValueError: Command 'napari-track-edit.solve' already registered``. Within a
     pytest session, don't add tests using ``make_napari_viewer`` alongside tests
     using this fixture; prefer ``napari.components.ViewerModel`` where no Qt
     window is needed (also ~15x cheaper to construct).

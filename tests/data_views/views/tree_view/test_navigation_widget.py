@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 from qtpy.QtWidgets import QPushButton
 
-from motile_tracker.data_views.views.tree_view.navigation_widget import (
+from napari_track_edit.data_views.views.tree_view.navigation_widget import (
     NavigationWidget,
 )
 

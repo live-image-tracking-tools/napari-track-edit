@@ -9,14 +9,14 @@ import napari
 import pytest
 from funtracks.data_model import Tracks
 
-from motile_tracker.data_views.views.layers.track_graph import TrackGraph
-from motile_tracker.data_views.views.layers.track_labels import TrackLabels
-from motile_tracker.data_views.views.layers.track_points import TrackPoints
-from motile_tracker.data_views.views_coordinator.tracks_viewer import (
+from napari_track_edit.data_views.views.layers.track_graph import TrackGraph
+from napari_track_edit.data_views.views.layers.track_labels import TrackLabels
+from napari_track_edit.data_views.views.layers.track_points import TrackPoints
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import (
     BASE_TEXT,
     TracksViewer,
 )
-from motile_tracker.motile.backend.motile_run import MotileRun
+from napari_track_edit.motile.backend.motile_run import MotileRun
 
 
 @pytest.fixture(autouse=True)
@@ -185,7 +185,7 @@ class TestEdgeOperations:
 
         # Approve the force dialog automatically
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer."
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
             "confirm_force_operation",
             lambda message: (True, False),
         )
@@ -214,7 +214,7 @@ class TestEdgeOperations:
         # node 4 already has child 5, so the mode dialog does come up here
         ask_mock = MagicMock(return_value=False)  # keep it as a division
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer."
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
             "ask_connect_mode",
             ask_mock,
         )
@@ -292,13 +292,13 @@ class TestEdgeOperations:
 
         ask_mock = MagicMock()
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer."
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
             "ask_connect_mode",
             ask_mock,
         )
         warning_mock = MagicMock()
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer.show_warning",
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.show_warning",
             warning_mock,
         )
 
@@ -323,7 +323,7 @@ class TestEdgeOperations:
 
         warning_mock = MagicMock()
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer.show_warning",
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.show_warning",
             warning_mock,
         )
 
@@ -346,7 +346,7 @@ class TestEdgeOperations:
 
         warning_mock = MagicMock()
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer.show_warning",
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.show_warning",
             warning_mock,
         )
 
@@ -396,7 +396,7 @@ class TestEdgeOperations:
 
         warning_mock = MagicMock()
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer.show_warning",
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.show_warning",
             warning_mock,
         )
 
@@ -421,7 +421,7 @@ class TestEdgeOperations:
 
         ask_mock = MagicMock(return_value=False)  # False == with divisions
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer."
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
             "ask_connect_mode",
             ask_mock,
         )
@@ -443,12 +443,12 @@ class TestEdgeOperations:
         tracks_viewer.force = False
 
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer."
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
             "ask_connect_mode",
             MagicMock(return_value=True),  # True == linear
         )
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer."
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
             "confirm_force_operation",
             lambda message: (True, False),
         )
@@ -468,7 +468,7 @@ class TestEdgeOperations:
         click_node(tracks_viewer, 6, append=True)
 
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer."
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
             "ask_connect_mode",
             MagicMock(return_value=None),
         )
@@ -490,7 +490,7 @@ class TestEdgeOperations:
 
         ask_mock = MagicMock()
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer."
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
             "ask_connect_mode",
             ask_mock,
         )
@@ -508,7 +508,7 @@ class TestEdgeOperations:
 
         ask_mock = MagicMock()
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer."
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
             "ask_connect_mode",
             ask_mock,
         )
@@ -529,7 +529,7 @@ class TestEdgeOperations:
 
         # Shift+C: connect linearly, forcing away the conflicting child edge
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer."
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
             "confirm_force_operation",
             lambda message: (True, False),
         )
@@ -579,7 +579,7 @@ class TestEdgeOperations:
         click_node(tracks_viewer, 5, append=True)
 
         with patch(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer.QMessageBox.warning"
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.QMessageBox.warning"
         ) as warning:
             tracks_viewer.set_division()
 
@@ -602,7 +602,7 @@ class TestEdgeOperations:
             tracks_viewer.selected_nodes.reset()
             select()
             with patch(
-                "motile_tracker.data_views.views_coordinator.tracks_viewer.QMessageBox.warning"
+                "napari_track_edit.data_views.views_coordinator.tracks_viewer.QMessageBox.warning"
             ) as warning:
                 tracks_viewer.set_division()
 
@@ -1054,7 +1054,7 @@ class TestLayerCreation:
     def test_layers_present_after_solve(self, viewer, segmentation_2d):
         """End-to-end test: solve on a segmentation, wrap result in MotileRun,
         load into TracksViewer, and verify all three layer types are present."""
-        from motile_tracker.motile.backend import MotileRun, SolverParams, solve
+        from napari_track_edit.motile.backend import MotileRun, SolverParams, solve
 
         segmentation = segmentation_2d
         params = SolverParams()

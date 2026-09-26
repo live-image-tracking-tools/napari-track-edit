@@ -7,7 +7,7 @@ from funtracks.user_actions.user_update_segmentation import (
 )
 from funtracks.utils.tracksdata_utils import pixels_to_td_mask
 
-from motile_tracker.data_views.views.layers.track_labels import (
+from napari_track_edit.data_views.views.layers.track_labels import (
     updates_from_index_atoms,
     updates_from_masked_atoms,
 )
