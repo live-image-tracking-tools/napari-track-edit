@@ -148,18 +148,18 @@ class CopyFromSourceWidget(QWidget):
         hint.setWordWrap(True)
         hint.setStyleSheet("font-style: italic;")
         copy_controls_layout.addWidget(hint)
-        # When checked, a copy never continues an existing label: it always ends up in a
-        # node of its own, with a new tracklet id.
-        self.new_track_on_copy_checkbox = QCheckBox(
-            "Copy as new track\n(don't grow existing tracklet)"
+        # When checked, a copy into a frame where the current tracklet already has a node
+        # starts a new track, instead of being merged into that node.
+        self.auto_new_track_checkbox = QCheckBox("Automatically start new tracks")
+        self.auto_new_track_checkbox.setToolTip(
+            "When checked, a copy gets the current tracklet id if that tracklet has no "
+            "object in this frame yet, and otherwise starts a new track.\n"
+            "When unchecked, a copy into a frame where the current tracklet already has "
+            "an object is merged into that object (start a new track manually to avoid "
+            "this).\n"
+            "Replacing the current tracklet's own label always keeps its tracklet id."
         )
-        self.new_track_on_copy_checkbox.setToolTip(
-            "When checked, a copy always becomes a new track: replacing an existing label "
-            "deletes its node and adds a new one, and copying to a frame that already has "
-            "an object with the current tracklet id starts a new track. When unchecked, "
-            "the existing node is kept and its label is grown or replaced."
-        )
-        copy_controls_layout.addWidget(self.new_track_on_copy_checkbox)
+        copy_controls_layout.addWidget(self.auto_new_track_checkbox)
 
         # Shown while the connected source carries extra axes in front of the ones the
         # tracks use, holding alternative segmentations of the same objects.
@@ -556,15 +556,14 @@ class CopyFromSourceWidget(QWidget):
         The copy always belongs to the currently active tracklet. Which node ends up
         holding the copied pixels depends on the active tracklet:
 
-        - 'copy as new track' on: the clicked node is deleted and the copied pixels
-          become a new node with a new tracklet id.
         - the clicked node is the active tracklet's node in this frame: it keeps its id
           (and with it its edges) and its pixels become exactly the copied ones.
         - the active tracklet has no node in this frame: the clicked node is deleted and
           the copied pixels become a new node of the active tracklet.
         - the active tracklet has a different node in this frame: the clicked node is
-          deleted and the copied pixels grow that node, since a tracklet can only have one
-          node per frame.
+          deleted and, since a tracklet can only have one node per frame, the copied
+          pixels either grow that node or, with 'automatically start new tracks' on,
+          become a new node with a new tracklet id.
 
         With 'preserve labels' on, only a label of the active tracklet may be replaced -
         the labels of other tracklets are protected.
@@ -599,11 +598,13 @@ class CopyFromSourceWidget(QWidget):
                 )
                 return
 
-        target_node = (
-            None
-            if self.new_track_on_copy_checkbox.isChecked()
-            else self._current_track_node(t, track_id)
-        )
+        target_node = self._current_track_node(t, track_id)
+        new_track = False
+        if target_node not in (None, node) and self.auto_new_track_checkbox.isChecked():
+            # the active tracklet is taken in this frame: start a new track instead of
+            # growing its node
+            target_node = None
+            new_track = True
 
         actions = []
         if target_node == node:
@@ -618,7 +619,7 @@ class CopyFromSourceWidget(QWidget):
                 # Reserve the new node id before deleting
                 target_node = tracks._get_new_node_ids(1)[0]
                 actions.append(UserDeleteNodes(tracks, nodes=[node], _top_level=False))
-                if self.new_track_on_copy_checkbox.isChecked():
+                if new_track:
                     self.tracks_viewer.set_new_track_id()
                     track_id = self.tracks_viewer.selected_track
             else:
@@ -644,7 +645,8 @@ class CopyFromSourceWidget(QWidget):
 
         With 'preserve labels' on, only the pixels that are not part of an existing label
         are copied. The copy grows the current tracklet's node in this frame if it has
-        one, unless 'copy as new track' is checked.
+        one, unless 'automatically start new tracks' is checked: then it starts a new
+        track.
         """
 
         tracks = self.tracks_viewer.tracks
@@ -666,7 +668,7 @@ class CopyFromSourceWidget(QWidget):
         # grow the current tracklet's node in this frame if it exists, otherwise create a
         # new node with the current tracklet id
         existing_node = self._current_track_node(t, track_id)
-        if existing_node is not None and self.new_track_on_copy_checkbox.isChecked():
+        if existing_node is not None and self.auto_new_track_checkbox.isChecked():
             # start a fresh track instead of growing the existing label in this frame
             self.tracks_viewer.set_new_track_id()
             track_id = self.tracks_viewer.selected_track

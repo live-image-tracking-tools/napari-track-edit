@@ -253,7 +253,7 @@ def test_copy_labels_from_source(labels_app):
 
 
 def test_copy_labels_as_new_track(labels_app):
-    """With 'copy as new track' checked, copying into a frame that already holds a
+    """With 'automatically start new tracks' checked, copying into a frame that already holds a
     node of the current tracklet starts a new tracklet instead of growing it."""
 
     _viewer, widget, source = labels_app
@@ -268,7 +268,7 @@ def test_copy_labels_as_new_track(labels_app):
     first_track_id = widget.tracks_viewer.selected_track
 
     # copy a non-overlapping label into the same frame
-    widget.new_track_on_copy_checkbox.setChecked(True)
+    widget.auto_new_track_checkbox.setChecked(True)
     widget._add_segmentation_node(0, (np.array([70, 70, 71]), np.array([70, 71, 70])))
 
     assert tracks.graph.num_nodes() == n_nodes + 2
@@ -461,7 +461,7 @@ def test_declined_replace_keeps_the_clicked_label(overlapping_source, monkeypatc
 
     from funtracks.exceptions import InvalidActionError
 
-    from motile_tracker.application_menus import copy_from_source_widget as module
+    from napari_track_edit.application_menus import copy_from_source_widget as module
 
     def refuse(*args, **kwargs):
         raise InvalidActionError("downstream division detected", forceable=True)
@@ -572,25 +572,78 @@ def test_own_label_can_be_replaced_with_preserve_labels(overlapping_source):
     assert frame[55, 55] == 1
 
 
-def test_replace_as_new_track_deletes_the_clicked_node(overlapping_source):
-    """With 'copy as new track' on, the clicked node is deleted and the copied label
-    becomes a new node with a new tracklet id."""
+def test_auto_new_track_replace_keeps_a_free_tracklet(overlapping_source):
+    """With 'automatically start new tracks' on, replacing a label while the active
+    tracklet has no node in this frame yet gives the copy the active tracklet id."""
 
     _viewer, widget, _source = overlapping_source
     tracks = widget.tracks_viewer.tracks
     target = widget._get_target_layer()
-    widget.new_track_on_copy_checkbox.setChecked(True)
+    widget.auto_new_track_checkbox.setChecked(True)
+    active_track = widget.tracks_viewer.selected_track
+    assert widget._current_track_node(0, active_track) is None
 
     _right_click(widget, target, _RightClickEvent(position=(0, 65.5, 65.5)))
 
     assert not tracks.graph.has_node(1)
     new_node = int(_frame(tracks)[65, 65])
-    assert new_node != 0
-    assert int(tracks.get_track_id(new_node)) != 1
+    assert int(tracks.get_track_id(new_node)) == active_track
+    assert widget.tracks_viewer.selected_track == active_track
 
     expected = np.zeros((100, 100), dtype=bool)
     expected[60:80, 60:80] = True
     np.testing.assert_array_equal(_frame(tracks) == new_node, expected)
+
+
+def test_auto_new_track_replace_starts_a_new_track_when_taken(overlapping_source):
+    """With 'automatically start new tracks' on, replacing a label while the active
+    tracklet already has another node in this frame starts a new track, instead of
+    merging the copy into that node."""
+
+    _viewer, widget, source = overlapping_source
+    tracks = widget.tracks_viewer.tracks
+    target = widget._get_target_layer()
+
+    # give the active tracklet a node in frame 0, away from node 1
+    source.data[0][85:95, 85:95] = 7
+    _right_click(widget, target, _RightClickEvent(position=(0, 90.5, 90.5)))
+    taken_node = int(_frame(tracks)[90, 90])
+    active_track = widget.tracks_viewer.selected_track
+    assert int(tracks.get_track_id(taken_node)) == active_track
+
+    widget.auto_new_track_checkbox.setChecked(True)
+    _right_click(widget, target, _RightClickEvent(position=(0, 65.5, 65.5)))
+
+    # node 1 is replaced by a node of a new tracklet, the taken node is untouched
+    assert not tracks.graph.has_node(1)
+    new_node = int(_frame(tracks)[65, 65])
+    assert new_node not in (0, taken_node)
+    new_track = int(tracks.get_track_id(new_node))
+    assert new_track != active_track
+    assert widget.tracks_viewer.selected_track == new_track
+    assert int(_frame(tracks)[90, 90]) == taken_node
+
+
+def test_auto_new_track_replace_of_own_label_keeps_it(overlapping_source):
+    """With 'automatically start new tracks' on, replacing the active tracklet's own
+    label still replaces its pixels in place, without starting a new track."""
+
+    _viewer, widget, source = overlapping_source
+    tracks = widget.tracks_viewer.tracks
+    target = widget._get_target_layer()
+
+    _right_click(widget, target, _RightClickEvent(position=(0, 75.5, 75.5)))
+    node = int(_frame(tracks)[75, 75])
+    active_track = widget.tracks_viewer.selected_track
+
+    widget.auto_new_track_checkbox.setChecked(True)
+    source.data[0][60:80, 60:80] = 0
+    source.data[0][70:90, 70:90] = 8
+    _right_click(widget, target, _RightClickEvent(position=(0, 75.5, 75.5)))
+
+    assert int(_frame(tracks)[75, 75]) == node
+    assert int(tracks.get_track_id(node)) == active_track
+    assert widget.tracks_viewer.selected_track == active_track
 
 
 def test_copy_onto_background_respects_preserve_labels(overlapping_source):

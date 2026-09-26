@@ -108,7 +108,7 @@ Copying nodes from an external source
 Apart from adding new nodes by adding points or segmentation labels, it is also possible to copy nodes from points or labels on another napari layer.
 The ``Copy from source`` tab in the ``Editing & Selection`` widget allows you to pick a source layer (either Points or Labels).
 Once connected, right-clicking while the target layer (either the tracking Points ('_points') or Labels layer ('_seg')) is active, allows you to copy the underlying source node to the target layer.
-The copied node will have the currently active tracklet ID, unless the ``Copy as new track`` checkbox is activated, in which case a copy will start a new track.
+The copied node will have the currently active tracklet ID. If that tracklet already has a node in the clicked time point, the copy is merged into that node, unless the ``Automatically start new tracks`` checkbox is activated, in which case the copy starts a new track instead.
 For Labels layers, a copy event outcome depends on the target layer's label at the clicked location:
 
 - If the target layer had no label (only background) at the clicked location, all source label pixels will be copied to the target, overwriting the background and any other values in that region.
