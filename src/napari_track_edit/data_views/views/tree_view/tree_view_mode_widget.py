@@ -8,6 +8,8 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from napari_track_edit.data_views.keybindings_config import bind_shortcut_label
+
 
 class TreeViewModeWidget(QWidget):
     """Widget to switch between viewing all nodes versus nodes of one or more lineages
@@ -21,7 +23,8 @@ class TreeViewModeWidget(QWidget):
 
         self.mode = "all"
 
-        display_box = QGroupBox("Display [Q]")
+        display_box = QGroupBox()
+        bind_shortcut_label(display_box, "toggle_display_mode", "Display")
         display_layout = QHBoxLayout()
         button_group = QButtonGroup()
         self.show_all_radio = QRadioButton("All objects")

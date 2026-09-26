@@ -11,6 +11,8 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from napari_track_edit.data_views.keybindings_config import bind_shortcut_label
+
 
 class RefreshingComboBox(QComboBox):
     """A QComboBox that calls a refresh function before showing its popup."""
@@ -38,7 +40,8 @@ class TreeViewFeatureWidget(QWidget):
         self.plot_type = "tree"
         self.get_features = get_features
 
-        display_box = QGroupBox("Plot [W]")
+        display_box = QGroupBox()
+        bind_shortcut_label(display_box, "toggle_feature_mode", "Plot")
         display_layout = QHBoxLayout()
         button_group = QButtonGroup()
         self.show_tree_radio = QRadioButton("Lineage Tree")

@@ -44,6 +44,55 @@ def click_node():
 
 
 @pytest.fixture(autouse=True)
+def isolate_napari_settings(tmp_path_factory, monkeypatch):
+    """Redirect napari's settings singleton to a throwaway file for each test.
+
+    `napari.settings.get_settings()` is a process-wide singleton that reads
+    from and autosaves to a real file on disk (the user's actual napari
+    config, outside of test isolation). The plugin keeps its own shortcuts out
+    of there, but napari itself writes to it while a viewer is up, so without
+    this the suite would still mutate the real settings file on whichever
+    machine runs it - and stale state from a previous session could leak into
+    what a test sees.
+
+    Uses its own `tmp_path_factory`-allocated directory rather than a
+    test's own `tmp_path` fixture - some tests assert on the exact contents
+    of `tmp_path` (e.g. `test_tracks_list.py`'s
+    `assert list(tmp_path.iterdir()) == [...]`), and a stray settings.yaml
+    dropped into that same directory breaks those assertions.
+    """
+    import napari.settings as napari_settings_module
+
+    settings_dir = tmp_path_factory.mktemp("napari_settings")
+    monkeypatch.setattr(napari_settings_module, "_SETTINGS", None)
+    napari_settings_module.get_settings(path=settings_dir / "settings.yaml")
+    yield
+    monkeypatch.setattr(napari_settings_module, "_SETTINGS", None)
+
+
+@pytest.fixture(autouse=True)
+def isolate_shortcut_overrides(tmp_path_factory, monkeypatch):
+    """Point the plugin's own shortcut file at a throwaway path per test.
+
+    Same reasoning as `isolate_napari_settings`: `SHORTCUTS` is a process-wide
+    singleton backed by a real file in the user's config directory, so a test
+    that rebinds a key would otherwise change the shortcuts on the machine
+    running the suite, and leak into every later test.
+    """
+    from napari_track_edit.data_views import keybindings_config
+
+    config_dir = tmp_path_factory.mktemp("motile_shortcuts")
+    monkeypatch.setattr(
+        type(keybindings_config.SHORTCUTS),
+        "path",
+        property(lambda self: config_dir / "shortcuts.json"),
+    )
+    monkeypatch.setattr(keybindings_config.SHORTCUTS, "_overrides", None)
+    yield
+    monkeypatch.setattr(keybindings_config.SHORTCUTS, "_overrides", None)
+
+
+@pytest.fixture(autouse=True)
 def reset_tracks_viewer():
     """Reset TracksViewer singleton before and after each test.
 

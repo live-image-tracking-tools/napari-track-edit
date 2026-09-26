@@ -14,6 +14,11 @@ from qtpy.QtWidgets import (
 )
 from superqt.fonticon import icon as qticon
 
+from napari_track_edit.data_views.keybindings_config import (
+    SHORTCUTS,
+    bind_shortcut_label,
+    shortcut_text,
+)
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 if TYPE_CHECKING:
@@ -57,7 +62,8 @@ class SelectionWidget(QWidget):
         arrow_layout.addWidget(self.jump_to_next_btn)
 
         # Buttons to select next and previous node set from history
-        self.select_next_set_btn = QPushButton("Next Selection [N]")
+        self.select_next_set_btn = QPushButton()
+        bind_shortcut_label(self.select_next_set_btn, "select_next", "Next Selection")
         self.select_next_set_btn.setToolTip(
             "Select the next set of nodes from the selection history."
         )
@@ -65,7 +71,10 @@ class SelectionWidget(QWidget):
         self.select_next_set_btn.clicked.connect(
             lambda: self.tracks_viewer.select_node_set_from_history(previous=False)
         )
-        self.select_previous_set_btn = QPushButton("Previous Selection [P]")
+        self.select_previous_set_btn = QPushButton()
+        bind_shortcut_label(
+            self.select_previous_set_btn, "select_previous", "Previous Selection"
+        )
         self.select_previous_set_btn.setToolTip(
             "Select the previous set of nodes from the selection history."
         )
@@ -75,13 +84,15 @@ class SelectionWidget(QWidget):
         )
 
         # Button to deselect all nodes
-        self.deselect_btn = QPushButton("Deselect [ESC]")
+        self.deselect_btn = QPushButton()
+        bind_shortcut_label(self.deselect_btn, "deselect", "Deselect")
         self.deselect_btn.setToolTip("Deselect all nodes.")
         self.deselect_btn.clicked.connect(self.tracks_viewer.deselect)
         self.deselect_btn.setEnabled(False)
 
         # Button to restore previous selection
-        self.reselect_btn = QPushButton("Restore selection [E]")
+        self.reselect_btn = QPushButton()
+        bind_shortcut_label(self.reselect_btn, "restore_selection", "Restore selection")
         self.reselect_btn.setToolTip("Restore the last selection.")
         self.reselect_btn.clicked.connect(self.tracks_viewer.restore_selection)
         self.reselect_btn.setEnabled(False)
@@ -164,7 +175,8 @@ class EditingMenu(QWidget):
         self.label = QLabel(f"Current Track ID: {self.tracks_viewer.selected_track}")
         self.tracks_viewer.update_track_id.connect(self.update_track_id_color)
 
-        self.new_track_btn = QPushButton("Start new [M]")
+        self.new_track_btn = QPushButton()
+        bind_shortcut_label(self.new_track_btn, "request_new_track", "Start new")
         self.new_track_btn.clicked.connect(self.tracks_viewer.request_new_track)
         track_layout = QHBoxLayout()
         track_layout.addWidget(self.label)
@@ -175,17 +187,18 @@ class EditingMenu(QWidget):
         node_box.setMaximumHeight(160)
         node_box_layout = QVBoxLayout()
 
-        self.delete_node_btn = QPushButton("Delete [D]")
+        self.delete_node_btn = QPushButton()
+        bind_shortcut_label(self.delete_node_btn, "delete_node", "Delete")
         self.delete_node_btn.clicked.connect(self.tracks_viewer.delete_node)
         self.delete_node_btn.setEnabled(False)
-        self.swap_nodes_btn = QPushButton("Swap [S]")
+
+        self.swap_nodes_btn = QPushButton()
+        bind_shortcut_label(self.swap_nodes_btn, "swap_nodes", "Swap")
         self.swap_nodes_btn.clicked.connect(self.tracks_viewer.swap_nodes)
         self.swap_nodes_btn.setEnabled(False)
-        self.merge_nodes_btn = QPushButton("Merge [H]")
-        self.merge_nodes_btn.setToolTip(
-            "Merge each set of selected nodes that shares a time point into a "
-            "single node."
-        )
+
+        self.merge_nodes_btn = QPushButton("")
+        bind_shortcut_label(self.merge_nodes_btn, "merge_horizontally", "Merge")
         self.merge_nodes_btn.clicked.connect(self.tracks_viewer.merge_horizontally)
         self.merge_nodes_btn.setEnabled(False)
 
@@ -199,16 +212,17 @@ class EditingMenu(QWidget):
         edge_box.setMaximumHeight(170)
         edge_box_layout = QVBoxLayout()
 
-        self.connect_nodes_btn = QPushButton("Connect [C]")
-        self.connect_nodes_btn.setToolTip(
-            "Connect the selected nodes into one track. If some of them already have "
-            "an outgoing edge, you are asked whether to keep those edges as divisions "
-            "([C]) or to break them into one linear track ([Shift+C])"
+        self.connect_nodes_btn = QPushButton()
+        bind_shortcut_label(
+            self.connect_nodes_btn, "connect_nodes_with_divisions", "Connect"
         )
         self.connect_nodes_btn.clicked.connect(self.tracks_viewer.connect_nodes)
         self.connect_nodes_btn.setEnabled(False)
+        self._update_connect_tooltip()
+        SHORTCUTS.changed.connect(self._update_connect_tooltip)
 
-        self.disconnect_nodes_btn = QPushButton("Break [B]")
+        self.disconnect_nodes_btn = QPushButton()
+        bind_shortcut_label(self.disconnect_nodes_btn, "disconnect_nodes", "Break")
         self.disconnect_nodes_btn.setToolTip(
             "Break the edges between the selected nodes. Edges to nodes outside of "
             "the selection are kept."
@@ -221,7 +235,8 @@ class EditingMenu(QWidget):
         connect_layout.addWidget(self.disconnect_nodes_btn)
         edge_box_layout.addLayout(connect_layout)
 
-        self.set_division_btn = QPushButton("Set/break division [Y]")
+        self.set_division_btn = QPushButton()
+        bind_shortcut_label(self.set_division_btn, "set_division", "Set/break division")
         self.set_division_btn.setToolTip(
             "Select a parent node and its two child nodes to connect them as a "
             "division, or to break an existing division."
@@ -232,10 +247,12 @@ class EditingMenu(QWidget):
 
         edge_box.setLayout(edge_box_layout)
 
-        self.undo_btn = QPushButton("Undo [Z]")
+        self.undo_btn = QPushButton()
+        bind_shortcut_label(self.undo_btn, "undo", "Undo")
         self.undo_btn.clicked.connect(self.tracks_viewer.undo)
 
-        self.redo_btn = QPushButton("Redo [R]")
+        self.redo_btn = QPushButton()
+        bind_shortcut_label(self.redo_btn, "redo", "Redo")
         self.redo_btn.clicked.connect(self.tracks_viewer.redo)
 
         box_layout.addWidget(node_box)
@@ -249,6 +266,20 @@ class EditingMenu(QWidget):
         main_layout.addWidget(box)
         self.setLayout(main_layout)
         self.setMaximumHeight(500)
+
+    def _update_connect_tooltip(self):
+        """Describe the connect button, naming the current shortcut of each mode."""
+
+        def key(action: str) -> str:
+            text = shortcut_text(action)
+            return f" ([{text}])" if text else ""
+
+        self.connect_nodes_btn.setToolTip(
+            "Connect the selected nodes into one track. If some of them already have "
+            "an outgoing edge, you are asked whether to keep those edges as divisions"
+            f"{key('connect_nodes_with_divisions')} or to break them into one linear "
+            f"track{key('connect_nodes_linearly')}"
+        )
 
     def update_track_id_color(self):
         """Display track ID value and color"""

@@ -1,11 +1,36 @@
 Key bindings and Mouse Functions
 ================================
 
-Napari viewer and layer key bindings and mouse functions
-********************************************************
+Configurable key bindings
+*************************
+
+These are the Napari Track Edit actions you can rebind. The table lists the
+**defaults**; to change them, open the Napari Track Edit keybindings panel with
+*Configure keybindings…* in the Getting Started or Editing & Selection menu.
+Your choices are stored in a ``shortcuts.json`` file in the Napari Track Edit
+user config directory, so they survive a restart, and *Restore defaults* in
+that panel puts these back.
+
+Modifier names are as napari spells them: on macOS ``Meta`` is the Command key
+and ``Alt`` is Option. Where two bindings are listed, either one works.
+
+While a tracking layer is selected, these shortcuts take priority over
+napari's own bindings for the same key — so, for example, ``Z`` undoes a track
+edit rather than switching the layer to pan/zoom mode. The keybindings panel
+shows which napari actions each shortcut shadows.
+
+.. include:: _generated/keybinding_defaults.rst
+
+Fixed key bindings and mouse functions
+**************************************
+
+These are not rebindable.
+
+Napari viewer and layer mouse functions
+---------------------------------------
 
 .. list-table::
-   :widths: 25 25
+   :widths: 25 75
    :header-rows: 1
 
    * - Mouse / Key binding
@@ -20,25 +45,16 @@ Napari viewer and layer key bindings and mouse functions
      - | Make this node's tracklet id the current one tool (does not change the selection or the time point)
    * - Mouse drag with point layer selection tool active
      - Select multiple nodes at once
-   * - ESC
-     - Clear selection
-   * - E
-     - Restore selection
-   * - P / Mouse button 4 (Back)
+   * - Mouse button 4 (Back)
      - Select previous node set
-   * - N / Mouse button 5 (Forward)
-     - Restore next node set
-   * - Q
-     - | Cycle display mode: All → Lineage → Group → All.
-       | When no groups exist, alternates only between
-       | All and Lineage.
-   * - /
-     - | Toggle between hiding/showing all currently active widgets
+   * - Mouse button 5 (Forward)
+     - Select next node set
 
 Tree view key and mouse functions
-*********************************
+---------------------------------
+
 .. list-table::
-   :widths: 25 25
+   :widths: 25 75
    :header-rows: 1
 
    * - Mouse / Key binding
@@ -64,22 +80,12 @@ Tree view key and mouse functions
        | x-axis, vertically to scale the y-axis
    * - SHIFT + Mouse drag
      - Rectangular selection of nodes
-   * - ESC
-     - Clear selection
-   * - E
-     - Restore selection
-   * - P / Mouse button 4 (Back)
-     - Select previous node set
-   * - N / Mouse button 5 (Forward)
-     - Restore next node set
    * - Right mouse click
      - Reset view
-   * - Q
-     - | Switch between viewing all lineages (vertically)\
-       | or the currently selected lineages (horizontally)
-   * - W
-     - | Switch between plotting the lineage tree and the
-       | object size
+   * - Mouse button 4 (Back)
+     - Select previous node set
+   * - Mouse button 5 (Forward)
+     - Select next node set
    * - Left arrow
      - Select the node to the left
    * - Right arrow
@@ -92,32 +98,3 @@ Tree view key and mouse functions
      - | Select the child node (vertical view of all
        | lineages) or the previous adjacent lineage
        | (horizontal view of selected lineage)
-   * - /
-     - | Toggle between hiding/showing all currently active widgets
-
-Key bindings for editing the tracks
-***********************************
-.. list-table::
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Mouse / Key binding
-     - Action
-   * - M
-     - | Start a new track: assigns a new track id, and a new
-       | segmentation label if necessary
-   * - D
-     - Delete selected nodes
-   * - C
-     - | Connect the selected nodes into one track, keeping
-       | existing outgoing edges as divisions, or break them
-       | apart again if already connected
-   * - Shift + C
-     - | Same, but break the existing outgoing edges so that
-       | the result is one linear track without divisions
-   * - S
-     - Swap the incoming edges of two horizontal nodes
-   * - Z
-     - Undo last editing action
-   * - R
-     - Redo last editing action

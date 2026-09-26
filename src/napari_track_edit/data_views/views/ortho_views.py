@@ -14,7 +14,7 @@ from napari_orthogonal_views.ortho_view_manager import (  # noqa
 )
 
 from napari_track_edit.data_views.colormap import construct_direct_colormap
-from napari_track_edit.data_views.keybindings_config import KEYMAP, bind_keymap
+from napari_track_edit.data_views.keybindings_config import bind_keymap
 from napari_track_edit.data_views.views.layers.click_utils import (
     detect_click,
     detect_side_button,
@@ -421,7 +421,7 @@ def track_layers_hook(
     copied_layer.mouse_drag_callbacks.append(click_wrapper)
 
     # Bind keys to original layer TracksViewer
-    bind_keymap(copied_layer, KEYMAP, orig_layer.tracks_viewer)
+    bind_keymap(copied_layer, orig_layer.tracks_viewer)
 
 
 def initialize_ortho_views(viewer: Viewer) -> OrthoViewManager:

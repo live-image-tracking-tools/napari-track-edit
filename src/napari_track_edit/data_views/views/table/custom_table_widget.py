@@ -24,8 +24,8 @@ from qtpy.QtWidgets import (
 
 from napari_track_edit.data_views.colormap import TrackColormap
 from napari_track_edit.data_views.keybindings_config import (
-    GENERAL_KEY_ACTIONS,
-    resolve_key_action,
+    current_general_key_actions,
+    qt_event_key,
 )
 from napari_track_edit.data_views.views.layers.click_utils import (
     detect_side_button,
@@ -273,8 +273,10 @@ class CustomTableWidget(QTableView):
 
         tracks_viewer = parent.tracks_viewer
 
-        # Get the action name from the general keybind mapping
-        action_name = resolve_key_action(GENERAL_KEY_ACTIONS, event)
+        # Get the action name from the general keybind mapping, rebuilt from
+        # napari's current settings so a user rebind is picked up here too.
+        # Keyed on (key, modifiers) so e.g. "z" and "ctrl+shift+z" don't collide.
+        action_name = current_general_key_actions().get(qt_event_key(event))
         if action_name:
             method = getattr(tracks_viewer, action_name, None)
             if method:

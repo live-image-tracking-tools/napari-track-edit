@@ -14,10 +14,7 @@ from napari.utils.notifications import show_info
 from psygnal import Signal
 from psygnal.containers import Selection
 
-from napari_track_edit.data_views.keybindings_config import (
-    KEYMAP,
-    bind_keymap,
-)
+from napari_track_edit.data_views.keybindings_config import bind_keymap
 from napari_track_edit.data_views.node_type import NodeType
 from napari_track_edit.data_views.views.layers.click_utils import (
     detect_click,
@@ -92,8 +89,12 @@ class TrackPoints(ZOnlyPoints):
             blending="translucent",
         )
 
-        # Key bindings (should be specified both on the viewer (in tracks_viewer)
-        bind_keymap(self, KEYMAP, self.tracks_viewer)
+        # Bind the current tracks_viewer shortcuts on this layer *instance*.
+        # Needed in addition to the viewer-level binding in
+        # tracks_viewer.set_keybinds: the active layer's own keymap is the
+        # only place that outranks napari's built-in layer actions, and
+        # bind_keymap keeps it in sync when the user rebinds.
+        bind_keymap(self, self.tracks_viewer)
 
         # Connect to click events to select nodes
         @self.mouse_drag_callbacks.append

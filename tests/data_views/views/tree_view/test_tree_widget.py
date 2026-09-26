@@ -316,6 +316,15 @@ def test_keyboard_shortcuts_all(mock_move, viewer, solution_tracks_2d, qtbot):
     qtbot.keyPress(tree_widget, Qt.Key_R)
     redo_mock.assert_called_once()
 
+    # Test 6b: Ctrl+Shift+Z also calls redo
+    redo_mock.reset_mock()
+    qtbot.keyPress(
+        tree_widget,
+        Qt.Key_Z,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+    )
+    redo_mock.assert_called_once()
+
     # Test 7: F key flips axes
     initial_direction = tree_widget.view_direction
     qtbot.keyPress(tree_widget, Qt.Key_F)

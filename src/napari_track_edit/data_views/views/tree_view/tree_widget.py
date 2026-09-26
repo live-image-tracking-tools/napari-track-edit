@@ -15,11 +15,11 @@ from qtpy.QtWidgets import (
 from superqt import QCollapsible
 
 from napari_track_edit.data_views.keybindings_config import (
-    GENERAL_KEY_ACTIONS,
     TREE_WIDGET_MODIFIER_ACTIONS,
     TREE_WIDGET_NAVIGATION_KEYS,
-    TREE_WIDGET_SPECIFIC_ACTIONS,
-    resolve_key_action,
+    current_general_key_actions,
+    current_tree_widget_specific_actions,
+    qt_event_key,
 )
 from napari_track_edit.data_views.views.tree_view.flip_axes_widget import FlipTreeWidget
 from napari_track_edit.data_views.views.tree_view.navigation_widget import (
@@ -131,7 +131,7 @@ class TreeWidget(QWidget):
 
         panel = QWidget()
         panel.setLayout(panel_layout)
-        panel.setMaximumWidth(1060)  # 930 + room for the options checkboxes
+        panel.setMaximumWidth(1140)
         panel.setMaximumHeight(82)
 
         # Make a collapsible for TreeView widgets
@@ -195,8 +195,10 @@ class TreeWidget(QWidget):
         3. General keybinds (work in table widget too) - call tracks_viewer methods
         4. Navigation (arrow keys)
         """
-        # Handle tree-widget-specific keybinds first (higher priority)
-        action_name = resolve_key_action(TREE_WIDGET_SPECIFIC_ACTIONS, event)
+        # Handle tree-widget-specific keybinds first (higher priority),
+        # rebuilt from napari's current settings so user rebinds apply here
+        # too. Keyed on (key, modifiers) so combos don't collide.
+        action_name = current_tree_widget_specific_actions().get(qt_event_key(event))
         if action_name:
             method = getattr(self, action_name, None)
             if method:
@@ -216,8 +218,10 @@ class TreeWidget(QWidget):
             event.accept()
             return
 
-        # Try general keybinds (these also work in table widget)
-        action_name = resolve_key_action(GENERAL_KEY_ACTIONS, event)
+        # Try general keybinds (these also work in table widget), rebuilt
+        # from napari's current settings so user rebinds apply here too.
+        # Keyed on (key, modifiers) so e.g. "z" and "ctrl+shift+z" don't collide.
+        action_name = current_general_key_actions().get(qt_event_key(event))
         if action_name:
             method = getattr(self.tracks_viewer, action_name, None)
             if method:
@@ -315,7 +319,7 @@ class TreeWidget(QWidget):
         if scrolled:
             return
 
-        action_name = resolve_key_action(GENERAL_KEY_ACTIONS, ev)
+        action_name = current_general_key_actions().get(qt_event_key(ev))
         if action_name:
             method = getattr(self.tracks_viewer, action_name, None)
             if method:
