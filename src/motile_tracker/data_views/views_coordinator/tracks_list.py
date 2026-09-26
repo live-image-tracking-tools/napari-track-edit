@@ -5,7 +5,6 @@ from functools import partial
 from pathlib import Path
 from warnings import warn
 
-from appdirs import AppDirs
 from fonticon_fa6 import FA6S
 from funtracks.data_model import Tracks
 from funtracks.import_export import import_from_geff
@@ -29,6 +28,8 @@ from qtpy.QtWidgets import (
 )
 from superqt.fonticon import icon as qticon
 
+from motile_tracker.download_progress import DownloadCancelled, download_progress
+from motile_tracker.example_data import sample_tracks_path, user_data_dir
 from motile_tracker.import_export.geff_io import write_geff_over
 from motile_tracker.import_export.menus.export_dialog import ExportDialog
 from motile_tracker.import_export.menus.import_dialog import (
@@ -46,7 +47,7 @@ def default_save_dir() -> Path:
     tracks land somewhere the application already owns rather than in the
     user's home directory.
     """
-    return Path(AppDirs("motile-tracker").user_data_dir)
+    return user_data_dir()
 
 
 class TracksButton(QWidget):
@@ -389,6 +390,27 @@ class TracksList(QGroupBox):
         self.add_tracks(tracks, name, select=True)
         if source_path is not None:
             self.tracks_loaded.emit(tracks, source_path)
+
+    def load_sample_tracks(self, sample_name: str) -> None:
+        """Load one of the example tracks (see SAMPLE_TRACKS), downloading it
+        first if it is not present yet, and add it to the list.
+
+        Args:
+            sample_name (str): A key of SAMPLE_TRACKS
+        """
+        try:
+            with download_progress(self, f"tracks of {sample_name}") as reporthook:
+                geff_dir = sample_tracks_path(sample_name, reporthook)
+                tracks = import_from_geff(geff_dir)
+        except DownloadCancelled:
+            return
+        except Exception as e:  # noqa: BLE001 - surfaced to the user in a dialog
+            QMessageBox.critical(
+                self, "Error", f"Failed to load example {sample_name}: {e}"
+            )
+            return
+        self.add_tracks(tracks, sample_name, select=True)
+        self.tracks_loaded.emit(tracks, geff_dir)
 
     def _load_from_dialog(
         self,
