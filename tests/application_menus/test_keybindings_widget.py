@@ -17,18 +17,18 @@ from napari.utils.key_bindings import KeymapHandler, coerce_keybinding
 from qtpy.QtCore import Qt, QUrl
 from qtpy.QtGui import QKeySequence
 
-from motile_tracker.application_menus.editing_selection_menu import EditingMenu
-from motile_tracker.application_menus.keybindings_widget import (
+from napari_track_edit.application_menus.editing_selection_menu import EditingMenu
+from napari_track_edit.application_menus.keybindings_widget import (
     KeybindingsWidget,
     ShortcutEdit,
     open_keybindings_panel,
 )
-from motile_tracker.application_menus.welcome_widget import (
+from napari_track_edit.application_menus.welcome_widget import (
     DOCS_URL,
     KEYBINDINGS_LINK,
     WelcomeWidget,
 )
-from motile_tracker.data_views.keybindings_config import (
+from napari_track_edit.data_views.keybindings_config import (
     CMD,
     KEYBINDINGS,
     SHORTCUTS,
@@ -39,7 +39,7 @@ from motile_tracker.data_views.keybindings_config import (
     set_shortcut,
     shortcut_text,
 )
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 @pytest.fixture
@@ -71,7 +71,9 @@ def _handler_for(layer, viewer, key):
     return f"{getattr(found, '__module__', '')}.{getattr(found, '__qualname__', found)}"
 
 
-TRACKS_VIEWER = "motile_tracker.data_views.views_coordinator.tracks_viewer.TracksViewer"
+TRACKS_VIEWER = (
+    "napari_track_edit.data_views.views_coordinator.tracks_viewer.TracksViewer"
+)
 
 
 def _qt_action(key: int, modifiers: int = 0) -> str | None:
@@ -106,11 +108,16 @@ def test_button_caption_follows_a_rebind(loaded):
     written with."""
 
     _, _, menu = loaded
-    assert menu.create_edge_btn.text() == "Add [A]"
+    assert menu.connect_nodes_btn.text() == "Connect [C]"
+    assert "[Shift+C]" in menu.connect_nodes_btn.toolTip()
 
-    set_shortcut("create_edge", "shift+e")
+    set_shortcut("connect_nodes_with_divisions", "shift+e")
+    set_shortcut("connect_nodes_linearly", "alt+c")
 
-    assert menu.create_edge_btn.text() == "Add [Shift+E]"
+    assert menu.connect_nodes_btn.text() == "Connect [Shift+E]"
+    tooltip = menu.connect_nodes_btn.toolTip()
+    assert "[Shift+E]" in tooltip
+    assert f"[{shortcut_text('connect_nodes_linearly')}]" in tooltip
 
 
 def test_rebind_moves_napari_and_qt_dispatch_together(loaded):
@@ -249,12 +256,12 @@ def test_napari_restore_all_leaves_our_shortcuts_alone(loaded):
     our own file, so the user's choices survive it untouched."""
 
     _, _tracks_viewer, menu = loaded
-    set_shortcut("create_edge", "shift+e")
+    set_shortcut("connect_nodes_with_divisions", "shift+e")
 
     get_settings().shortcuts.reset()
 
-    assert current_shortcuts("create_edge") == ["Shift+E"]
-    assert menu.create_edge_btn.text() == "Add [Shift+E]"
+    assert current_shortcuts("connect_nodes_with_divisions") == ["Shift+E"]
+    assert menu.connect_nodes_btn.text() == "Connect [Shift+E]"
 
 
 def test_overrides_survive_a_reload(loaded):
@@ -324,7 +331,7 @@ def test_keybindings_is_a_link_that_opens_the_panel(qtbot):
 
     welcome._on_link_clicked(QUrl(KEYBINDINGS_LINK))
 
-    assert isinstance(welcome._motile_keybindings_panel, KeybindingsWidget)
+    assert isinstance(welcome._track_edit_keybindings_panel, KeybindingsWidget)
     assert KEYBINDINGS_LINK in welcome.links.toHtml()  # still showing the links
 
 
@@ -335,7 +342,7 @@ def test_other_links_still_open_in_a_browser(qtbot):
     qtbot.addWidget(welcome)
 
     with patch(
-        "motile_tracker.application_menus.welcome_widget.QDesktopServices.openUrl"
+        "napari_track_edit.application_menus.welcome_widget.QDesktopServices.openUrl"
     ) as opened:
         welcome._on_link_clicked(QUrl(DOCS_URL))
 

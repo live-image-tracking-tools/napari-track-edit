@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from motile_tracker.data_views.colormap import (
+from napari_track_edit.data_views.colormap import (
     GREY,
     PINK,
     BinaryColorSource,
@@ -416,7 +416,7 @@ class TestTrackColormapDirectColormap:
         # to_direct_colormap() must always use DirectLabelColormap.model_construct
         # (which skips pydantic's per-color validation), never the normal
         # constructor - not even on the first call.
-        import motile_tracker.data_views.colormap as colormap_module
+        import napari_track_edit.data_views.colormap as colormap_module
 
         calls = []
         original_init = colormap_module.DirectLabelColormap.__init__

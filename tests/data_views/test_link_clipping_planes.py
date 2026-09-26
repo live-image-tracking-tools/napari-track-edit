@@ -4,7 +4,9 @@ from napari.layers import Image, Labels, Points
 from napari.layers.utils._link_layers import layer_is_linked
 from napari.layers.utils.plane import ClippingPlane
 
-from motile_tracker.data_views.views.layers.tracks_layer_group import TracksLayerGroup
+from napari_track_edit.data_views.views.layers.tracks_layer_group import (
+    TracksLayerGroup,
+)
 
 
 @pytest.fixture(autouse=True)

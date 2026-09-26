@@ -1,5 +1,5 @@
 """Integration test for CSV and GEFF import workflow.
-Tests the full round-trip: export tracks using motile_tracker's method,
+Tests the full round-trip: export tracks using napari_track_edit's method,
 then import them back through the import dialog.
 Also test for the visibility of various widgets based on 2D/3D and
 segmentation inclusion.
@@ -21,10 +21,10 @@ from funtracks.import_export import (
     has_embedded_segmentation,
 )
 
-from motile_tracker.import_export.menus.import_dialog import ImportDialog
-from motile_tracker.import_export.menus.prop_map_widget import StandardFieldMapWidget
-from motile_tracker.motile.backend.motile_run import MotileRun
-from motile_tracker.motile.backend.solver_params import SolverParams
+from napari_track_edit.import_export.menus.import_dialog import ImportDialog
+from napari_track_edit.import_export.menus.prop_map_widget import StandardFieldMapWidget
+from napari_track_edit.motile.backend.motile_run import MotileRun
+from napari_track_edit.motile.backend.solver_params import SolverParams
 
 
 def _remove_geff_shape(root):
@@ -58,11 +58,11 @@ def mock_qmessagebox(monkeypatch):
 
     mock_msgbox.critical.side_effect = critical_side_effect
     monkeypatch.setattr(
-        "motile_tracker.import_export.menus.import_dialog.QMessageBox",
+        "napari_track_edit.import_export.menus.import_dialog.QMessageBox",
         mock_msgbox,
     )
     monkeypatch.setattr(
-        "motile_tracker.import_export.menus.geff_import_widget.QMessageBox",
+        "napari_track_edit.import_export.menus.geff_import_widget.QMessageBox",
         mock_msgbox,
     )
     return mock_msgbox
@@ -329,7 +329,7 @@ def test_csv_import_2d_with_segmentation(
     # Mock _resize_dialog to avoid screen access in headless CI
     monkeypatch.setattr(ImportDialog, "_resize_dialog", lambda self: None)
 
-    # Create tracks and export to CSV (as motile_tracker does in tracks_list.py:208)
+    # Create tracks and export to CSV (as napari_track_edit does in tracks_list.py:208)
     tracks = solution_tracks_2d
     csv_path = tmp_path / "test_tracks.csv"
     export_to_csv(tracks, csv_path)
@@ -401,7 +401,7 @@ def test_csv_import_3d_with_segmentation(
     # Mock _resize_dialog to avoid screen access in headless CI
     monkeypatch.setattr(ImportDialog, "_resize_dialog", lambda self: None)
 
-    # Create tracks and export to CSV (as motile_tracker does in tracks_list.py:208)
+    # Create tracks and export to CSV (as napari_track_edit does in tracks_list.py:208)
     tracks = solution_tracks_3d
     csv_path = tmp_path / "test_tracks.csv"
     export_to_csv(tracks, csv_path)
@@ -470,7 +470,7 @@ def test_csv_import_without_segmentation(
     # Mock _resize_dialog to avoid screen access in headless CI
     monkeypatch.setattr(ImportDialog, "_resize_dialog", lambda self: None)
 
-    # Create tracks and export to CSV (as motile_tracker does in tracks_list.py:208)
+    # Create tracks and export to CSV (as napari_track_edit does in tracks_list.py:208)
     tracks = solution_tracks_2d_without_segmentation
     csv_path = tmp_path / "test_tracks.csv"
     export_to_csv(tracks, csv_path)
@@ -532,7 +532,7 @@ def test_geff_import_with_segmentation(
     # Mock _resize_dialog to avoid screen access in headless CI
     monkeypatch.setattr(ImportDialog, "_resize_dialog", lambda self: None)
 
-    # Create tracks and export to GEFF (as motile_tracker does in tracks_list.py:237)
+    # Create tracks and export to GEFF (as napari_track_edit does in tracks_list.py:237)
     tracks = Tracks(graph, ndim=ndim, time_attr="t", tracklet_attr="track_id")
     geff_path = tmp_path / "test_tracks.zarr"
     export_to_geff(tracks, geff_path)

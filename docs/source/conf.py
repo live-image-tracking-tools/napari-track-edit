@@ -1,4 +1,4 @@
-project = "Motile Tracker"
+project = "Napari Track Edit"
 copyright = "2024, Howard Hughes Medical Institute"  # noqa: A001
 author = "Caroline Malin-Mayor"
 
@@ -10,7 +10,7 @@ extensions = [
     "sphinx_rtd_theme",
     "sphinxcontrib.video",
 ]
-autoapi_dirs = ["../../src/motile_tracker"]
+autoapi_dirs = ["../../src/napari_track_edit"]
 
 exclude_patterns = []
 
@@ -28,7 +28,7 @@ html_theme = "sphinx_rtd_theme"
 
 # -- Generated keybindings table ---------------------------------------------
 # The plugin's shortcuts are defined once, in
-# motile_tracker.data_views.keybindings_config.KEYBINDINGS, and the table
+# napari_track_edit.data_views.keybindings_config.KEYBINDINGS, and the table
 # included by key_bindings.rst is rendered from it so the two cannot drift.
 KEYBINDINGS_TABLE = "_generated/keybinding_defaults.rst"
 
@@ -36,7 +36,7 @@ KEYBINDINGS_TABLE = "_generated/keybinding_defaults.rst"
 def _write_keybindings_table(app=None):
     from pathlib import Path
 
-    from motile_tracker.data_views.keybindings_config import keybindings_rst
+    from napari_track_edit.data_views.keybindings_config import keybindings_rst
 
     out = Path(__file__).parent / KEYBINDINGS_TABLE
     out.parent.mkdir(exist_ok=True)

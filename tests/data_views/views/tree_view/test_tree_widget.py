@@ -12,11 +12,11 @@ import pandas as pd
 import pytest
 from qtpy.QtCore import Qt
 
-from motile_tracker.data_views.views.tree_view.navigation_widget import (
+from napari_track_edit.data_views.views.tree_view.navigation_widget import (
     NavigationWidget,
 )
-from motile_tracker.data_views.views.tree_view.tree_widget import TreeWidget
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views.tree_view.tree_widget import TreeWidget
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 @pytest.fixture(autouse=True)
@@ -275,10 +275,10 @@ def test_keyboard_shortcuts_all(mock_move, viewer, solution_tracks_2d, qtbot):
     # Mock all methods
     delete_mock = MagicMock()
     tracks_viewer.delete_node = delete_mock
-    create_edge_mock = MagicMock()
-    tracks_viewer.create_edge = create_edge_mock
-    delete_edge_mock = MagicMock()
-    tracks_viewer.delete_edge = delete_edge_mock
+    connect_divisions_mock = MagicMock()
+    tracks_viewer.connect_nodes_with_divisions = connect_divisions_mock
+    connect_linear_mock = MagicMock()
+    tracks_viewer.connect_nodes_linearly = connect_linear_mock
     swap_mock = MagicMock()
     tracks_viewer.swap_nodes = swap_mock
     set_division_mock = MagicMock()
@@ -294,13 +294,15 @@ def test_keyboard_shortcuts_all(mock_move, viewer, solution_tracks_2d, qtbot):
     qtbot.keyPress(tree_widget, Qt.Key_D)
     delete_mock.assert_called_once()
 
-    # Test 2: A key calls create_edge
-    qtbot.keyPress(tree_widget, Qt.Key_A)
-    create_edge_mock.assert_called_once()
+    # Test 2: C key calls connect_nodes_with_divisions
+    qtbot.keyPress(tree_widget, Qt.Key_C)
+    connect_divisions_mock.assert_called_once()
+    connect_linear_mock.assert_not_called()
 
-    # Test 3: B key calls delete_edge
-    qtbot.keyPress(tree_widget, Qt.Key_B)
-    delete_edge_mock.assert_called_once()
+    # Test 3: Shift+C calls connect_nodes_linearly instead
+    qtbot.keyPress(tree_widget, Qt.Key_C, modifier=Qt.ShiftModifier)
+    connect_linear_mock.assert_called_once()
+    connect_divisions_mock.assert_called_once()  # still only the one call
 
     # Test 4: S key calls swap_nodes
     qtbot.keyPress(tree_widget, Qt.Key_S)

@@ -4,13 +4,13 @@ import pytest
 from napari.utils.action_manager import action_manager
 from napari.utils.key_bindings import KeymapHandler, coerce_keybinding
 
-from motile_tracker.data_views.keybindings_config import (
+from napari_track_edit.data_views.keybindings_config import (
     blocked_napari_binding,
     set_shortcut,
 )
-from motile_tracker.data_views.views.layers.contour_labels import ContourLabels
-from motile_tracker.data_views.views.layers.track_labels import TrackLabels
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views.layers.contour_labels import ContourLabels
+from napari_track_edit.data_views.views.layers.track_labels import TrackLabels
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 M = coerce_keybinding("m")
 

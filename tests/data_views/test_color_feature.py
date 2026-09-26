@@ -9,17 +9,17 @@ import numpy as np
 import pytest
 from funtracks.user_actions import UserUpdateSegmentation
 
-from motile_tracker.data_views.colormap import (
+from napari_track_edit.data_views.colormap import (
     GREY,
     PINK,
     BinaryColorSource,
     CategoricalColorSource,
     categorical_feature_keys,
 )
-from motile_tracker.data_views.views.table.custom_table_widget import (
+from napari_track_edit.data_views.views.table.custom_table_widget import (
     ColoredTableWidget,
 )
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 # the 3D fixture's three nodes: 1 -> {2, 3}, each with a track id of its own but
 # all in the one lineage, so coloring by lineage id gives them one shared color

@@ -1,4 +1,4 @@
-.. This file is generated from motile_tracker's KEYBINDINGS table by
+.. This file is generated from napari_track_edit's KEYBINDINGS table by
 .. docs/source/conf.py. Edit the descriptions and defaults there.
 
 Editing
@@ -16,10 +16,12 @@ Editing
      - Delete the selected nodes
    * - S
      - Swap the incoming edges of two nodes at the same time point
-   * - A
-     - Create an edge between two selected nodes, if valid
+   * - C
+     - Connect the selected nodes into one track, keeping existing outgoing edges as divisions
+   * - Shift+C
+     - Connect the selected nodes into one linear track, breaking existing outgoing edges
    * - B
-     - Break the edge between two selected nodes, if it exists
+     - Break the edges between the selected nodes. Edges to nodes outside the selection are kept
    * - Y
      - Make or break a division between a parent node and its two children
    * - H

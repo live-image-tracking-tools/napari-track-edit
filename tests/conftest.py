@@ -5,7 +5,7 @@ from funtracks.data_model import Tracks
 from funtracks.utils.tracksdata_utils import create_empty_graph
 from tracksdata.nodes._mask import Mask
 
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def click_node():
     on a numpy image array). When no seg layer is present, falls back to
     adding np.int64 directly so the type is still realistic.
 
-    This ensures operations like create_edge() are tested with the same types
+    This ensures operations like connect_nodes() are tested with the same types
     they receive in the real UI, catching bugs like tracksdata's in_degree()
     failing on np.int64.
 
@@ -79,7 +79,7 @@ def isolate_shortcut_overrides(tmp_path_factory, monkeypatch):
     that rebinds a key would otherwise change the shortcuts on the machine
     running the suite, and leak into every later test.
     """
-    from motile_tracker.data_views import keybindings_config
+    from napari_track_edit.data_views import keybindings_config
 
     config_dir = tmp_path_factory.mktemp("motile_shortcuts")
     monkeypatch.setattr(

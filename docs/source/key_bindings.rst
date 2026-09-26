@@ -7,8 +7,9 @@ Configurable key bindings
 These are the Napari Track Edit actions you can rebind. The table lists the
 **defaults**; to change them, open the Napari Track Edit keybindings panel with
 *Configure keybindings…* in the Getting Started or Editing & Selection menu.
-Your choices are stored in napari's own settings file, so they survive a
-restart, and *Restore defaults* in that panel puts these back.
+Your choices are stored in a ``shortcuts.json`` file in the Napari Track Edit
+user config directory, so they survive a restart, and *Restore defaults* in
+that panel puts these back.
 
 Modifier names are as napari spells them: on macOS ``Meta`` is the Command key
 and ``Alt`` is Option. Where two bindings are listed, either one works.
