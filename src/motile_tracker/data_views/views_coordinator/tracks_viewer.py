@@ -9,17 +9,23 @@ from funtracks.actions import AddNode, BasicAction, DeleteNode
 from funtracks.data_model import Tracks
 from funtracks.exceptions import InvalidActionError
 from funtracks.user_actions import (
-    UserAddEdge,
-    UserDeleteEdge,
+    UserConnectNodes,
     UserDeleteNodes,
+    UserDisconnectNodes,
     UserMergeNodes,
     UserSetDivision,
     UserSwapPredecessors,
     get_track_id_options,
 )
+from napari.utils.notifications import show_warning
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
+from motile_tracker.data_views.colormap import (
+    TrackColormap,
+    color_feature_available,
+    make_color_source,
+)
 from motile_tracker.data_views.dims_utils import TracksDims
 from motile_tracker.data_views.keybindings_config import (
     KEYMAP,
@@ -39,6 +45,7 @@ from motile_tracker.data_views.views_coordinator.node_selection_history import (
 )
 from motile_tracker.data_views.views_coordinator.tracks_list import TracksList
 from motile_tracker.data_views.views_coordinator.user_dialogs import (
+    ask_connect_mode,
     confirm_force_operation,
     select_merge_track_id,
 )
@@ -66,6 +73,7 @@ class TracksViewer:
     tracks_updated = Signal(Optional[bool])  # noqa: UP007 UP045
     update_track_id = Signal()
     mode_updated = Signal()
+    colormap_updated = Signal()
     center_node = Signal(int)  # emitted when any component wants to center on a node
     node_selection_updated = Signal(bool)
 
@@ -101,11 +109,8 @@ class TracksViewer:
                 del TracksViewer._instance
 
         viewer.window._qt_window.destroyed.connect(_clear_if_current)
-        self.colormap = napari.utils.colormaps.label_colormap(
-            49,
-            seed=0.5,
-            background_value=0,
-        )
+        self.colormap = TrackColormap()
+        self.color_feature_key: str | None = None
 
         self.symbolmap: dict[NodeType, str] = {
             NodeType.END: "x",
@@ -188,6 +193,41 @@ class TracksViewer:
         """Set the current colormap on the TracksList, so that it can be exported."""
         self.tracks_list.colormap = self.colormap
 
+    def set_color_feature(self, feature_key: str | None, refresh: bool = True) -> None:
+        """Color every view by the given node feature and trigger refresh so that the
+        update is immediately visible.
+
+        Args:
+            feature_key: A node feature key, or None for the default (the
+                tracklet id - see `TrackColormap.feature_key`).
+            refresh: Set False while tracks are being swapped in, where the
+                caller rebuilds the views itself anyway.
+        """
+
+        # Fall back before committing anything: a feature the graph has no
+        # column for raises in the colormap, and self.color_feature_key would
+        # otherwise already hold the bad key, so every later _refresh raises too.
+        if self.tracks is not None and not color_feature_available(
+            self.tracks, feature_key
+        ):
+            feature_key = self.tracks.features.tracklet_key
+
+        self.color_feature_key = feature_key
+        self.colormap.set_feature(
+            feature_key, make_color_source(self.tracks, feature_key)
+        )
+        if refresh and self.tracks is not None:
+            self._refresh()
+        self.colormap_updated.emit()
+
+    def _validate_color_feature(self) -> None:
+        """Fall back to track ids if the feature being colored by is gone."""
+
+        if self.tracks is None or self.color_feature_key is None:
+            return
+        if not color_feature_available(self.tracks, self.color_feature_key):
+            self.set_color_feature(self.tracks.features.tracklet_key, refresh=False)
+
     def set_keybinds(self):
         bind_keymap(self.viewer, KEYMAP, self)
 
@@ -215,11 +255,16 @@ class TracksViewer:
         self.update_track_id.emit()
 
     def set_track_id_color(self, track_id: int) -> None:
-        """Update self.track_id color with the rgba color or given track_id, or a list of
-        0 if the provided  track_id is None"""
+        """Update self.track_id_color with the rgba color of the given track_id.
+
+        Shows the tracklet ID color when the colormap feature is set to tracklet ID,
+        transparent otherwise to avoid confusion.
+        """
 
         self.track_id_color = (
-            [0, 0, 0, 0] if track_id is None else self.colormap.map(track_id)
+            self.colormap.map(track_id)
+            if track_id is not None and self.colormap.colors_by_track_id
+            else [0, 0, 0, 0]
         )
 
     def update_track_df(
@@ -286,6 +331,8 @@ class TracksViewer:
         ):
             self.selected_nodes.reset()
 
+        self._validate_color_feature()
+        self.colormap.set_tracks(self.tracks)
         self.tracking_layers._refresh()
 
         self.update_track_df(initialization=False, refresh_view=refresh_view)
@@ -332,6 +379,12 @@ class TracksViewer:
         self._disconnect_tracks()
 
         self.tracks = tracks
+        # Forget outgoing tracks first, because they might have a different value bound
+        # to tracklet_key
+        self.colormap.set_tracks(None)
+        self.set_color_feature(tracks.features.tracklet_key, refresh=False)
+        self.colormap.set_tracks(tracks)
+        self.selected_nodes.deleted_items.clear()  # Reset deleted nodes when switching tracks
 
         # listen to refresh signals from the tracks
         self.tracks.refresh.connect(self._refresh)
@@ -380,6 +433,12 @@ class TracksViewer:
         # the dataframe of the tracks that just went away would survive
         self.track_df = pd.DataFrame()
         self.axis_order = []
+
+        # the mirror of what update_tracks does on the way in: without this the
+        # colormap keeps the outgoing tracks and a color per node alive, and
+        # color_feature_key keeps naming a feature of tracks that are gone
+        self.colormap.set_tracks(None)
+        self.color_feature_key = None
 
         # remove the layers before clearing the selection: clearing emits
         # selection_updated, and the update_selection that follows would otherwise
@@ -577,26 +636,6 @@ class TracksViewer:
             self.tracks, nodes=[int(n) for n in self.selected_nodes.as_list]
         )
 
-    def delete_edge(self, event=None):
-        """Calls the UserAction to delete an edge between the two currently
-        selected nodes
-        """
-
-        if self.tracks is None:
-            return
-        if len(self.selected_nodes) == 2:
-            node1 = self.selected_nodes[0]
-            node2 = self.selected_nodes[1]
-
-            time1 = self.tracks.get_time(node1)
-            time2 = self.tracks.get_time(node2)
-
-            if time1 > time2:
-                node1, node2 = node2, node1
-
-            node1, node2 = int(node1), int(node2)
-            UserDeleteEdge(self.tracks, (node1, node2))
-
     def swap_nodes(self, event=None):
         """Calls the UserAction to swap the predecessors of the two currently
         selected nodes
@@ -670,44 +709,73 @@ class TracksViewer:
                 track_id_per_time[time] = track_id
         return track_id_per_time
 
-    def create_edge(self, event=None):
-        """Add an edge between the two currently selected nodes"""
+    def connect_nodes(self, event=None, linear: bool | None = None):
+        """Connect the currently selected nodes into a single track.
+
+        The nodes are sorted by time and connected pairwise, leaving the pairs that
+        are connected already alone. See :meth:`disconnect_nodes` for the inverse.
+
+        Args:
+            event: Unused, present so this can be used as a keybinding callback.
+            linear: If True, existing outgoing edges of the selected nodes are broken
+                so that the result is one linear track. If False, they are kept and
+                divisions are created instead. If None (the default), the user is
+                asked which of the two they want, but only when the choice makes a
+                difference for this selection.
+        """
 
         if self.tracks is None:
             return
-        if len(self.selected_nodes) == 2:
-            node1 = self.selected_nodes[0]
-            node2 = self.selected_nodes[1]
+        if len(self.selected_nodes) < 2:
+            return
 
-            time1 = self.tracks.get_time(node1)
-            time2 = self.tracks.get_time(node2)
+        nodes = [int(node) for node in self.selected_nodes.as_list]
 
-            if time1 > time2:
-                node1, node2 = node2, node1
+        if linear is None:
+            if UserConnectNodes.has_division_choice(self.tracks, nodes):
+                linear = ask_connect_mode()
+                if linear is None:  # cancelled
+                    return
+            else:
+                linear = False
 
-            node1, node2 = int(node1), int(node2)
+        try:
+            UserConnectNodes(self.tracks, nodes, linear=linear, force=self.force)
+        except InvalidActionError as e:
+            if e.forceable:
+                # Ask the user if the action should be forced
+                force, always_force = confirm_force_operation(message=str(e))
+                self.force = always_force
+                if force:
+                    UserConnectNodes(self.tracks, nodes, linear=linear, force=True)
+            else:
+                show_warning(f"Cannot connect nodes: {e}")
 
-            if self.tracks.graph_solution.out_degree(node1) >= 2:
-                QMessageBox.warning(
-                    None,
-                    "Cannot add edge",
-                    f"Node {node1} already has 2 children. Delete one of the "
-                    "existing daughter edges before adding a new one.",
-                )
-                return
+    def connect_nodes_with_divisions(self, event=None):
+        """Connect the selected nodes, keeping existing outgoing edges as divisions."""
 
-            try:
-                UserAddEdge(self.tracks, (node1, node2), force=self.force)
-            except InvalidActionError as e:
-                if e.forceable:
-                    # Ask the user if the action should be forced
-                    force, always_force = confirm_force_operation(message=str(e))
-                    self.force = always_force
-                    if force:
-                        UserAddEdge(self.tracks, (node1, node2), force=True)
-                else:
-                    # Re-raise the exception if it is not forceable
-                    raise
+        self.connect_nodes(linear=False)
+
+    def connect_nodes_linearly(self, event=None):
+        """Connect the selected nodes into one linear track, breaking the existing
+        outgoing edges of the nodes that get a new child."""
+
+        self.connect_nodes(linear=True)
+
+    def disconnect_nodes(self, event=None):
+        """Break every existing edge in the currently selected nodes,
+        including skip edges."""
+
+        if self.tracks is None:
+            return
+        if len(self.selected_nodes) < 2:
+            return
+
+        nodes = [int(node) for node in self.selected_nodes.as_list]
+        try:
+            UserDisconnectNodes(self.tracks, nodes)
+        except InvalidActionError as e:
+            show_warning(f"Cannot disconnect nodes: {e}")
 
     def undo(self, event=None):
         if self.tracks is None:

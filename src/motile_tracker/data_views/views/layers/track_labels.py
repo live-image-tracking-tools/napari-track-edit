@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import random
 import warnings
 from typing import TYPE_CHECKING
 
@@ -9,8 +8,8 @@ import numpy as np
 from funtracks.exceptions import InvalidActionError
 from funtracks.user_actions import UserUpdateSegmentation
 from napari.layers import Labels
-from napari.utils import DirectLabelColormap
 from napari.utils.notifications import show_info
+from tracksdata.nodes import Mask
 
 from motile_tracker.data_views.keybindings_config import (
     KEYMAP,
@@ -32,6 +31,129 @@ if TYPE_CHECKING:
     from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
+def updates_from_masked_atoms(atoms) -> list[tuple[Mask, int, int]]:
+    """Turn napari >= 0.8 paint atoms into one segmentation update per label.
+
+    Each atom is a ``_MaskedPaintAtom``: a bounding box, a mask of the pixels that
+    changed inside it, their values before the change, and the value painted.
+
+    Note: A stroke emits one atom per brush position, normally napari records a pixel
+    only the first time it is painted: it drops pixels that already hold the value being
+    painted. That check reads the layer's data, which we never write back (see
+    ``ContourLabels._paint_region_with_mask``), so every brush position reports its whole
+      box afresh, and a slow drag repeats the same box dozens of times. Atoms that share
+      a box are therefore mergedfirst, so that a pixel is turned into mask pixels only
+      once.
+
+    Args:
+        atoms: the atoms of one paint event, all in the mask form.
+
+    Returns:
+        list[tuple[Mask, int, int]]: one (mask, time, old value) per label painted
+            over, per brush position and time point. Each mask carries the
+            bounding box of the brush position it came from; funtracks tightens
+            them around their own pixels and combines the ones of a label.
+    """
+
+    # Merge per bounding box rather than over the whole event: a label painted
+    # over in several places stays several small masks, which is what lets
+    # funtracks tighten cheaply before it unions them.
+    merged: dict[tuple, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+    for slice_key, mask, old_values, _new_value in atoms:
+        key = tuple((sl.start, sl.stop, sl.step) for sl in slice_key)
+        seen = merged.get(key)
+        if seen is not None and seen[1].all():
+            # nothing left in this box for another atom to contribute
+            continue
+
+        old_region = np.asarray(old_values)
+        if mask is None:
+            # every pixel in the bounding box changed, so napari dropped the mask
+            # and stored a snapshot of the whole box instead
+            mask = np.ones(old_region.shape, dtype=bool)
+        else:
+            old_region = np.zeros(mask.shape, dtype=old_region.dtype)
+            old_region[mask] = old_values
+
+        if seen is None:
+            start = np.array([0 if sl.start is None else sl.start for sl in slice_key])
+            # copy: the arrays of an atom belong to napari's undo history, and the
+            # accumulator is written into below
+            merged[key] = (start, mask.copy(), old_region.copy())
+            continue
+
+        _start, seen_mask, seen_old = seen
+        # The first atom to reach a pixel holds its pre-paint value: a later atom
+        # of the same stroke either reports the same value (read-only data, which
+        # is never written back, so every atom sees the pre-stroke array) or does
+        # not report the pixel at all (writable data, where napari drops pixels
+        # that already hold the value being painted).
+        np.copyto(seen_old, old_region, where=mask & ~seen_mask)
+        seen_mask |= mask
+
+    updates = []
+    for start, mask, old_region in merged.values():
+        # tracksdata bounding boxes are spatial only, so peel the time axis off
+        # the box and report it separately
+        spatial = start[1:]
+        bbox = np.concatenate([spatial, spatial + np.array(mask.shape[1:])])
+        for step, (mask_t, old_t) in enumerate(zip(mask, old_region, strict=True)):
+            for old_value in np.unique(old_t[mask_t]):
+                changed = mask_t & (old_t == old_value)
+                updates.append(
+                    (Mask(changed, bbox=bbox), int(start[0] + step), int(old_value))
+                )
+    return updates
+
+
+def updates_from_index_atoms(atoms) -> list[tuple[tuple[np.ndarray, ...], int]]:
+    """Turn napari ≤ 0.7 paint atoms into one segmentation update per label.
+
+    Each atom is a ``data_setitem`` 3-tuple: a multi-index of the elements that
+    changed, their values before the change, and the value after it. There is no
+    bounding box to work from, so the coordinates are handed to funtracks, which
+    builds the masks.
+
+    Args:
+        atoms: the atoms of one paint event, all in the multi-index form.
+
+    Returns:
+        list[tuple[tuple[np.ndarray, ...], int]]: one (multi-index, old value) per
+            label painted over, per time point. A coordinate may appear twice in
+            an index, which funtracks is free to ignore: painting a pixel into a
+            mask is idempotent.
+    """
+
+    ndim = len(atoms[0][0])
+    indices = tuple(
+        np.concatenate([np.asarray(atom[0][axis]) for atom in atoms])
+        for axis in range(ndim)
+    )
+    old_values = np.concatenate(
+        [
+            np.broadcast_to(np.asarray(old), np.shape(atom_indices[0])).ravel()
+            for atom_indices, old, _new_value in atoms
+        ]
+    )
+
+    updates = []
+    for old_value in np.unique(old_values):
+        of_value = old_values == old_value
+        for time in np.unique(indices[0][of_value]):
+            in_slice = of_value & (indices[0] == time)
+            updates.append((tuple(axis[in_slice] for axis in indices), int(old_value)))
+    return updates
+
+
+def new_label(layer: TrackLabels):
+    """A function to override the default napari labels new_label function.
+    Must be registered (see end of this file)"""
+
+    layer.events.selected_label.disconnect(layer._ensure_valid_label)
+    _new_label(layer, new_track_id=True)
+    layer.events.selected_label.connect(layer._ensure_valid_label)
+
+
 def _new_label(layer: TrackLabels, new_track_id=True):
     """A function to get a new label for a given TrackLabels layer. This helper is
     abstracted out because we want to do the same thing both with and without making a
@@ -48,11 +170,13 @@ def _new_label(layer: TrackLabels, new_track_id=True):
     if new_track_id or layer.tracks_viewer.selected_track is None:
         layer.tracks_viewer.set_new_track_id()
     layer.selected_label = new_selected_label
-    layer.colormap.color_dict[new_selected_label] = layer.tracks_viewer.track_id_color
+    layer.track_colormap.add_node(
+        new_selected_label, layer.tracks_viewer.selected_track
+    )
     # to refresh, otherwise you paint with a transparent label until you
     # release the mouse
     with layer.events.selected_label.blocker():
-        layer.colormap = DirectLabelColormap(color_dict=layer.colormap.color_dict)
+        layer.colormap = layer.track_colormap.to_direct_colormap()
 
 
 class TrackLabels(ContourLabels):
@@ -73,13 +197,16 @@ class TrackLabels(ContourLabels):
         tracks_viewer: TracksViewer,
     ):
         self.tracks_viewer = tracks_viewer
-        colormap = self._get_colormap()
+        # tracks_viewer.colormap is shared: tracks_viewer already called
+        # set_tracks() with the current Tracks object before constructing this
+        # layer (see TracksViewer.update_tracks), so no need to do it again here.
+        self.track_colormap = self.tracks_viewer.colormap
 
         super().__init__(
             data=data,
             name=name,
             opacity=opacity,
-            colormap=colormap,
+            colormap=self.track_colormap.to_direct_colormap(),
             scale=scale,
         )
 
@@ -176,38 +303,6 @@ class TrackLabels(ContourLabels):
                         stacklevel=2,
                     )
 
-    def _get_colormap(self) -> DirectLabelColormap:
-        """Get a DirectLabelColormap that maps node ids to their track ids, and then
-        uses the tracks_viewer.colormap to map from track_id to color.
-
-        Returns:
-            DirectLabelColormap: A map from node ids to colors based on track id
-        """
-        tracks = self.tracks_viewer.tracks
-        if tracks is not None:
-            nodes = tracks.graph_solution.node_ids()
-            track_ids = tracks.get_track_ids(nodes)
-            # One vectorized colormap.map call for all nodes: colormap.map has a
-            # large fixed per-call overhead (cache lookup, dtype, reshape), so a
-            # single array call is ~290x faster than calling it per node (or even
-            # once per unique track id). The result is an (N, 4) array with a
-            # distinct row per node, so copy per node to get independent color
-            # arrays: set_opacity later mutates each color's alpha in place.
-            if len(track_ids) > 0:
-                mapped = self.tracks_viewer.colormap.map(np.asarray(track_ids))
-                colors = [color.copy() for color in mapped]
-            else:
-                colors = []
-        else:
-            nodes = []
-            colors = []
-        return DirectLabelColormap(
-            color_dict={
-                **dict(zip(nodes, colors, strict=True)),
-                None: [0, 0, 0, 0],
-            }
-        )
-
     def _check_mode(self):
         """Check if the mode is valid and call the ensure_valid_label function"""
         # here disconnecting the event listener is still necessary because
@@ -234,46 +329,30 @@ class TrackLabels(ContourLabels):
 
         self.tracks_viewer.undo()
 
-    def _parse_paint_event(self, event_val):
-        """_summary_
+    @staticmethod
+    def _parse_paint_event(event_val):
+        """Turn a paint event into the segmentation updates funtracks expects.
+
+        napari reports the atoms of an event in one of two forms, never mixed
+        within an event: the mask form of napari >= 0.8, and the multi-index form
+        that ``data_setitem`` still uses.
 
         Args:
-            event_val (list[tuple]): A list of paint "atoms" generated by the labels
-                layer. Each atom is a 3-tuple of arrays containing:
-                - a numpy multi-index, pointing to the array elements that were
-                changed (a tuple with len ndims)
-                - the values corresponding to those elements before the change
-                - the value after the change
+            event_val (list[tuple]): the paint "atoms" the labels layer recorded
+                for this event.
+
         Returns:
-            tuple(int, list[tuple]): The new value, and a list of node update actions
-                defined by the time point and node update item
-                Each "action" is a 2-tuple containing:
-                - a numpy multi-index, pointing to the array elements that were
-                changed (a tuple with len ndims)
-                - the value before the change
+            list[tuple]: the updates for every label painted over, in whichever of
+                the two forms ``UserUpdateSegmentation`` was handed. Empty when the
+                event changed nothing.
         """
 
-        new_value = event_val[-1][-1]
-        ndim = len(event_val[-1][0])
-        concatenated_indices = tuple(
-            np.concatenate([ev[0][dim] for ev in event_val]) for dim in range(ndim)
-        )
-        concatenated_values = np.concatenate([ev[1] for ev in event_val])
-        old_values = np.unique(concatenated_values)
-        actions = []
-        for old_value in old_values:
-            mask = concatenated_values == old_value
-            indices = tuple(concatenated_indices[dim][mask] for dim in range(ndim))
-            time_points = np.unique(indices[0])
-            for time_point in time_points:
-                time_mask = indices[0] == time_point
-                actions.append(
-                    (
-                        tuple(indices[dim][time_mask] for dim in range(ndim)),
-                        int(old_value),
-                    )
-                )
-        return new_value, actions
+        if not event_val:
+            return []
+
+        if len(event_val[0]) == 3:  # multi-index atoms
+            return updates_from_index_atoms(event_val)
+        return updates_from_masked_atoms(event_val)
 
     def _revert_paint(self, _, source_layer: Labels | None = None):
         """Revert a paint event after it fails validation (no motile tracker Actions have
@@ -290,7 +369,9 @@ class TrackLabels(ContourLabels):
     def _on_paint(self, event):
         """Listen to the paint event and check which track_ids have changed"""
 
-        _, updated_pixels = self._parse_paint_event(event.value)
+        updated_pixels = self._parse_paint_event(event.value)
+        if not updated_pixels:
+            return
 
         # Every entry covers exactly one time point, so more than one distinct time
         # means the brush spanned frames, which is not allowed.
@@ -355,7 +436,12 @@ class TrackLabels(ContourLabels):
     def _refresh(self):
         """Refresh the data in the labels layer"""
         self.data = self.tracks_viewer.tracks.segmentation
-        self.colormap = self._get_colormap()
+        # No set_tracks() here: TracksViewer._refresh already synced track_colormap
+        # before calling this, and the other caller (_on_paint's revert path) never
+        # changes the node/track-id set - it just undoes a rejected paint - so the
+        # cached colors are already correct. Just rebuild the napari-facing colormap
+        # from that cached state.
+        self.colormap = self.track_colormap.to_direct_colormap()
         self.refresh()
 
     def update_label_colormap(self, visible: list[int] | str) -> None:
@@ -364,11 +450,11 @@ class TrackLabels(ContourLabels):
         """
 
         highlighted = set(self.tracks_viewer.selected_nodes)
-        foreground = self.colormap.color_dict.keys() if visible == "all" else visible
+        foreground = self.track_colormap.nodes if visible == "all" else visible
         self.background = (
             []
             if visible == "all"
-            else self.colormap.color_dict.keys() - visible - highlighted
+            else self.track_colormap.nodes - visible - highlighted
         )
 
         self.filled_labels = []
@@ -381,23 +467,25 @@ class TrackLabels(ContourLabels):
         # special case: 3D rendering + partially filled contours -> set background opacity
         # to 0
         if self._slice.slice_input.ndisplay == 3 and self.contour > 0:
-            self.set_opacity(self.background, 0)
+            self.track_colormap.set_alpha(self.background, 0)
         else:
             # set normal background opacity
-            self.set_opacity(self.background, self.background_opacity)
-        self.set_opacity(foreground, self.foreground_opacity)
-        self.set_opacity(highlighted, self.highlight_opacity)
-        self.refresh_colormap()
+            self.track_colormap.set_alpha(self.background, self.background_opacity)
+        self.track_colormap.set_alpha(foreground, self.foreground_opacity)
+        self.track_colormap.set_alpha(highlighted, self.highlight_opacity)
+
+        # Setting colormap also emits `selected_label`, which triggers
+        # `_ensure_valid_label` and would rebuild the colormap a second time; that
+        # validation is only needed when the painting label changes, not on a
+        # highlight/opacity refresh, so block it here.
+        with self.events.selected_label.blocker():
+            self.colormap = self.track_colormap.to_direct_colormap()
 
     def new_colormap(self):
         """Override existing function to generate new colormap on tracks_viewer and
         emit refresh signal to update colors in all layers/widgets"""
 
-        self.tracks_viewer.colormap = napari.utils.colormaps.label_colormap(
-            random.randint(49, 69),
-            seed=random.uniform(0, 1),
-            background_value=0,
-        )
+        self.tracks_viewer.colormap.color_source.shuffle()
         self.tracks_viewer._refresh()
 
     def update_selected_label(self):
@@ -539,13 +627,11 @@ class TrackLabels(ContourLabels):
         # update color and emit signal
         self.tracks_viewer.set_track_id_color(self.tracks_viewer.selected_track)
         if update_colormap:
-            self.colormap.color_dict[self.selected_label] = (
-                self.tracks_viewer.track_id_color
+            self.track_colormap.add_node(
+                self.selected_label, self.tracks_viewer.selected_track
             )
             with self.events.selected_label.blocker():
-                self.colormap = DirectLabelColormap(
-                    color_dict=self.colormap.color_dict
-                )  # refresh
+                self.colormap = self.track_colormap.to_direct_colormap()  # refresh
         self.tracks_viewer.update_track_id.emit()
 
     @napari.layers.Labels.n_edit_dimensions.setter

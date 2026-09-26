@@ -211,7 +211,7 @@ class TestTracksListAddRemove:
 
 
 class TestTracksListSavePathFields:
-    def test_save_dir_defaults_to_appdirs(self, tracks_list):
+    def test_save_dir_defaults_to_platformdirs(self, tracks_list):
         """The save directory starts where the sample data lives, not in the
         user's home directory."""
         assert tracks_list.save_dir_line.text() == str(default_save_dir())
