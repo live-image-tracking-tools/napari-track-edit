@@ -46,6 +46,20 @@ def detect_click(event: Event) -> Generator[None, None, bool]:
     return not dragged
 
 
+def wait_for_release(event: Event) -> Generator[None, None, None]:
+    """Yield until the mouse button is released.
+
+    Use this in a mouse drag callback before anything that may open a modal dialog
+    (such as confirm_force_operation): a dialog opened while the button is still pressed
+    takes the mouse release away from the canvas, which leaves napari and vispy in a
+    'button pressed' state and the viewer unresponsive to clicks.
+    """
+
+    yield  # initial press
+    while event.type == "mouse_move":
+        yield
+
+
 def get_click_value(layer: Labels | Points, event: Event) -> int:
     """Return the value (label, point index) at the click location"""
 
