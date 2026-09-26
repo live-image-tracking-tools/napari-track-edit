@@ -1,4 +1,4 @@
-# Motile Tracker
+# Napari Track Edit
 
 [![tests](https://github.com/live-image-tracking-tools/napari-track-edit/workflows/tests/badge.svg)](https://github.com/live-image-tracking-tools/napari-track-edit/actions)
 [![codecov](https://codecov.io/gh/live-image-tracking-tools/napari-track-edit/branch/main/graph/badge.svg)](https://codecov.io/gh/live-image-tracking-tools/napari-track-edit)
@@ -18,8 +18,8 @@ for more details on the concepts and method.
 
 Users can download and install an executable application from the github release, or
 install from `pypi` in the environment of their choice (e.g. `venv`, `conda`) with the command
-`pip install motile-tracker`.
-Currently, the motile_tracker requires python >=3.11.
+`pip install napari-track-edit`.
+Currently, napari-track-edit requires python >=3.11.
 
 ### Recommended extras
 
@@ -27,16 +27,16 @@ For better performance, you can install optional extras:
 
 - **numba**: Speeds up candidate graph construction significantly.
   ```bash
-  pip install motile-tracker[numba]
+  pip install napari-track-edit[numba]
   ```
 
 - **gurobi**: Uses the Gurobi solver instead of the default open-source solver. Gurobi is
   much faster but requires a license (free for academics).
   ```bash
-  pip install motile-tracker[gurobi]
+  pip install napari-track-edit[gurobi]
   ```
 
-You can install multiple extras at once: `pip install motile-tracker[numba,gurobi]`
+You can install multiple extras at once: `pip install napari-track-edit[numba,gurobi]`
 
 ### Gurobi license version mismatch
 
@@ -45,8 +45,8 @@ you may need to install a specific version of `gurobipy` that matches your licen
 Use one of the version-specific extras:
 
 ```bash
-pip install motile-tracker[gurobi12]  # For Gurobi 12.x licenses
-pip install motile-tracker[gurobi13]  # For Gurobi 13.x licenses
+pip install napari-track-edit[gurobi12]  # For Gurobi 12.x licenses
+pip install napari-track-edit[gurobi13]  # For Gurobi 13.x licenses
 ```
 
 Developers can clone the GitHub repository and then  use `uv` to install and run the code.
@@ -54,14 +54,14 @@ See the developer guide in `DEVELOPER.md` for more information.
 
 ## Usage
 
-Start napari and call the main widget via Plugins > Motile > Motile Main Widget.
-2D+time and 3D+time sample data can be loaded via File > Open Sample > Motile. You can
+Start napari and call the main widget via Plugins > Napari Track Edit > Open all widgets.
+2D+time and 3D+time sample data can be loaded via File > Open Sample > Napari Track Edit. You can
 track objects in napari Labels or Points layers. For details, please read the
 [documentation](https://live-image-tracking-tools.github.io/napari-track-edit/).
 
-![motile_tracker_quick_demo](https://github.com/user-attachments/assets/07a4a954-3d2d-4d67-8f75-aec11ee14697)
+![napari_track_edit_quick_demo](https://github.com/user-attachments/assets/07a4a954-3d2d-4d67-8f75-aec11ee14697)
 
-If you are new to using motile-tracker, you can follow this [tutorial](./assets/motile-tracker_tutorial.pdf) to learn the basics.
+If you are new to using napari-track-edit, you can follow this [tutorial](./assets/napari-track-edit_tutorial.pdf) to learn the basics.
 
 ## Package the application into an executable and create the installer
 

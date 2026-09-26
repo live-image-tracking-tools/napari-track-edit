@@ -56,7 +56,7 @@ dependencies =[
     # levels (blosc2 >= 4.12 is cp311-abi3, uharfbuzz is cp310-abi3), where
     # cython_function_or_method has a different struct size. Whichever imports second
     # dies with "Shared Cython type cython_function_or_method has the wrong size".
-    # motile_tracker is the only place these two meet, so the pin belongs here.
+    # napari_track_edit is the only place these two meet, so the pin belongs here.
     # Drop it once Cython encodes the limited-API level in that module name, or once
     # the two agree on a level.
     "blosc2>=4.11,<4.12",

@@ -15,7 +15,7 @@ from napari_track_edit.example_data import SAMPLE_TRACKS, raw_data_is_downloaded
 
 DOCS_URL = "https://live-image-tracking-tools.github.io/napari-track-edit"
 KEYBINDINGS_URL = f"{DOCS_URL}/key_bindings.html"
-TUTORIAL_URL = "https://github.com/live-image-tracking-tools/napari-track-edit/blob/main/assets/motile-tracker_tutorial.pdf"
+TUTORIAL_URL = "https://github.com/live-image-tracking-tools/napari-track-edit/blob/main/assets/napari-track-edit_tutorial.pdf"
 
 # Links use this scheme to load an example instead of navigating to a page.
 EXAMPLE_SCHEME = "load-example"

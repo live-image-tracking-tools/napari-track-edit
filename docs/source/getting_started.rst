@@ -1,17 +1,17 @@
-Getting started with Motile Tracker
-===================================
+Getting started with Napari Track Edit
+======================================
 
 Installation
 ************
 Install from PyPI in the environment of your choice (e.g. ``venv``, ``conda``)::
 
-    pip install motile-tracker
+    pip install napari-track-edit
 
-Currently, motile_tracker requires Python >=3.11.
+Currently, napari-track-edit requires Python >=3.11.
 
 If this is successful, you can then run ``napari`` from your command line, and
-the motile tracker should be visible in the ``Plugins`` drop down menu.
-Clicking the Main Motile Widget should open the menu widget on the right of the viewer,
+Napari Track Edit should be visible in the ``Plugins`` drop down menu.
+Clicking ``Open all widgets`` should open the menu widget on the right of the viewer,
 and a lineage tree view in the bottom of the viewer.
 
 Recommended extras
@@ -20,14 +20,14 @@ For better performance, you can install optional extras:
 
 - **numba**: Speeds up candidate graph construction significantly.::
 
-    pip install motile-tracker[numba]
+    pip install napari-track-edit[numba]
 
 - **gurobi**: Uses the Gurobi solver instead of the default open-source solver.
   Gurobi is much faster but requires a license (free for academics).::
 
-    pip install motile-tracker[gurobi]
+    pip install napari-track-edit[gurobi]
 
-You can install multiple extras at once: ``pip install motile-tracker[numba,gurobi]``
+You can install multiple extras at once: ``pip install napari-track-edit[numba,gurobi]``
 
 Gurobi license version mismatch
 -------------------------------
@@ -35,8 +35,8 @@ If you have a Gurobi license and encounter an error about license version mismat
 you may need to install a specific version of ``gurobipy`` that matches your license.
 Use one of the version-specific extras::
 
-    pip install motile-tracker[gurobi12]  # For Gurobi 12.x licenses
-    pip install motile-tracker[gurobi13]  # For Gurobi 13.x licenses
+    pip install napari-track-edit[gurobi12]  # For Gurobi 12.x licenses
+    pip install napari-track-edit[gurobi13]  # For Gurobi 13.x licenses
 
 Tutorial video
 **************
@@ -51,7 +51,7 @@ You can also follow this `tutorial`_.
 
 Input data
 **********
-Motile Tracker does not perform detection: you must provide a Labels layer or a Points layer
+Napari Track Edit does not perform detection: you must provide a Labels layer or a Points layer
 containing the objects you want to track.
 The Labels layer must have time as the
 first dimension followed by the spatial dimensions (no channels).
@@ -59,7 +59,7 @@ The Points layer must have the point locations with time as the first number,
 followed by the spatial dimensions. While source images are
 nice to qualitatively evaluate results, they are not necessary to run tracking.
 
-There are two example datasets provided in ``File`` -> ``Open Sample`` -> ``Motile Tracker``.
+There are two example datasets provided in ``File`` -> ``Open Sample`` -> ``Napari Track Edit``.
 A 2D HeLa dataset from the `Cell Tracking Challenge`_ is provided, both in full and a cropped subset for testing features on smaller data, and has both a Labels layer and Points layer.
 There is also a 3D dataset of images and segmentations of a membrane-labeled developing early mouse embryo (4-26 cells)
 from `Fabrèges et al (2024)`_, automatically downloaded from `zenodo`_.
@@ -71,7 +71,7 @@ of shape linking you want.
 
 Tracker widgets
 ***************
-Motile Tracker comes with several widgets for tracking, viewing, and editing. You can open all widgets via ``Plugins`` -> ``Motile Tracker`` -> ``Open all widgets``,
+Napari Track Edit comes with several widgets for tracking, viewing, and editing. You can open all widgets via ``Plugins`` -> ``Napari Track Edit`` -> ``Open all widgets``,
 or select individual from the same dropdown menu. You can optionally close or hide widgets via the close (x) button, or via right mouse-click on the 'eye' button.
 Optionally, you can float individual widgets and place them somewhere else (for example, you can move the lineage view to a secondary monitor).
 If you press the `/` key, you can hide/show all Tracker widgets.
@@ -109,7 +109,7 @@ node in the list of points.
 Deleting runs you do not want to keep viewing is a good idea, since these are stored in memory.
 Tracks that were saved in previous sessions do not appear here until you load them from disk with the ``Load`` button.
 The tracking results can also be visualized as a lineage tree.
-You can open the lineage tree widget via ``Plugins`` > ``Motile Tracker`` > ``Widget - Lineage View``.
+You can open the lineage tree widget via ``Plugins`` > ``Napari Track Edit`` > ``Widget - Lineage View``.
 For more details, go to the :doc:`Tree View <tree_view>` documentation.
 
 Tracking from scratch
@@ -195,4 +195,4 @@ on them here later, save them instead.
 .. _Fabrèges et al (2024): https://www.science.org/doi/10.1126/science.adh1145
 .. _zenodo: https://zenodo.org/records/13903500
 .. _geff: https://github.com/live-image-tracking-tools/geff
-.. _tutorial: https://github.com/live-image-tracking-tools/napari-track-edit/blob/main/assets/motile-tracker_tutorial.pdf
+.. _tutorial: https://github.com/live-image-tracking-tools/napari-track-edit/blob/main/assets/napari-track-edit_tutorial.pdf

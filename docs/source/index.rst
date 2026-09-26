@@ -1,5 +1,5 @@
-Motile Tracker
-====================
+Napari Track Edit
+=================
 
 |source code| |tests|
 

@@ -1,4 +1,4 @@
-project = "Motile Tracker"
+project = "Napari Track Edit"
 copyright = "2024, Howard Hughes Medical Institute"  # noqa: A001
 author = "Caroline Malin-Mayor"
 
