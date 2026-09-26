@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from funtracks.utils.tracksdata_utils import assert_node_attrs_equal_with_masks
 
-from motile_tracker.motile.backend import SolverParams, solve
+from napari_track_edit.motile.backend import SolverParams, solve
 
 
 # capsys is a pytest fixture that captures stdout and stderr output streams

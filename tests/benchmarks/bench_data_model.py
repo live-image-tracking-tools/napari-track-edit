@@ -1,6 +1,6 @@
 """Data-model benchmarks (no napari GUI required).
 
-These exercise motile_tracker's own pure hot paths, so they run without a display.
+These exercise napari_track_edit's own pure hot paths, so they run without a display.
 ``extract_sorted_tracks`` is the O(N)+topological-sort routine behind every
 tree-view refresh.
 
@@ -14,8 +14,8 @@ from bench_ui_actions import (
     ROUNDS,  # shared round count (median-gated; see that module)
 )
 
-from motile_tracker.data_views.colormap import TrackColormap
-from motile_tracker.data_views.views.tree_view.tree_widget_utils import (
+from napari_track_edit.data_views.colormap import TrackColormap
+from napari_track_edit.data_views.views.tree_view.tree_widget_utils import (
     extract_sorted_tracks,
 )
 

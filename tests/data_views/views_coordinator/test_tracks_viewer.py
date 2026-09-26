@@ -3,20 +3,20 @@
 Tests cover node operations, edge operations, display modes, and selection management.
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import napari
 import pytest
 from funtracks.data_model import Tracks
 
-from motile_tracker.data_views.views.layers.track_graph import TrackGraph
-from motile_tracker.data_views.views.layers.track_labels import TrackLabels
-from motile_tracker.data_views.views.layers.track_points import TrackPoints
-from motile_tracker.data_views.views_coordinator.tracks_viewer import (
+from napari_track_edit.data_views.views.layers.track_graph import TrackGraph
+from napari_track_edit.data_views.views.layers.track_labels import TrackLabels
+from napari_track_edit.data_views.views.layers.track_points import TrackPoints
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import (
     BASE_TEXT,
     TracksViewer,
 )
-from motile_tracker.motile.backend.motile_run import MotileRun
+from napari_track_edit.motile.backend.motile_run import MotileRun
 
 
 @pytest.fixture(autouse=True)
@@ -78,8 +78,8 @@ class TestNodeOperations:
 class TestEdgeOperations:
     """Tests for edge manipulation operations."""
 
-    def test_delete_edge(self, tracks_viewer_setup, click_node):
-        """Test deleting edges with various selection scenarios."""
+    def test_disconnect_nodes(self, tracks_viewer_setup, click_node):
+        """Test that disconnect_nodes breaks the edge between two connected nodes."""
         viewer, tracks_viewer, tracks = tracks_viewer_setup
 
         # Test 1: Delete edge between two connected nodes
@@ -91,17 +91,17 @@ class TestEdgeOperations:
         click_node(tracks_viewer, source)
         click_node(tracks_viewer, target, append=True)
 
-        tracks_viewer.delete_edge()
+        tracks_viewer.disconnect_nodes()
 
         # Verify the edge was actually deleted from the graph
         assert not tracks.graph_solution.has_edge(source, target)
 
-        # Test 2: Delete edge with wrong number of selections
+        # Test 2: A single selected node is a no-op
         single_node = list(tracks.graph_solution.node_ids())[0]
         click_node(tracks_viewer, single_node)
 
         edge_count_before = tracks.graph_solution.num_edges()
-        tracks_viewer.delete_edge()
+        tracks_viewer.disconnect_nodes()
 
         # Should not have deleted anything
         assert tracks.graph_solution.num_edges() == edge_count_before
@@ -146,8 +146,8 @@ class TestEdgeOperations:
         assert not tracks.graph_solution.has_edge(4, 5)
         assert not tracks.graph_solution.has_edge(7, 6)
 
-    def test_create_edge_sorts_by_time(self, viewer, graph_2d, click_node):
-        """Test create_edge orders nodes by time (earlier -> later).
+    def test_connect_nodes_sorts_by_time(self, viewer, graph_2d, click_node):
+        """Test connect_nodes orders nodes by time (earlier -> later).
 
         Uses graph_2d (with segmentation) so click_node goes through TrackLabels,
         which returns np.int64 node IDs — matching the real UI path.
@@ -162,13 +162,13 @@ class TestEdgeOperations:
         click_node(tracks_viewer, 6)  # t4, clicked first
         click_node(tracks_viewer, 2, append=True)  # t1, shift-clicked second
 
-        tracks_viewer.create_edge()
+        tracks_viewer.connect_nodes()
 
         # Edge must go from earlier (2) to later (6), regardless of selection order
         assert tracks.graph_solution.has_edge(2, 6)
 
-    def test_create_edge_with_force(self, viewer, graph_2d, monkeypatch, click_node):
-        """Test create_edge handles forceable errors by retrying with force=True.
+    def test_connect_nodes_with_force(self, viewer, graph_2d, monkeypatch, click_node):
+        """Test connect_nodes handles forceable errors by retrying with force=True.
 
         Uses graph_2d (with segmentation) so click_node goes through TrackLabels,
         which returns np.int64 node IDs — matching the real UI path.
@@ -185,16 +185,359 @@ class TestEdgeOperations:
 
         # Approve the force dialog automatically
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer.confirm_force_operation",
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "confirm_force_operation",
             lambda message: (True, False),
         )
 
-        tracks_viewer.create_edge()
+        tracks_viewer.connect_nodes()
 
         # New edge should be in the graph
         assert tracks.graph_solution.has_edge(2, 4)
         # Conflicting edge should have been removed by force
         assert not tracks.graph_solution.has_edge(3, 4)
+
+    def test_partially_connected_selection_connects(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """A partly connected selection is completed rather than rebuilt.
+
+        3 -> 4 already exists but 4 -> 6 does not, so only the missing edge is added.
+        """
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        assert tracks.graph.has_edge(3, 4)
+        click_node(tracks_viewer, 3)  # t1
+        click_node(tracks_viewer, 4, append=True)  # t2
+        click_node(tracks_viewer, 6, append=True)  # t4
+
+        # node 4 already has child 5, so the mode dialog does come up here
+        ask_mock = MagicMock(return_value=False)  # keep it as a division
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            ask_mock,
+        )
+
+        tracks_viewer.connect_nodes()
+
+        ask_mock.assert_called_once()
+        assert tracks.graph.has_edge(4, 6)  # the missing pair was added
+        assert tracks.graph.has_edge(3, 4)  # the connected pair was left alone
+        assert tracks.graph.has_edge(4, 5)  # and so was the edge outside the selection
+
+    def test_disconnect_breaks_the_whole_chain(self, tracks_viewer_setup, click_node):
+        """A whole chain is broken apart, every fragment getting its own tracklet."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        # 3 -> 4 -> 5 is a connected chain in graph_2d
+        click_node(tracks_viewer, 3)
+        click_node(tracks_viewer, 4, append=True)
+        click_node(tracks_viewer, 5, append=True)
+
+        tracks_viewer.disconnect_nodes()
+
+        assert not tracks.graph.has_edge(3, 4)
+        assert not tracks.graph.has_edge(4, 5)
+        assert tracks.graph.has_edge(1, 3)  # edges leaving the selection are kept
+        assert len({int(tracks.get_track_id(n)) for n in (3, 4, 5)}) == 3
+
+    def test_disconnect_mother_and_daughters(self, tracks_viewer_setup, click_node):
+        """Nodes in the same time point are fine: a mother and both of its daughters
+        are split into three fragments, undone again in a single step."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        # 1 divides into 2 and 3, which are both in t=1
+        click_node(tracks_viewer, 1)
+        click_node(tracks_viewer, 2, append=True)
+        click_node(tracks_viewer, 3, append=True)
+
+        tracks_viewer.disconnect_nodes()
+
+        assert not tracks.graph_solution.has_edge(1, 2)
+        assert not tracks.graph_solution.has_edge(1, 3)
+        assert tracks.graph_solution.has_edge(3, 4)  # 4 is not selected
+        assert len({int(tracks.get_track_id(n)) for n in (1, 2, 3)}) == 3
+
+        tracks_viewer.undo()
+        assert tracks.graph_solution.has_edge(1, 2)
+        assert tracks.graph_solution.has_edge(1, 3)
+
+    def test_disconnect_skip_edge(self, tracks_viewer_setup, click_node):
+        """A skip edge between two selected nodes is broken as well, but nodes that
+        are only connected through an unselected node are not."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        click_node(tracks_viewer, 2)
+        click_node(tracks_viewer, 6, append=True)
+        tracks_viewer.connect_nodes()
+        assert tracks.graph_solution.has_edge(2, 6)  # t1 -> t4
+
+        tracks_viewer.disconnect_nodes()
+        assert not tracks.graph_solution.has_edge(2, 6)
+
+        # 3 -> 4 -> 5, but there is no edge 3 -> 5
+        click_node(tracks_viewer, 3)
+        click_node(tracks_viewer, 5, append=True)
+        tracks_viewer.disconnect_nodes()
+        assert tracks.graph_solution.has_edge(3, 4)
+        assert tracks.graph_solution.has_edge(4, 5)
+
+    def test_connect_fully_connected_selection_warns(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Connecting a chain that is connected already never disconnects it, but
+        tells the user there is nothing to connect."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        ask_mock = MagicMock()
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            ask_mock,
+        )
+        warning_mock = MagicMock()
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.show_warning",
+            warning_mock,
+        )
+
+        click_node(tracks_viewer, 3)
+        click_node(tracks_viewer, 4, append=True)
+        click_node(tracks_viewer, 5, append=True)
+
+        tracks_viewer.connect_nodes()
+
+        ask_mock.assert_not_called()  # nothing to connect, so no mode to choose
+        warning_mock.assert_called_once()
+        assert "Cannot connect nodes" in warning_mock.call_args.args[0]
+        assert tracks.graph.has_edge(3, 4)
+        assert tracks.graph.has_edge(4, 5)
+
+    def test_disconnect_unconnected_selection_warns(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Disconnecting nodes that share no edge tells the user there is nothing to
+        disconnect, and leaves the graph alone."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        warning_mock = MagicMock()
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.show_warning",
+            warning_mock,
+        )
+
+        click_node(tracks_viewer, 2)  # t1
+        click_node(tracks_viewer, 6, append=True)  # t4, not connected to 2
+
+        num_edges_before = tracks.graph.num_edges()
+        tracks_viewer.disconnect_nodes()
+
+        warning_mock.assert_called_once()
+        assert "nothing to disconnect" in warning_mock.call_args.args[0]
+        assert tracks.graph.num_edges() == num_edges_before
+
+    def test_disconnect_horizontal_selection_warns_nothing_to_disconnect(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Nodes in the same time point can never be connected, so the user is told
+        there is nothing to disconnect rather than that they cannot be chained."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        warning_mock = MagicMock()
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.show_warning",
+            warning_mock,
+        )
+
+        # nodes 2 and 3 are both in t=1
+        click_node(tracks_viewer, 2)
+        click_node(tracks_viewer, 3, append=True)
+
+        num_edges_before = tracks.graph_solution.num_edges()
+        tracks_viewer.disconnect_nodes()
+
+        warning_mock.assert_called_once()
+        assert "nothing to disconnect" in warning_mock.call_args.args[0]
+        assert tracks.graph_solution.num_edges() == num_edges_before
+
+    def test_repeated_warnings_are_all_shown(self, tracks_viewer_setup, click_node):
+        """The same error must reach the user every time, not only the first time.
+
+        Python's warnings module suppresses repeats of a warning from the same
+        location, so this checks the notifications napari actually emits.
+        """
+        from napari.utils.notifications import notification_manager
+
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        received = []
+        notification_manager.notification_ready.connect(received.append)
+        try:
+            click_node(tracks_viewer, 2)
+            click_node(tracks_viewer, 6, append=True)
+            tracks_viewer.disconnect_nodes()
+            tracks_viewer.disconnect_nodes()
+        finally:
+            notification_manager.notification_ready.disconnect(received.append)
+
+        messages = [n.message for n in received if "nothing to disconnect" in n.message]
+        assert len(messages) == 2
+
+    def test_horizontal_selection_reports_the_connect_error(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """A selection that can never be chained is reported by the connect action."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        # nodes 2 and 3 are both in t=1
+        click_node(tracks_viewer, 2)
+        click_node(tracks_viewer, 3, append=True)
+
+        warning_mock = MagicMock()
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.show_warning",
+            warning_mock,
+        )
+
+        num_edges_before = tracks.graph.num_edges()
+        tracks_viewer.connect_nodes()
+
+        warning_mock.assert_called_once()
+        assert "Cannot connect nodes" in warning_mock.call_args.args[0]
+        assert tracks.graph.num_edges() == num_edges_before
+
+    def test_connect_mode_dialog_divisions(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Node 4 already has child 5, so the user is asked which mode they want.
+
+        Choosing 'with divisions' keeps the existing child edge.
+        """
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        click_node(tracks_viewer, 4)  # t2, has child 5
+        click_node(tracks_viewer, 6, append=True)  # t4, unconnected
+
+        ask_mock = MagicMock(return_value=False)  # False == with divisions
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            ask_mock,
+        )
+
+        tracks_viewer.connect_nodes()
+
+        ask_mock.assert_called_once()
+        assert tracks.graph.has_edge(4, 6)
+        assert tracks.graph.has_edge(4, 5)  # kept as a division
+
+    def test_connect_mode_dialog_linear(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Choosing 'linear' turns the existing child edge into a conflict."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        click_node(tracks_viewer, 4)
+        click_node(tracks_viewer, 6, append=True)
+        tracks_viewer.force = False
+
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            MagicMock(return_value=True),  # True == linear
+        )
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "confirm_force_operation",
+            lambda message: (True, False),
+        )
+
+        tracks_viewer.connect_nodes()
+
+        assert tracks.graph.has_edge(4, 6)
+        assert not tracks.graph.has_edge(4, 5)  # broken to keep the track linear
+
+    def test_connect_mode_dialog_cancelled(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Cancelling the mode dialog leaves the graph untouched."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        click_node(tracks_viewer, 4)
+        click_node(tracks_viewer, 6, append=True)
+
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            MagicMock(return_value=None),
+        )
+
+        num_edges_before = tracks.graph.num_edges()
+        tracks_viewer.connect_nodes()
+
+        assert tracks.graph.num_edges() == num_edges_before
+        assert not tracks.graph.has_edge(4, 6)
+
+    def test_connect_mode_dialog_skipped_without_a_choice(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Node 2 has no children, so both modes are the same and nothing is asked."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        click_node(tracks_viewer, 2)  # t1, no children
+        click_node(tracks_viewer, 6, append=True)
+
+        ask_mock = MagicMock()
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            ask_mock,
+        )
+
+        tracks_viewer.connect_nodes()
+
+        ask_mock.assert_not_called()
+        assert tracks.graph.has_edge(2, 6)
+
+    def test_keyboard_shortcuts_bypass_the_dialog(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """C and Shift+C pick a mode directly, without asking, and B disconnects."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        ask_mock = MagicMock()
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            ask_mock,
+        )
+
+        # C: connect with divisions
+        click_node(tracks_viewer, 4)
+        click_node(tracks_viewer, 6, append=True)
+        tracks_viewer.connect_nodes_with_divisions()
+
+        ask_mock.assert_not_called()
+        assert tracks.graph.has_edge(4, 6)
+        assert tracks.graph.has_edge(4, 5)
+
+        # B: break the new edge again
+        tracks_viewer.disconnect_nodes()
+        assert not tracks.graph.has_edge(4, 6)
+        assert tracks.graph.has_edge(4, 5)
+
+        # Shift+C: connect linearly, forcing away the conflicting child edge
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "confirm_force_operation",
+            lambda message: (True, False),
+        )
+        tracks_viewer.connect_nodes_linearly()
+
+        ask_mock.assert_not_called()
+        assert tracks.graph.has_edge(4, 6)
+        assert not tracks.graph.has_edge(4, 5)
 
     def test_set_division_makes_and_breaks_division(self, viewer, graph_2d, click_node):
         """Test set_division connects a mother to two daughters and back again.
@@ -236,7 +579,7 @@ class TestEdgeOperations:
         click_node(tracks_viewer, 5, append=True)
 
         with patch(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer.QMessageBox.warning"
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.QMessageBox.warning"
         ) as warning:
             tracks_viewer.set_division()
 
@@ -259,7 +602,7 @@ class TestEdgeOperations:
             tracks_viewer.selected_nodes.reset()
             select()
             with patch(
-                "motile_tracker.data_views.views_coordinator.tracks_viewer.QMessageBox.warning"
+                "napari_track_edit.data_views.views_coordinator.tracks_viewer.QMessageBox.warning"
             ) as warning:
                 tracks_viewer.set_division()
 
@@ -711,7 +1054,7 @@ class TestLayerCreation:
     def test_layers_present_after_solve(self, viewer, segmentation_2d):
         """End-to-end test: solve on a segmentation, wrap result in MotileRun,
         load into TracksViewer, and verify all three layer types are present."""
-        from motile_tracker.motile.backend import MotileRun, SolverParams, solve
+        from napari_track_edit.motile.backend import MotileRun, SolverParams, solve
 
         segmentation = segmentation_2d
         params = SolverParams()
@@ -833,5 +1176,7 @@ class TestClearTracks:
         tracks_viewer.update_selection()
         tracks_viewer.filter_visible_nodes()
         tracks_viewer.delete_node()
+        tracks_viewer.connect_nodes()
+        tracks_viewer.set_division()
         tracks_viewer.undo()
         tracks_viewer.redo()

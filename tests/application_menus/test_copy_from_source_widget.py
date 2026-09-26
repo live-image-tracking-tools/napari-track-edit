@@ -8,15 +8,15 @@ import numpy as np
 import pytest
 from napari.layers import Labels, Points
 
-from motile_tracker.application_menus.copy_from_source_widget import (
+from napari_track_edit.application_menus.copy_from_source_widget import (
     CopyFromSourceWidget,
 )
-from motile_tracker.application_menus.editing_selection_menu import (
+from napari_track_edit.application_menus.editing_selection_menu import (
     EditingSelectionWidget,
 )
-from motile_tracker.data_views.views.layers.track_labels import TrackLabels
-from motile_tracker.data_views.views.layers.track_points import TrackPoints
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views.layers.track_labels import TrackLabels
+from napari_track_edit.data_views.views.layers.track_points import TrackPoints
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 def _source_labels(shape=(5, 100, 100)) -> np.ndarray:

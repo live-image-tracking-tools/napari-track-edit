@@ -6,8 +6,8 @@ and validation logic.
 
 from qtpy.QtWidgets import QCheckBox, QLabel
 
-from motile_tracker.motile.backend.solver_params import SolverParams
-from motile_tracker.motile.menus.params_editor import (
+from napari_track_edit.motile.backend.solver_params import SolverParams
+from napari_track_edit.motile.menus.params_editor import (
     EditableParam,
     OptionalEditableParam,
     SolverParamsEditor,

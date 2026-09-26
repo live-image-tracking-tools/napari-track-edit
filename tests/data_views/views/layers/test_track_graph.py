@@ -2,8 +2,8 @@
 
 from funtracks.data_model import Tracks
 
-from motile_tracker.data_views.views.layers.track_graph import update_napari_tracks
-from motile_tracker.motile.backend import SolverParams, solve
+from napari_track_edit.data_views.views.layers.track_graph import update_napari_tracks
+from napari_track_edit.motile.backend import SolverParams, solve
 
 
 def test_update_napari_tracks_division_edges(solution_tracks_3d_with_division):
