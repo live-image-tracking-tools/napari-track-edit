@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import napari
-import numpy as np
 from funtracks.data_model import Tracks
 from funtracks.import_export import export_to_csv, export_to_geff
 from qtpy.QtWidgets import (
@@ -14,6 +12,8 @@ from qtpy.QtWidgets import (
     QMessageBox,
     QVBoxLayout,
 )
+
+from motile_tracker.data_views.colormap import TrackColormap
 
 
 class ExportTypeDialog(QDialog):
@@ -97,7 +97,7 @@ class ExportDialog:
         parent,
         tracks: Tracks,
         name: str,
-        colormap: napari.utils.Colormap,
+        colormap: TrackColormap,
         nodes_to_keep: set[int] | None = None,
     ):
         """Export tracks to CSV or geff, with the option to export a subset of nodes only.
@@ -171,11 +171,13 @@ class ExportDialog:
                 seg_path = Path(seg_dialog.selectedFiles()[0])
 
             nodes = tracks.graph_solution.node_ids()
-            track_ids = tracks.get_track_ids(nodes)
-            # Single vectorized colormap.map call (per-call overhead makes
+            # Single vectorized get_colors call (per-call overhead makes
             # per-node mapping O(nodes) slow); these colors are export-only and
             # not mutated in place, so no per-node copy is needed.
-            colors = colormap.map(np.asarray(track_ids)) if len(track_ids) > 0 else []
+            # get_colors, not map: map takes feature values, which are only
+            # track ids while the colormap is coloring by track id. get_colors
+            # takes node ids and returns whatever each node is showing.
+            colors = colormap.get_colors(nodes) if len(nodes) > 0 else []
             color_dict = {
                 **dict(zip(nodes, colors, strict=True)),
                 None: [0, 0, 0, 0],

@@ -1,4 +1,3 @@
-import napari
 import pandas as pd
 import polars as pl
 from funtracks.annotators import TrackAnnotator
@@ -6,6 +5,7 @@ from funtracks.data_model import Tracks
 from funtracks.features import Feature
 from funtracks.utils.tracksdata_utils import create_empty_graph
 
+from motile_tracker.data_views.colormap import TrackColormap
 from motile_tracker.data_views.views.tree_view.tree_widget_utils import (
     extract_sorted_tracks,
     get_features_from_tracks,
@@ -31,11 +31,8 @@ def test_track_df(solution_tracks_2d):
 
     ann.compute()
 
-    colormap = napari.utils.colormaps.label_colormap(
-        49,
-        seed=0.5,
-        background_value=0,
-    )
+    colormap = TrackColormap()
+    colormap.set_tracks(tracks)
 
     track_df, _ = extract_sorted_tracks(tracks, colormap)
     assert isinstance(track_df, pd.DataFrame)
@@ -100,7 +97,8 @@ def test_extract_sorted_tracks_incomplete_lineage():
     )
     tracks = Tracks(graph=graph, ndim=3, time_attr="t", tracklet_attr="track_id")
 
-    colormap = napari.utils.colormaps.label_colormap(49, seed=0.5, background_value=0)
+    colormap = TrackColormap()
+    colormap.set_tracks(tracks)
     track_df, _ = extract_sorted_tracks(tracks, colormap)
 
     # C (node 3) must be in its own tracklet with track_id=2, not merged into A+B (track_id=1)
