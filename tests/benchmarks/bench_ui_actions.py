@@ -224,7 +224,7 @@ def test_undo_bulk_delete(benchmark, build_app, bench_params):
     )
 
 
-def test_delete_edge(benchmark, build_app, fresh_tracks):
+def test_disconnect_nodes(benchmark, build_app, fresh_tracks):
     def setup():
         _, tv, _ = build_app(fresh_tracks)
         u, v = pick_nodes(fresh_tracks)["del_edge"]
@@ -234,12 +234,15 @@ def test_delete_edge(benchmark, build_app, fresh_tracks):
         return (tv,), {}
 
     benchmark.pedantic(
-        lambda tv: tv.delete_edge(), setup=setup, rounds=ROUNDS, iterations=1
+        lambda tv: tv.connect_nodes_with_divisions(),
+        setup=setup,
+        rounds=ROUNDS,
+        iterations=1,
     )
 
 
-def test_create_edge(benchmark, build_app, fresh_tracks):
-    """Recreate an edge that was just broken (guaranteed-valid, no force dialog)."""
+def test_connect_nodes(benchmark, build_app, fresh_tracks):
+    """Reconnect two nodes that were just disconnected (no force dialog)."""
 
     def setup():
         _, tv, _ = build_app(fresh_tracks)
@@ -248,14 +251,17 @@ def test_create_edge(benchmark, build_app, fresh_tracks):
         tv.selected_nodes.reset()
         tv.selected_nodes.add(u, False)
         tv.selected_nodes.add(v, True)
-        tv.delete_edge()
+        tv.connect_nodes_with_divisions()
         tv.selected_nodes.reset()
         tv.selected_nodes.add(u, False)
         tv.selected_nodes.add(v, True)
         return (tv,), {}
 
     benchmark.pedantic(
-        lambda tv: tv.create_edge(), setup=setup, rounds=ROUNDS, iterations=1
+        lambda tv: tv.connect_nodes_with_divisions(),
+        setup=setup,
+        rounds=ROUNDS,
+        iterations=1,
     )
 
 

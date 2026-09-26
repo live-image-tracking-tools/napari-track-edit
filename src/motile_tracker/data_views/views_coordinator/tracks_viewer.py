@@ -9,14 +9,15 @@ from funtracks.actions import AddNode, BasicAction, DeleteNode
 from funtracks.data_model import Tracks
 from funtracks.exceptions import InvalidActionError
 from funtracks.user_actions import (
-    UserAddEdge,
-    UserDeleteEdge,
+    UserConnectNodes,
     UserDeleteNodes,
+    UserDisconnectNodes,
     UserMergeNodes,
     UserSetDivision,
     UserSwapPredecessors,
     get_track_id_options,
 )
+from napari.utils.notifications import show_warning
 from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
@@ -44,6 +45,7 @@ from motile_tracker.data_views.views_coordinator.node_selection_history import (
 )
 from motile_tracker.data_views.views_coordinator.tracks_list import TracksList
 from motile_tracker.data_views.views_coordinator.user_dialogs import (
+    ask_connect_mode,
     confirm_force_operation,
     select_merge_track_id,
 )
@@ -634,26 +636,6 @@ class TracksViewer:
             self.tracks, nodes=[int(n) for n in self.selected_nodes.as_list]
         )
 
-    def delete_edge(self, event=None):
-        """Calls the UserAction to delete an edge between the two currently
-        selected nodes
-        """
-
-        if self.tracks is None:
-            return
-        if len(self.selected_nodes) == 2:
-            node1 = self.selected_nodes[0]
-            node2 = self.selected_nodes[1]
-
-            time1 = self.tracks.get_time(node1)
-            time2 = self.tracks.get_time(node2)
-
-            if time1 > time2:
-                node1, node2 = node2, node1
-
-            node1, node2 = int(node1), int(node2)
-            UserDeleteEdge(self.tracks, (node1, node2))
-
     def swap_nodes(self, event=None):
         """Calls the UserAction to swap the predecessors of the two currently
         selected nodes
@@ -727,44 +709,73 @@ class TracksViewer:
                 track_id_per_time[time] = track_id
         return track_id_per_time
 
-    def create_edge(self, event=None):
-        """Add an edge between the two currently selected nodes"""
+    def connect_nodes(self, event=None, linear: bool | None = None):
+        """Connect the currently selected nodes into a single track.
+
+        The nodes are sorted by time and connected pairwise, leaving the pairs that
+        are connected already alone. See :meth:`disconnect_nodes` for the inverse.
+
+        Args:
+            event: Unused, present so this can be used as a keybinding callback.
+            linear: If True, existing outgoing edges of the selected nodes are broken
+                so that the result is one linear track. If False, they are kept and
+                divisions are created instead. If None (the default), the user is
+                asked which of the two they want, but only when the choice makes a
+                difference for this selection.
+        """
 
         if self.tracks is None:
             return
-        if len(self.selected_nodes) == 2:
-            node1 = self.selected_nodes[0]
-            node2 = self.selected_nodes[1]
+        if len(self.selected_nodes) < 2:
+            return
 
-            time1 = self.tracks.get_time(node1)
-            time2 = self.tracks.get_time(node2)
+        nodes = [int(node) for node in self.selected_nodes.as_list]
 
-            if time1 > time2:
-                node1, node2 = node2, node1
+        if linear is None:
+            if UserConnectNodes.has_division_choice(self.tracks, nodes):
+                linear = ask_connect_mode()
+                if linear is None:  # cancelled
+                    return
+            else:
+                linear = False
 
-            node1, node2 = int(node1), int(node2)
+        try:
+            UserConnectNodes(self.tracks, nodes, linear=linear, force=self.force)
+        except InvalidActionError as e:
+            if e.forceable:
+                # Ask the user if the action should be forced
+                force, always_force = confirm_force_operation(message=str(e))
+                self.force = always_force
+                if force:
+                    UserConnectNodes(self.tracks, nodes, linear=linear, force=True)
+            else:
+                show_warning(f"Cannot connect nodes: {e}")
 
-            if self.tracks.graph_solution.out_degree(node1) >= 2:
-                QMessageBox.warning(
-                    None,
-                    "Cannot add edge",
-                    f"Node {node1} already has 2 children. Delete one of the "
-                    "existing daughter edges before adding a new one.",
-                )
-                return
+    def connect_nodes_with_divisions(self, event=None):
+        """Connect the selected nodes, keeping existing outgoing edges as divisions."""
 
-            try:
-                UserAddEdge(self.tracks, (node1, node2), force=self.force)
-            except InvalidActionError as e:
-                if e.forceable:
-                    # Ask the user if the action should be forced
-                    force, always_force = confirm_force_operation(message=str(e))
-                    self.force = always_force
-                    if force:
-                        UserAddEdge(self.tracks, (node1, node2), force=True)
-                else:
-                    # Re-raise the exception if it is not forceable
-                    raise
+        self.connect_nodes(linear=False)
+
+    def connect_nodes_linearly(self, event=None):
+        """Connect the selected nodes into one linear track, breaking the existing
+        outgoing edges of the nodes that get a new child."""
+
+        self.connect_nodes(linear=True)
+
+    def disconnect_nodes(self, event=None):
+        """Break every existing edge in the currently selected nodes,
+        including skip edges."""
+
+        if self.tracks is None:
+            return
+        if len(self.selected_nodes) < 2:
+            return
+
+        nodes = [int(node) for node in self.selected_nodes.as_list]
+        try:
+            UserDisconnectNodes(self.tracks, nodes)
+        except InvalidActionError as e:
+            show_warning(f"Cannot disconnect nodes: {e}")
 
     def undo(self, event=None):
         if self.tracks is None:
