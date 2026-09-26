@@ -3,9 +3,9 @@ requires = ["setuptools>=70", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "motile-tracker"
+name = "napari-track-edit"
 dynamic = ["version"]
-description = "Application for interactive tracking with global optimization"
+description = "Napari plugin for interactive tracks and segmentation annotation"
 readme = "README.md"
 license = { text = "BSD 3-Clause License" }
 requires-python = ">=3.11"
@@ -30,9 +30,9 @@ classifiers = [
 ]
 
 dependencies =[
-    "napari>=0.6.2,<0.8.0",
-    "funtracks>=v2.2.0-a2",
-    "appdirs>=1,<2",
+    "napari>=0.7.1,<0.10.0",
+    "funtracks>=2.2.0,<3",
+    "platformdirs>=4,<5",
     "numpy>=2,<3",
     "magicgui>=0.10.1",
     "qtpy>=2.4,<3",
@@ -47,7 +47,7 @@ dependencies =[
     "fastplotlib>=0.6.1,<0.7",
     "pygfx==0.15.3",
     "wgpu>=0.29, <0.30",
-    "napari-orthogonal-views>=0.4.0",
+    "napari-orthogonal-views>=0.5.0",
     "lxml_html_clean>=0.4,<1",
     "zarr>=2.18.7,<4",
     # Not used directly (it arrives via tracksdata), pinned to keep it co-installable
@@ -56,10 +56,22 @@ dependencies =[
     # levels (blosc2 >= 4.12 is cp311-abi3, uharfbuzz is cp310-abi3), where
     # cython_function_or_method has a different struct size. Whichever imports second
     # dies with "Shared Cython type cython_function_or_method has the wrong size".
-    # motile_tracker is the only place these two meet, so the pin belongs here.
+    # napari_track_edit is the only place these two meet, so the pin belongs here.
     # Drop it once Cython encodes the limited-API level in that module name, or once
     # the two agree on a level.
     "blosc2>=4.11,<4.12",
+    # Not used directly (it arrives via napari). 0.16.0 iterates a snapshot of the
+    # slot list (`for caller in list(self._slots)`, pyapp-kit/psygnal#413), so a weak
+    # callback whose referent is collected *during* an emit is still called and raises
+    # ReferenceError instead of being skipped. napari's TransformChain hits this: each
+    # child transform's `changed` holds a weak ref to the chain, and the ortho views
+    # drop a chain from inside a `changed` callback. Drop the pin once psygnal skips
+    # dead callbacks again.
+    # The floor is not incidental: naming psygnal here makes it a *direct*
+    # dependency, so the lowest-direct CI job resolves it to the floor instead of
+    # to the newest release, and 0.14.0 fails ~90 tests with "no signature found
+    # for builtin emit of SignalInstance".
+    "psygnal>=0.15.1,<0.16",
 ]
 
 [project.optional-dependencies]
@@ -72,14 +84,14 @@ all = [
 ]
 
 [project.entry-points."napari.manifest"]
-motile-tracker = "motile_tracker:napari.yaml"
+napari-track-edit = "napari_track_edit:napari.yaml"
 
 [project.urls]
-"Bug Tracker" = "https://github.com/funkelab/motile_tracker/issues"
-"Documentation" ="https://funkelab.github.io/motile_tracker/"
+"Bug Tracker" = "https://github.com/live-image-tracking-tools/napari-track-edit/issues"
+"Documentation" ="https://live-image-tracking-tools.github.io/napari-track-edit/"
 
 [project.scripts]
-motile_tracker = "motile_tracker.__main__:main"
+napari-track-edit = "napari_track_edit.__main__:main"
 
 [dependency-groups]
 testing =[
@@ -122,7 +134,7 @@ addopts = "--ignore=tests/benchmarks"
 # that pointing pytest at the tests/benchmarks directory discovers them.
 python_files = ["test_*.py", "bench_*.py"]
 filterwarnings = [
-    # Temporarily disabled: motile_tracker still converts to the deprecated
+    # Temporarily disabled: napari_track_edit still converts to the deprecated
     # SolutionTracks when emitting tracks, because the views/actions require
     # track IDs. Re-add when we refactor to operate on Tracks directly, ahead
     # of the next major funtracks release.
@@ -130,7 +142,7 @@ filterwarnings = [
 ]
 
 [tool.setuptools_scm]
-write_to = "src/motile_tracker/_version.py"
+write_to = "src/napari_track_edit/_version.py"
 
 [tool.ruff]
 line-length = 88

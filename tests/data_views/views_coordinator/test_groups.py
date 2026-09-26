@@ -9,12 +9,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 from qtpy.QtCore import Qt
 
-from motile_tracker.application_menus.editing_selection_menu import SelectionWidget
-from motile_tracker.data_views.views_coordinator.groups import (
+from napari_track_edit.application_menus.editing_selection_menu import SelectionWidget
+from napari_track_edit.data_views.views_coordinator.groups import (
     CollectionButton,
     CollectionWidget,
 )
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 @pytest.fixture(autouse=True)
@@ -443,7 +443,7 @@ class TestRetrieveExistingGroups:
         assert widget.selected_collection.node_count.text() == "1 node(s)"
 
 
-@patch("motile_tracker.data_views.views_coordinator.groups.ExportDialog")
+@patch("napari_track_edit.data_views.views_coordinator.groups.ExportDialog")
 def test_export_button_shows_dialog(
     mock_export_dialog, viewer, solution_tracks_2d, qtbot, click_node
 ):
@@ -534,3 +534,26 @@ def test_node_count_accounting_for_deleted_items(
 
     # Verify count is reduced (only node 3 remains)
     assert widget.selected_collection.node_count.text() == "1 node(s)"
+
+
+def test_deleting_the_group_being_colored_by_falls_back_to_track_ids(
+    viewer, solution_tracks_2d, qtbot
+):
+    """A group is a node feature, and the views can be colored by it. Deleting
+    it has to stop that first, or every later recompute reads an attribute that
+    is no longer there."""
+
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
+    widget = CollectionWidget(tracks_viewer)
+
+    widget.group_name.setText("colored_group")
+    qtbot.mouseClick(widget.new_group_button, Qt.MouseButton.LeftButton)
+    tracks_viewer.set_color_feature("colored_group")
+
+    item = widget.collection_list.item(0)
+    button = widget.collection_list.itemWidget(item)
+    qtbot.mouseClick(button.delete, Qt.MouseButton.LeftButton)
+
+    assert tracks_viewer.color_feature_key == tracks_viewer.tracks.features.tracklet_key
+    tracks_viewer._refresh()  # must not raise

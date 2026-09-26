@@ -12,13 +12,13 @@ def test_main_entrypoint(mode):
     viewer = MagicMock(name="viewer")
 
     with (
-        patch("motile_tracker.__main__.napari.Viewer", return_value=viewer),
-        patch("motile_tracker.__main__.napari.run"),
-        patch("motile_tracker.data_views.views.ortho_views.initialize_ortho_views"),
-        patch("motile_tracker.__main__.StartupWidget") as mock_widget,
+        patch("napari_track_edit.__main__.napari.Viewer", return_value=viewer),
+        patch("napari_track_edit.__main__.napari.run"),
+        patch("napari_track_edit.data_views.views.ortho_views.initialize_ortho_views"),
+        patch("napari_track_edit.__main__.StartupWidget") as mock_widget,
         patch.object(sys, "argv", ["prog", "--mode", mode]),
     ):
-        from motile_tracker.__main__ import main
+        from napari_track_edit.__main__ import main
 
         main()
 
@@ -35,11 +35,11 @@ def test_main_entrypoint(mode):
 def test_main_configures_package_logging():
     """main() must set logging up itself.
 
-    The installed `motile_tracker` command imports this module and calls main(),
-    so configuration behind an `if __name__ == "__main__"` block would never run
-    for the normal way of starting the app.
+    The installed `napari-track-edit` command imports this module and calls
+    main(), so configuration behind an `if __name__ == "__main__"` block would
+    never run for the normal way of starting the app.
     """
-    package_logger = logging.getLogger("motile_tracker")
+    package_logger = logging.getLogger("napari_track_edit")
     original_handlers = package_logger.handlers[:]
     original_level = package_logger.level
     package_logger.handlers = []
@@ -50,13 +50,15 @@ def test_main_configures_package_logging():
 
     try:
         with (
-            patch("motile_tracker.__main__.napari.Viewer", return_value=MagicMock()),
-            patch("motile_tracker.__main__.napari.run"),
-            patch("motile_tracker.data_views.views.ortho_views.initialize_ortho_views"),
-            patch("motile_tracker.__main__.StartupWidget"),
+            patch("napari_track_edit.__main__.napari.Viewer", return_value=MagicMock()),
+            patch("napari_track_edit.__main__.napari.run"),
+            patch(
+                "napari_track_edit.data_views.views.ortho_views.initialize_ortho_views"
+            ),
+            patch("napari_track_edit.__main__.StartupWidget"),
             patch.object(sys, "argv", ["prog"]),
         ):
-            from motile_tracker.__main__ import main
+            from napari_track_edit.__main__ import main
 
             main()
 

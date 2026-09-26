@@ -7,7 +7,7 @@ In addition to performing tracking with motile, the tracker also provides the ab
 visualize tracks (and segmentations) in napari, through a lineage tree view and
 synchronized points, segmentation, and tracks layers. To visualize results generated
 through the motile widget in the tree view, you can open the tree widget from the UI
-via ``Plugins`` > ``Motile Tracker`` > ``Widget - Lineage View``.
+via ``Plugins`` > ``Napari Track Edit`` > ``Widget - Lineage View``.
 
 Clicking on individual nodes in the tree widget or in the napari Points or Labels layer will select that node,
 highlighting it both in the tree view and in the napari layers. The view is centered on the selected node

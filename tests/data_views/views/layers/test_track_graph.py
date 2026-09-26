@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 from funtracks.data_model import Tracks
 
-from motile_tracker.data_views.views.layers.track_graph import update_napari_tracks
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
-from motile_tracker.motile.backend import SolverParams, solve
+from napari_track_edit.data_views.views.layers.track_graph import update_napari_tracks
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.motile.backend import SolverParams, solve
 
 
 def test_update_napari_tracks_division_edges(solution_tracks_3d_with_division):
@@ -18,7 +18,7 @@ def test_update_napari_tracks_division_edges(solution_tracks_3d_with_division):
     one entry per daughter, pointing back to the parent track.
     """
     tracks = solution_tracks_3d_with_division
-    data, edges = update_napari_tracks(tracks)
+    data, edges, _node_ids = update_napari_tracks(tracks)
 
     assert data.shape[1] == 5  # track_id, t, z, y, x
     assert len(edges) == 2, "expect one entry per daughter of the division"
@@ -43,7 +43,7 @@ def test_update_napari_tracks_with_solve_output(segmentation_2d):
     soln_graph = solve(params, segmentation_2d)
 
     tracks = Tracks(graph=soln_graph, ndim=3, time_attr="t")
-    data, edges = update_napari_tracks(tracks)
+    data, edges, _node_ids = update_napari_tracks(tracks)
 
     assert data.shape[0] == soln_graph.num_nodes()
     assert data.shape[1] == 4  # track_id, t, y, x
@@ -181,7 +181,9 @@ def test_hiding_tracks_sets_only_their_alpha(tracks_layer):
 def test_graph_display_is_restored_after_an_empty_lineage(tracks_layer):
     """A lineage without divisions disables the graph; 'all' must re-enable it."""
     track_ids = [int(tid) for tid in np.unique(tracks_layer.properties["track_id"])]
-    childless = [tid for tid in track_ids if tid not in tracks_layer.full_division_edges]
+    childless = [
+        tid for tid in track_ids if tid not in tracks_layer.full_division_edges
+    ]
     assert childless, "fixture has no track without a parent edge"
 
     tracks_layer.update_track_visibility(childless[:1])

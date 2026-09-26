@@ -4,13 +4,13 @@ import numpy as np
 from funtracks.utils.tracksdata_utils import create_empty_graph
 from qtpy.QtWidgets import QGroupBox
 
-from motile_tracker.application_menus.tracking_from_scratch_widget import (
+from napari_track_edit.application_menus.tracking_from_scratch_widget import (
     TrackingFromScratch,
 )
-from motile_tracker.application_menus.tracking_widget import TrackingWidget
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
-from motile_tracker.motile.backend import MotileRun, SolverParams
-from motile_tracker.motile.menus.motile_widget import MotileWidget
+from napari_track_edit.application_menus.tracking_widget import TrackingWidget
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.motile.backend import MotileRun, SolverParams
+from napari_track_edit.motile.menus.motile_widget import MotileWidget
 
 
 def test_tabs(make_napari_viewer):

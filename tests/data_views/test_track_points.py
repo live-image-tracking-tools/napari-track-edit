@@ -6,11 +6,11 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from motile_tracker.data_views.views.layers.track_points import (
+from napari_track_edit.data_views.views.layers.track_points import (
     TrackPoints,
     custom_select,
 )
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 @pytest.fixture(autouse=True)
@@ -55,9 +55,9 @@ def test_initialization(viewer, solution_tracks_2d):
     # Verify default size was set
     assert points_layer.default_size == 5
 
-    # Verify properties include node_id and track_id
-    assert "node_id" in points_layer.properties
-    assert "track_id" in points_layer.properties
+    # Verify properties hold node_id, and nothing else: node ids are what the
+    # layer looks up (selection, colors), and nothing reads a track id off it
+    assert set(points_layer.properties) == {"node_id"}
     assert len(points_layer.properties["node_id"]) == len(points_layer.nodes)
 
     # Verify type string
@@ -294,7 +294,7 @@ def test_update_data_with_seg_layer(viewer, solution_tracks_2d):
     initial_node_count = solution_tracks_2d.graph_solution.num_nodes()
     new_point = np.array([[1, 50, 50]])
     event = MockEvent(action="added", value=new_point)
-    with patch("motile_tracker.data_views.views.layers.track_points.show_info"):
+    with patch("napari_track_edit.data_views.views.layers.track_points.show_info"):
         points_layer._update_data(event)
     assert tracks_viewer.tracks.graph_solution.num_nodes() == initial_node_count
 
@@ -332,7 +332,7 @@ def test_update_data_invalid_action_forceable(
 
     # Approve the force dialog automatically (avoids Qt dialog popup)
     monkeypatch.setattr(
-        "motile_tracker.data_views.views.layers.track_points.confirm_force_operation",
+        "napari_track_edit.data_views.views.layers.track_points.confirm_force_operation",
         lambda message: (True, False),
     )
 

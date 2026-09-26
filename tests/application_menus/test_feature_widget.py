@@ -10,11 +10,11 @@ from funtracks.annotators._regionprops_annotator import (
 )
 from qtpy.QtWidgets import QDialog, QMessageBox
 
-from motile_tracker.application_menus.feature_widget import (
+from napari_track_edit.application_menus.feature_widget import (
     FeatureWidget,
     IntensityLayerDialog,
 )
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 SEG_SHAPE_2D = (5, 100, 100)
 

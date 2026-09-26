@@ -9,15 +9,15 @@ guard that empty-graph path.
 import numpy as np
 import pytest
 
-from motile_tracker.application_menus.tracking_from_scratch_widget import (
+from napari_track_edit.application_menus.tracking_from_scratch_widget import (
     TrackingFromScratch,
 )
-from motile_tracker.data_views.views.layers.track_labels import TrackLabels
-from motile_tracker.data_views.views.layers.track_points import TrackPoints
-from motile_tracker.data_views.views.table.custom_table_widget import (
+from napari_track_edit.data_views.views.layers.track_labels import TrackLabels
+from napari_track_edit.data_views.views.layers.track_points import TrackPoints
+from napari_track_edit.data_views.views.table.custom_table_widget import (
     ColoredTableWidget,
 )
-from motile_tracker.data_views.views.tree_view.tree_widget import TreeWidget
+from napari_track_edit.data_views.views.tree_view.tree_widget import TreeWidget
 
 
 @pytest.fixture

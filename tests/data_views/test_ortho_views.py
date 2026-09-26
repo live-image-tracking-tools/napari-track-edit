@@ -6,14 +6,14 @@ import pytest
 from napari.utils.key_bindings import coerce_keybinding
 from napari_orthogonal_views.ortho_view_widget import OrthoViewWidget
 
-from motile_tracker.data_views.views.layers.contour_labels import ContourLabels
-from motile_tracker.data_views.views.layers.out_of_slice_points import ZOnlyPoints
-from motile_tracker.data_views.views.layers.track_labels import TrackLabels
-from motile_tracker.data_views.views.layers.track_points import TrackPoints
-from motile_tracker.data_views.views.ortho_views import (
+from napari_track_edit.data_views.views.layers.contour_labels import ContourLabels
+from napari_track_edit.data_views.views.layers.out_of_slice_points import ZOnlyPoints
+from napari_track_edit.data_views.views.layers.track_labels import TrackLabels
+from napari_track_edit.data_views.views.layers.track_points import TrackPoints
+from napari_track_edit.data_views.views.ortho_views import (
     initialize_ortho_views,
 )
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 @pytest.fixture(autouse=True)
@@ -315,7 +315,7 @@ def test_point_size_stable_when_editing_in_ortho_views(
     """
 
     monkeypatch.setattr(
-        "motile_tracker.data_views.views.layers.track_points.confirm_force_operation",
+        "napari_track_edit.data_views.views.layers.track_points.confirm_force_operation",
         lambda message: (True, False),
     )
 

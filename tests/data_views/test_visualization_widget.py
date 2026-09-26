@@ -1,11 +1,12 @@
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
-from motile_tracker.application_menus.visualization_widget import (
+from napari_track_edit.application_menus.visualization_widget import (
     VisualizationWidget,
 )
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 @pytest.fixture(autouse=True)
@@ -247,9 +248,11 @@ class TestOrthoViewsIntegration:
         widget, _ = visualization_widget
         assert not widget.show_ortho_views.isChecked()
 
-    @patch("motile_tracker.application_menus.visualization_widget._VIEWER_MANAGERS", {})
     @patch(
-        "motile_tracker.application_menus.visualization_widget.initialize_ortho_views"
+        "napari_track_edit.application_menus.visualization_widget._VIEWER_MANAGERS", {}
+    )
+    @patch(
+        "napari_track_edit.application_menus.visualization_widget.initialize_ortho_views"
     )
     def test_initialize_ortho_views_viewer_not_in_managers(
         self, mock_init, visualization_widget
@@ -283,7 +286,7 @@ class TestOrthoViewsIntegration:
 
         # Mock the _VIEWER_MANAGERS to already contain this viewer
         with patch(
-            "motile_tracker.application_menus.visualization_widget._VIEWER_MANAGERS",
+            "napari_track_edit.application_menus.visualization_widget._VIEWER_MANAGERS",
             {widget.viewer: mock_manager},
         ):
             widget.show_ortho_views.setChecked(True)
@@ -301,7 +304,7 @@ class TestOrthoViewsIntegration:
         mock_manager.set_splitter_sizes = MagicMock()
 
         with patch(
-            "motile_tracker.application_menus.visualization_widget._VIEWER_MANAGERS",
+            "napari_track_edit.application_menus.visualization_widget._VIEWER_MANAGERS",
             {widget.viewer: mock_manager},
         ):
             # Check the box first
@@ -316,7 +319,7 @@ class TestOrthoViewsIntegration:
             mock_manager.set_splitter_sizes.assert_called_once_with(0.0, 0.0)
 
     @patch(
-        "motile_tracker.application_menus.visualization_widget.initialize_ortho_views"
+        "napari_track_edit.application_menus.visualization_widget.initialize_ortho_views"
     )
     def test_ortho_views_signal_connection(self, mock_init, visualization_widget):
         """Test that the ortho view manager's signal is connected to the widget."""
@@ -338,7 +341,7 @@ class TestOrthoViewsIntegration:
         assert call_args[0] == widget.initialize_ortho_views
 
     @patch(
-        "motile_tracker.application_menus.visualization_widget.initialize_ortho_views"
+        "napari_track_edit.application_menus.visualization_widget.initialize_ortho_views"
     )
     def test_on_ortho_cleanup(self, mock_init, visualization_widget):
         """Test cleanup when ortho view manager is destroyed."""
@@ -364,7 +367,7 @@ class TestOrthoViewsIntegration:
         assert widget.orth_views_connection is None
 
     @patch(
-        "motile_tracker.application_menus.visualization_widget.initialize_ortho_views"
+        "napari_track_edit.application_menus.visualization_widget.initialize_ortho_views"
     )
     def test_disconnect_ortho_views_with_valid_connection(
         self, mock_init, visualization_widget
@@ -409,7 +412,7 @@ class TestOrthoViewsIntegration:
         )
 
         with patch(
-            "motile_tracker.application_menus.visualization_widget._VIEWER_MANAGERS",
+            "napari_track_edit.application_menus.visualization_widget._VIEWER_MANAGERS",
             {widget.viewer: mock_manager},
         ):
             # Manually call with checked=False (simulating external unchecking)
@@ -417,3 +420,85 @@ class TestOrthoViewsIntegration:
 
             # Verify checkbox state is synced
             assert not widget.show_ortho_views.isChecked()
+
+
+class TestColorByWidget:
+    """The "Color by" dropdown: what it offers and what picking one does."""
+
+    @pytest.fixture
+    def group(self, visualization_widget):
+        _widget, tracks_viewer = visualization_widget
+        tracks_viewer.tracks.add_feature(
+            "my_group",
+            {
+                "feature_type": "node",
+                "value_type": "bool",
+                "num_values": 1,
+                "display_name": "my_group",
+                "default_value": False,
+            },
+        )
+        return "my_group"
+
+    def test_lists_none_track_and_lineage(self, visualization_widget):
+        widget, _tracks_viewer = visualization_widget
+        combo = widget.color_by_widget.combo
+
+        labels = [combo.itemText(i) for i in range(combo.count())]
+
+        assert labels == ["None", "Tracklet ID", "Lineage ID"]
+
+    def test_starts_on_the_feature_in_use(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        combo = widget.color_by_widget.combo
+
+        assert combo.itemData(combo.currentIndex()) == tracks_viewer.color_feature_key
+
+    def test_picking_a_feature_sets_it_on_the_viewer(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        combo = widget.color_by_widget.combo
+        lineage_key = tracks_viewer.tracks.features.lineage_key
+
+        combo.setCurrentIndex(combo.findData(lineage_key))
+
+        assert tracks_viewer.color_feature_key == lineage_key
+
+    def test_picking_none_colors_every_node_the_same(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+
+        widget.color_by_widget.combo.setCurrentIndex(0)
+
+        assert tracks_viewer.color_feature_key is None
+        nodes = list(tracks_viewer.tracks.graph_solution.node_ids())
+        colors = tracks_viewer.colormap.get_colors(nodes)
+        assert np.all(colors[:, :3] == colors[0, :3])
+
+    def test_follows_a_change_made_elsewhere(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        lineage_key = tracks_viewer.tracks.features.lineage_key
+
+        tracks_viewer.set_color_feature(lineage_key)
+
+        combo = widget.color_by_widget.combo
+        assert combo.itemData(combo.currentIndex()) == lineage_key
+
+    def test_picks_up_a_group_added_after_it_was_built(
+        self, visualization_widget, group
+    ):
+        widget, _tracks_viewer = visualization_widget
+
+        widget.color_by_widget._populate()  # what showing the panel does
+
+        assert widget.color_by_widget.combo.findData(group) != -1
+
+    def test_repopulating_does_not_change_the_feature(
+        self, visualization_widget, group
+    ):
+        widget, tracks_viewer = visualization_widget
+        tracks_viewer.set_color_feature(group)
+
+        widget.color_by_widget._populate()
+
+        assert tracks_viewer.color_feature_key == group
+        combo = widget.color_by_widget.combo
+        assert combo.itemData(combo.currentIndex()) == group

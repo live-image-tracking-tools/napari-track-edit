@@ -49,8 +49,10 @@ if platform.system() == "Darwin":
 
 def test_add_tracks(benchmark, make_napari_viewer, shared_tracks):
     """Open viewer + add tracks (creates points/graph/labels layers + tree data)."""
-    from motile_tracker.application_menus import StartupWidget
-    from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+    from napari_track_edit.application_menus import StartupWidget
+    from napari_track_edit.data_views.views_coordinator.tracks_viewer import (
+        TracksViewer,
+    )
 
     def setup():
         viewer = make_napari_viewer()
@@ -152,7 +154,7 @@ def test_label_colormap_rebuild(benchmark, build_app, shared_tracks):
         return (tv.tracking_layers.seg_layer,), {}
 
     benchmark.pedantic(
-        lambda seg: seg._get_colormap(),
+        lambda seg: seg.track_colormap.to_direct_colormap(),
         setup=setup,
         rounds=ROUNDS,
         iterations=1,
@@ -224,7 +226,7 @@ def test_undo_bulk_delete(benchmark, build_app, bench_params):
     )
 
 
-def test_delete_edge(benchmark, build_app, fresh_tracks):
+def test_disconnect_nodes(benchmark, build_app, fresh_tracks):
     def setup():
         _, tv, _ = build_app(fresh_tracks)
         u, v = pick_nodes(fresh_tracks)["del_edge"]
@@ -234,12 +236,15 @@ def test_delete_edge(benchmark, build_app, fresh_tracks):
         return (tv,), {}
 
     benchmark.pedantic(
-        lambda tv: tv.delete_edge(), setup=setup, rounds=ROUNDS, iterations=1
+        lambda tv: tv.connect_nodes_with_divisions(),
+        setup=setup,
+        rounds=ROUNDS,
+        iterations=1,
     )
 
 
-def test_create_edge(benchmark, build_app, fresh_tracks):
-    """Recreate an edge that was just broken (guaranteed-valid, no force dialog)."""
+def test_connect_nodes(benchmark, build_app, fresh_tracks):
+    """Reconnect two nodes that were just disconnected (no force dialog)."""
 
     def setup():
         _, tv, _ = build_app(fresh_tracks)
@@ -248,14 +253,17 @@ def test_create_edge(benchmark, build_app, fresh_tracks):
         tv.selected_nodes.reset()
         tv.selected_nodes.add(u, False)
         tv.selected_nodes.add(v, True)
-        tv.delete_edge()
+        tv.connect_nodes_with_divisions()
         tv.selected_nodes.reset()
         tv.selected_nodes.add(u, False)
         tv.selected_nodes.add(v, True)
         return (tv,), {}
 
     benchmark.pedantic(
-        lambda tv: tv.create_edge(), setup=setup, rounds=ROUNDS, iterations=1
+        lambda tv: tv.connect_nodes_with_divisions(),
+        setup=setup,
+        rounds=ROUNDS,
+        iterations=1,
     )
 
 
