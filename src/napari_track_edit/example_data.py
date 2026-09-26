@@ -9,9 +9,9 @@ from urllib.request import urlretrieve
 import numpy as np
 import tifffile
 import zarr
-from appdirs import AppDirs
 from funtracks.utils import setup_zarr_array, setup_zarr_group
 from napari.types import LayerData
+from platformdirs import PlatformDirs
 from skimage.measure import regionprops
 
 logger = logging.getLogger(__name__)
@@ -31,10 +31,10 @@ ReportHook = Callable[[int, int, int], None]
 
 
 def user_data_dir() -> Path:
-    """The appdir "user data dir", where all example data is cached. Created if
+    """The platformdirs "user data dir", where all example data is cached. Created if
     it does not exist yet.
     """
-    data_dir = Path(AppDirs("napari-track-edit").user_data_dir)
+    data_dir = Path(PlatformDirs("napari-track-edit").user_data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
 
