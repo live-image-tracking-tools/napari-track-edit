@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 import numpy as np
 import pytest
 from qtpy.QtCore import QUrl
-from qtpy.QtWidgets import QProgressDialog, QTextBrowser, QWidget
+from qtpy.QtWidgets import QMessageBox, QProgressDialog, QTextBrowser, QWidget
 
 from motile_tracker import example_data
 from motile_tracker.application_menus import welcome_widget as welcome_module
@@ -60,6 +60,21 @@ def test_download_sources_are_reachable(name):
             f"{name}: served an html page instead of the file ({content_type})"
         )
         assert response.read(1), f"{name}: empty response body"
+
+
+@pytest.fixture(autouse=True)
+def no_modal_dialogs(monkeypatch):
+    """Fail instead of blocking when a test opens a modal dialog. There is
+    nobody to click it away in CI, so the run would hang until the job times
+    out. Tests that expect a dialog patch it themselves, which overrides this.
+    """
+    for name in ("question", "information", "warning", "critical"):
+
+        def fail(*args, _name=name, **kwargs):
+            text = next((a for a in args if isinstance(a, str)), "")
+            pytest.fail(f"unexpected modal QMessageBox.{_name}: {text}")
+
+        monkeypatch.setattr(QMessageBox, name, fail)
 
 
 @pytest.fixture
@@ -250,6 +265,9 @@ def test_example_after_closing_tracks_list(make_napari_viewer, qtbot, monkeypatc
 
     welcome = WelcomeWidget(viewer)
     qtbot.addWidget(welcome)
+    # the raw data is not what this test is about, and asking to download it
+    # would open a modal dialog
+    monkeypatch.setattr(welcome_module, "raw_data_is_downloaded", lambda _name: True)
     monkeypatch.setattr(welcome, "_add_raw_layer", lambda name: True)
     monkeypatch.setattr(tracks_list, "load_sample_tracks", MagicMock())
     _click_example(welcome, HELA)
@@ -289,3 +307,26 @@ def test_download_progress_cancel(qtbot):
         parent.findChild(QProgressDialog).cancel()
         with pytest.raises(DownloadCancelled):
             reporthook(2, 1024, 1024 * 1024)
+
+
+@pytest.mark.parametrize(
+    ("answer", "loaded"), [(QMessageBox.Yes, True), (QMessageBox.No, False)]
+)
+def test_raw_download_is_confirmed_first(welcome_widget, monkeypatch, answer, loaded):
+    """Downloading the images of an example is a few hundred megabytes, so it is
+    only started once the user agrees to it."""
+    monkeypatch.setattr(welcome_module, "raw_data_is_downloaded", lambda _name: False)
+    asked = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: asked.append(args) or answer,
+    )
+
+    _click_example(welcome_widget, HELA)
+
+    assert len(asked) == 1
+    assert SAMPLE_TRACKS[HELA].raw_size in asked[0][2]
+    calls = welcome_widget.calls
+    assert calls.add_image.called is loaded
+    assert calls.tracks_list.load_sample_tracks.called is loaded
