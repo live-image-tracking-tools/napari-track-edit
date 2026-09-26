@@ -30,9 +30,9 @@ classifiers = [
 ]
 
 dependencies =[
-    "napari>=0.6.2,<0.8.0",
-    "funtracks>=v2.2.0-a2",
-    "appdirs>=1,<2",
+    "napari>=0.7.1,<0.10.0",
+    "funtracks>=2.2.0-a3",
+    "platformdirs>=4,<5",
     "numpy>=2,<3",
     "magicgui>=0.10.1",
     "qtpy>=2.4,<3",
@@ -47,7 +47,7 @@ dependencies =[
     "fastplotlib>=0.6.1,<0.7",
     "pygfx==0.15.3",
     "wgpu>=0.29, <0.30",
-    "napari-orthogonal-views>=0.4.0",
+    "napari-orthogonal-views>=0.5.0",
     "lxml_html_clean>=0.4,<1",
     "zarr>=2.18.7,<4",
     # Not used directly (it arrives via tracksdata), pinned to keep it co-installable
