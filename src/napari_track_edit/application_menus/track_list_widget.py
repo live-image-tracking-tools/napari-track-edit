@@ -17,9 +17,15 @@ class TrackListWidget(QWidget):
     def __init__(self, viewer: napari.Viewer):
         super().__init__()
 
-        tracks_viewer = TracksViewer.get_instance(viewer)
+        self.tracks_list = TracksViewer.get_instance(viewer).tracks_list
 
         layout = QVBoxLayout()
-        layout.addWidget(tracks_viewer.tracks_list)
+        layout.addWidget(self.tracks_list)
 
         self.setLayout(layout)
+
+    def cleanup(self) -> None:
+        """Detach the tracks list before this widget is destroyed, because it is
+        shared with other widgets and must outlive this one.
+        """
+        self.tracks_list.setParent(None)
