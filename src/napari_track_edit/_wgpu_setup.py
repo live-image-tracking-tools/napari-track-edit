@@ -15,13 +15,13 @@ def configure_wgpu_backend() -> None:
     is current; wgpu-native then panics in non-unwinding FFI code and aborts the whole
     process. Mesa ships the lavapipe ICD as a software fallback, so Vulkan-only is safe.
 
-    Set MOTILE_TRACKER_WGPU_BACKENDS (comma-separated, e.g. "All") to override.
+    Set NAPARI_TRACK_EDIT_WGPU_BACKENDS (comma-separated, e.g. "All") to override.
     """
     if sys.platform != "linux":
         return
     backends = [
         b.strip()
-        for b in os.environ.get("MOTILE_TRACKER_WGPU_BACKENDS", "Vulkan").split(",")
+        for b in os.environ.get("NAPARI_TRACK_EDIT_WGPU_BACKENDS", "Vulkan").split(",")
         if b.strip()
     ]
     try:
