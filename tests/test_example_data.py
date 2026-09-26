@@ -12,25 +12,25 @@ import pytest
 from qtpy.QtCore import QUrl
 from qtpy.QtWidgets import QMessageBox, QProgressDialog, QTextBrowser, QWidget
 
-from motile_tracker import example_data
-from motile_tracker.application_menus import welcome_widget as welcome_module
-from motile_tracker.application_menus.main_app import MENU_WIDGETS
-from motile_tracker.application_menus.menu_manager import MenuManager
-from motile_tracker.application_menus.welcome_widget import (
+from napari_track_edit import example_data
+from napari_track_edit.application_menus import welcome_widget as welcome_module
+from napari_track_edit.application_menus.main_app import MENU_WIDGETS
+from napari_track_edit.application_menus.menu_manager import MenuManager
+from napari_track_edit.application_menus.welcome_widget import (
     EXAMPLE_SCHEME,
     WelcomeWidget,
 )
-from motile_tracker.data_views.views_coordinator.tracks_list import TracksList
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
-from motile_tracker.download_progress import MB, DownloadCancelled, download_progress
-from motile_tracker.example_data import (
+from napari_track_edit.data_views.views_coordinator.tracks_list import TracksList
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.download_progress import MB, DownloadCancelled, download_progress
+from napari_track_edit.example_data import (
     CTC_URL_TEMPLATE,
     SAMPLE_TRACKS,
     ZENODO_LABELS_URL,
     ZENODO_RAW_URL,
     sample_tracks_path,
 )
-from motile_tracker.import_export.geff_io import write_geff_over
+from napari_track_edit.import_export.geff_io import write_geff_over
 
 HELA = "Hela cells (2D)"
 EMBRYO = "Mouse embryo (3D)"
@@ -156,7 +156,7 @@ def test_tracks_list_load_sample_tracks(
     """Loading a sample adds it to the tracks list and announces where it came from."""
     geff_path = tmp_path / "sample.geff"
     write_geff_over(solution_tracks_2d, geff_path)
-    module = "motile_tracker.data_views.views_coordinator.tracks_list"
+    module = "napari_track_edit.data_views.views_coordinator.tracks_list"
     monkeypatch.setattr(
         f"{module}.sample_tracks_path", lambda name, reporthook=None: geff_path
     )
