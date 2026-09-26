@@ -20,3 +20,6 @@ class TrackingWidget(QTabWidget):
 
         self.addTab(self.motile_widget, "Track with Motile")
         self.addTab(self.tracking_from_scratch, "Track from Scratch")
+
+        # extra vertical padding so the tab titles are not cut off at the bottom
+        self.setStyleSheet("QTabBar::tab { padding: 5px 6px; }")

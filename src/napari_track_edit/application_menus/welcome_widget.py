@@ -60,7 +60,7 @@ class WelcomeWidget(QWidget):
         links.setOpenLinks(False)  # handled in _on_link_clicked
         links.anchorClicked.connect(self._on_link_clicked)
         links.setHtml(links_html)
-        links.setMaximumHeight(80)
+        links.setMaximumHeight(100)
         links.setStyleSheet(
             "QTextBrowser { border: none; background: transparent; margin: 0px; padding: 0px; }"
         )

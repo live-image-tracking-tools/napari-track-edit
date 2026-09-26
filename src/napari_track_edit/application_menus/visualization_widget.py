@@ -260,8 +260,6 @@ class VisualizationWidget(QWidget):
         main_layout.addWidget(self.show_viewer_overlay)
         main_layout.addStretch(1)
 
-        self.setMaximumHeight(400)
-
     def toggle_viewer_text_overlay(self, checked: bool):
         """Change the visibility of the text overlay"""
 
