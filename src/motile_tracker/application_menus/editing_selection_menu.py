@@ -185,15 +185,14 @@ class EditingMenu(QWidget):
         bind_shortcut_label(self.delete_node_btn, "delete_node", "Delete")
         self.delete_node_btn.clicked.connect(self.tracks_viewer.delete_node)
         self.delete_node_btn.setEnabled(False)
+
         self.swap_nodes_btn = QPushButton()
         bind_shortcut_label(self.swap_nodes_btn, "swap_nodes", "Swap")
         self.swap_nodes_btn.clicked.connect(self.tracks_viewer.swap_nodes)
         self.swap_nodes_btn.setEnabled(False)
-        self.merge_nodes_btn = QPushButton("Merge [H]")
-        self.merge_nodes_btn.setToolTip(
-            "Merge each set of selected nodes that shares a time point into a "
-            "single node."
-        )
+
+        self.merge_nodes_btn = QPushButton("")
+        bind_shortcut_label(self.merge_nodes_btn, "merge_horizontally", "Merge")
         self.merge_nodes_btn.clicked.connect(self.tracks_viewer.merge_horizontally)
         self.merge_nodes_btn.setEnabled(False)
 

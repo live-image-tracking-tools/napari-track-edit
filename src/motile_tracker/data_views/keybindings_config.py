@@ -102,8 +102,12 @@ KEYBINDINGS = {
         "targets": ["tracks_viewer"],
     },
     "merge_horizontally": {
-        "napari_keys": ["h"],
-        "qt_keys": [Qt.Key_H],
+        "key": "h",
+        "description": (
+            "Merge each set of selected nodes that shares a time point into a "
+            "single node."
+        ),
+        "group": "Editing",
         "targets": ["tracks_viewer"],
     },
     "undo": {
