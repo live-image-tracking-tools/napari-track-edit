@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import napari
@@ -36,6 +37,9 @@ def update_napari_tracks(
             one (the track has one parent, and the parent has >=1 child) in the
             case of track splitting, or more than one (the track has multiple
             parents, but only one child) in the case of track merging.
+        node_ids: list[int]
+            The node id of each row of `data`, in the same order, so the layer
+            can be colored per node.
     """
 
     ndim = tracks.ndim - 1
@@ -91,7 +95,7 @@ def update_napari_tracks(
                     parent_track_id
                 )
 
-    return napari_data, napari_edges
+    return napari_data, napari_edges, node_ids
 
 
 class TrackGraph(napari.layers.Tracks):
@@ -106,7 +110,7 @@ class TrackGraph(napari.layers.Tracks):
         tracks_viewer: TracksViewer,
     ):
         self.tracks_viewer = tracks_viewer
-        track_data, track_edges = update_napari_tracks(
+        track_data, track_edges, node_ids = update_napari_tracks(
             self.tracks_viewer.tracks,
         )
 
@@ -123,17 +127,15 @@ class TrackGraph(napari.layers.Tracks):
             color_by="track_id",
         )
 
-        self.colormaps_dict["track_id"] = self.tracks_viewer.colormap
         self.tracks_layer_graph = copy.deepcopy(self.graph)  # for restoring graph later
-        # just to 'refresh' the track_id colormap, we do not actually use turbo
-        self.colormap = "turbo"
+        self._apply_node_colors(node_ids)
 
     def _refresh(self):
         """Refreshes the displayed tracks based on the graph in the current
         tracks_viewer.tracks
         """
 
-        track_data, track_edges = update_napari_tracks(
+        track_data, track_edges, node_ids = update_napari_tracks(
             self.tracks_viewer.tracks,
         )
 
@@ -146,9 +148,34 @@ class TrackGraph(napari.layers.Tracks):
         self.data = track_data
         self.graph = track_edges
         self.tracks_layer_graph = copy.deepcopy(self.graph)
-        self.colormaps_dict["track_id"] = self.tracks_viewer.colormap
-        # just to 'refresh' the track_id colormap, we do not actually use turbo
-        self.colormap = "turbo"
+        self._apply_node_colors(node_ids)
+
+    def _apply_node_colors(self, node_ids: list[int]) -> None:
+        """Color the track lines per node instead of per track id.
+
+        napari colors a Tracks layer by mapping one vertex property array
+        through a colormap. We need to color by node id instead of tracklet_id to ensure
+         that this colormap follows the other views.
+
+        `node_ids` must be in the same row order as the data that was just
+        assigned: napari sorts the vertices by (track id, time) and reorders
+        the properties to match, using the order it recorded for that data.
+        """
+
+        if len(node_ids) == len(self.data):
+            node_id_property = np.asarray(node_ids, dtype=np.int64)
+        else:
+            # single dummy row for empty graph (black)
+            node_id_property = np.zeros(len(self.data), dtype=np.int64)
+
+        # Setting properties re-adds track_id itself (update_track_visibility
+        # needs it), taken from the already-sorted data.
+        self.properties = {"node_id": node_id_property}
+        self.colormaps_dict["node_id"] = SimpleNamespace(
+            map=self.tracks_viewer.colormap.get_colors
+        )
+        # always call, even if already on node_id, to trigger refresh
+        self.color_by = "node_id"
 
     def update_track_visibility(self, visible: list[int] | str) -> None:
         """Optionally show only the tracks of a current lineage"""
