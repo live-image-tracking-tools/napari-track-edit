@@ -4,7 +4,7 @@ test:
     uv run pytest .
 
 start:
-    uv run --extra gurobi13 motile_tracker
+    uv run --extra gurobi13 napari-track-edit
 
 [working-directory: 'docs']
 @docs-build:

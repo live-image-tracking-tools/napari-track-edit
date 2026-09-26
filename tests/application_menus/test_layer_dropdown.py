@@ -11,7 +11,7 @@ import pytest
 from napari.components import ViewerModel
 from napari.layers import Image, Labels, Points
 
-from motile_tracker.application_menus.layer_dropdown import LayerDropdown
+from napari_track_edit.application_menus.layer_dropdown import LayerDropdown
 
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-project = "Motile Tracker"
+project = "Napari Track Edit"
 copyright = "2024, Howard Hughes Medical Institute"  # noqa: A001
 author = "Caroline Malin-Mayor"
 
@@ -10,7 +10,7 @@ extensions = [
     "sphinx_rtd_theme",
     "sphinxcontrib.video",
 ]
-autoapi_dirs = ["../../src/motile_tracker"]
+autoapi_dirs = ["../../src/napari_track_edit"]
 
 exclude_patterns = []
 

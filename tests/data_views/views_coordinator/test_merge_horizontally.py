@@ -9,22 +9,22 @@ from unittest.mock import patch
 import pytest
 from qtpy.QtCore import Qt
 
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
-from motile_tracker.data_views.views_coordinator.user_dialogs import (
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views_coordinator.user_dialogs import (
     MergeTrackIDDialog,
 )
-from motile_tracker.motile.backend.motile_run import MotileRun
+from napari_track_edit.motile.backend.motile_run import MotileRun
 
 DIALOG = (
-    "motile_tracker.data_views.views_coordinator.tracks_viewer.select_merge_track_id"
+    "napari_track_edit.data_views.views_coordinator.tracks_viewer.select_merge_track_id"
 )
 WARNING = (
-    "motile_tracker.data_views.views_coordinator.tracks_viewer.QMessageBox.warning"
+    "napari_track_edit.data_views.views_coordinator.tracks_viewer.QMessageBox.warning"
 )
 OPTIONS = (
-    "motile_tracker.data_views.views_coordinator.tracks_viewer.get_track_id_options"
+    "napari_track_edit.data_views.views_coordinator.tracks_viewer.get_track_id_options"
 )
-MERGE = "motile_tracker.data_views.views_coordinator.tracks_viewer.UserMergeNodes"
+MERGE = "napari_track_edit.data_views.views_coordinator.tracks_viewer.UserMergeNodes"
 
 
 @pytest.fixture(autouse=True)

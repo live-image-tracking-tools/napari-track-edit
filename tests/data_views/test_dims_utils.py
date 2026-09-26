@@ -11,7 +11,7 @@ import pytest
 from napari.components import Dims
 from napari.layers import Image
 
-from motile_tracker.data_views.dims_utils import TracksDims
+from napari_track_edit.data_views.dims_utils import TracksDims
 
 
 class TestNapariDimsInvariants:

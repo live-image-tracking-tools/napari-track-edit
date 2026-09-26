@@ -34,9 +34,9 @@ from funtracks.user_actions.user_update_segmentation import (
 from napari.layers import Labels
 from napari.utils import DirectLabelColormap
 
-from motile_tracker.data_views.lazy_array_wrapper import LazyArrayWrapper
-from motile_tracker.data_views.views.layers.contour_labels import ContourLabels
-from motile_tracker.data_views.views.layers.track_labels import TrackLabels
+from napari_track_edit.data_views.lazy_array_wrapper import LazyArrayWrapper
+from napari_track_edit.data_views.views.layers.contour_labels import ContourLabels
+from napari_track_edit.data_views.views.layers.track_labels import TrackLabels
 
 TIME = 1  # the frame every stroke is painted on
 NEW = 9  # the label painted with

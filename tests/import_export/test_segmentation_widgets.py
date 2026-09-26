@@ -7,7 +7,7 @@ import numpy as np
 import zarr
 from geff_spec import GeffMetadata
 
-from motile_tracker.import_export.menus.segmentation_widgets import (
+from napari_track_edit.import_export.menus.segmentation_widgets import (
     CSVSegmentationWidget,
     ExternalSegmentationWidget,
     FileFolderDialog,
@@ -46,7 +46,7 @@ class TestExternalSegmentationWidget:
         qtbot.addWidget(widget)
 
         with patch(
-            "motile_tracker.import_export.menus.segmentation_widgets.FileFolderDialog"
+            "napari_track_edit.import_export.menus.segmentation_widgets.FileFolderDialog"
         ) as mock_dialog:
             mock_instance = MagicMock()
             mock_dialog.return_value = mock_instance
@@ -185,7 +185,7 @@ class TestFileFolderDialog:
 
         # Mock QFileDialog.getOpenFileName to return our test file
         with patch(
-            "motile_tracker.import_export.menus.segmentation_widgets.QFileDialog.getOpenFileName",
+            "napari_track_edit.import_export.menus.segmentation_widgets.QFileDialog.getOpenFileName",
             return_value=(str(test_file), ""),
         ):
             dialog.file_button.click()
@@ -201,7 +201,7 @@ class TestFileFolderDialog:
 
         # Mock QFileDialog.getExistingDirectory to return our test folder
         with patch(
-            "motile_tracker.import_export.menus.segmentation_widgets.QFileDialog.getExistingDirectory",
+            "napari_track_edit.import_export.menus.segmentation_widgets.QFileDialog.getExistingDirectory",
             return_value=str(test_folder),
         ):
             dialog.folder_button.click()
@@ -331,7 +331,7 @@ class TestCSVSegmentationWidget:
         test_array = np.zeros((2, 10, 10), dtype=np.uint8)
 
         with patch(
-            "motile_tracker.import_export.menus.segmentation_widgets.magic_imread"
+            "napari_track_edit.import_export.menus.segmentation_widgets.magic_imread"
         ) as mock_imread:
             mock_imread.return_value = test_array
 
@@ -354,7 +354,7 @@ class TestCSVSegmentationWidget:
         widget.segmentation_widget.valid = False
 
         with patch(
-            "motile_tracker.import_export.menus.segmentation_widgets.QMessageBox.critical"
+            "napari_track_edit.import_export.menus.segmentation_widgets.QMessageBox.critical"
         ) as mock_msgbox:
             result = widget.load_segmentation()
 

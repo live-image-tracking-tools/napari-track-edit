@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from funtracks.utils.tracksdata_utils import create_empty_graph
 
-from motile_tracker.motile.backend import MotileRun, SolverParams
-from motile_tracker.motile.menus.motile_widget import MotileWidget
+from napari_track_edit.motile.backend import MotileRun, SolverParams
+from napari_track_edit.motile.menus.motile_widget import MotileWidget
 
 
 def test_initialization_and_title(make_napari_viewer):
@@ -162,9 +162,9 @@ def test_solve_with_motile(make_napari_viewer, segmentation_2d):
     )
     with (
         patch(
-            "motile_tracker.motile.menus.motile_widget.build_candidate_graph"
+            "napari_track_edit.motile.menus.motile_widget.build_candidate_graph"
         ) as mock_build,
-        patch("motile_tracker.motile.menus.motile_widget.solve") as mock_solve,
+        patch("napari_track_edit.motile.menus.motile_widget.solve") as mock_solve,
     ):
         mock_build.return_value = create_empty_graph()
         mock_solve.return_value = create_empty_graph()
@@ -183,10 +183,12 @@ def test_solve_with_motile(make_napari_viewer, segmentation_2d):
     )
     with (
         patch(
-            "motile_tracker.motile.menus.motile_widget.build_candidate_graph"
+            "napari_track_edit.motile.menus.motile_widget.build_candidate_graph"
         ) as mock_build,
-        patch("motile_tracker.motile.menus.motile_widget.solve") as mock_solve,
-        patch("motile_tracker.motile.menus.motile_widget.show_warning") as mock_warning,
+        patch("napari_track_edit.motile.menus.motile_widget.solve") as mock_solve,
+        patch(
+            "napari_track_edit.motile.menus.motile_widget.show_warning"
+        ) as mock_warning,
     ):
         mock_build.return_value = create_empty_graph()
         mock_solve.return_value = create_empty_graph()
@@ -207,11 +209,11 @@ def test_solve_with_motile(make_napari_viewer, segmentation_2d):
 
     with (
         patch(
-            "motile_tracker.motile.menus.motile_widget.build_candidate_graph"
+            "napari_track_edit.motile.menus.motile_widget.build_candidate_graph"
         ) as mock_build,
-        patch("motile_tracker.motile.menus.motile_widget.solve") as mock_solve,
+        patch("napari_track_edit.motile.menus.motile_widget.solve") as mock_solve,
         patch(
-            "motile_tracker.motile.menus.motile_widget.ensure_unique_labels"
+            "napari_track_edit.motile.menus.motile_widget.ensure_unique_labels"
         ) as mock_relabel,
     ):
         mock_build.side_effect = [

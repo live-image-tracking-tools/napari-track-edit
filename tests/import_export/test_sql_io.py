@@ -13,8 +13,8 @@ import tracksdata as td
 from funtracks.data_model import Tracks
 from funtracks.user_actions import UserDeleteNodes
 
-from motile_tracker.import_export import sql_io
-from motile_tracker.import_export.sql_io import (
+from napari_track_edit.import_export import sql_io
+from napari_track_edit.import_export.sql_io import (
     META_KEY,
     close_database,
     is_same_database,
@@ -24,8 +24,8 @@ from motile_tracker.import_export.sql_io import (
     tracks_from_sql,
     write_tracks_to_sql,
 )
-from motile_tracker.motile.backend.motile_run import MotileRun
-from motile_tracker.motile.backend.solver_params import SolverParams
+from napari_track_edit.motile.backend.motile_run import MotileRun
+from napari_track_edit.motile.backend.solver_params import SolverParams
 
 
 @pytest.fixture
@@ -158,7 +158,7 @@ class TestLiveEditing:
 
 
 class TestForeignDatabase:
-    """A database written by something other than motile_tracker."""
+    """A database written by something other than napari_track_edit."""
 
     @pytest.fixture
     def foreign_db(self, tracks_2d, tmp_path):
