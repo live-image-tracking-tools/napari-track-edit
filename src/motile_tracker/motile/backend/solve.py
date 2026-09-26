@@ -16,12 +16,7 @@ from funtracks.utils.tracksdata_utils import create_empty_graph
 from motile import Solver, TrackGraph
 from motile.constraints import MaxChildren, MaxParents
 from motile.constraints.constraint import Constraint
-from motile.costs import (
-    EdgeDistanceCost,
-    EdgeSelectedCost,
-    NodeAppearCost,
-    NodeSplitCost,
-)
+from motile.costs import Appear, EdgeDistance, EdgeSelection, Split
 from motile.variables import EdgeSelected, NodeSelected
 from tracksdata.constants import DEFAULT_ATTR_KEYS
 
@@ -609,19 +604,19 @@ def construct_solver(
 
     if solver_params.edge_selection_cost is not None:
         solver.add_cost(
-            EdgeSelectedCost(
+            EdgeSelection(
                 constant=solver_params.edge_selection_cost,
             ),
             name="edge_const",
         )
     if solver_params.appear_cost is not None:
-        solver.add_cost(NodeAppearCost(constant=solver_params.appear_cost))
+        solver.add_cost(Appear(constant=solver_params.appear_cost))
     if solver_params.division_cost is not None:
-        solver.add_cost(NodeSplitCost(constant=solver_params.division_cost))
+        solver.add_cost(Split(constant=solver_params.division_cost))
 
     if solver_params.distance_cost is not None:
         solver.add_cost(
-            EdgeDistanceCost(
+            EdgeDistance(
                 position_attribute="pos",
                 weight=solver_params.distance_cost,
             ),
@@ -629,7 +624,7 @@ def construct_solver(
         )
     if solver_params.iou_cost is not None:
         solver.add_cost(
-            EdgeSelectedCost(
+            EdgeSelection(
                 weight=solver_params.iou_cost,
                 attribute="iou",
             ),
