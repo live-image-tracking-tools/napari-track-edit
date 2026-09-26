@@ -393,7 +393,13 @@ class TrackLabels(ContourLabels):
                 target_value = 0
             else:
                 self._ensure_valid_label()
-                target_value = self.selected_label
+                # TODO: drop this conversion once tracksdata coerces numpy scalars
+                # at the SQL query boundary; see the note in _ensure_valid_label.
+                # Passing napari's numpy selected_label straight through makes
+                # UserUpdateSegmentation read an existing node as missing on a
+                # database-backed graph, and it then tries to add a node that is
+                # already there.
+                target_value = int(self.selected_label)
 
             with self.events.selected_label.blocker():
                 try:
@@ -539,21 +545,32 @@ class TrackLabels(ContourLabels):
                 self.tracks_viewer.tracks_dims.time_axis
             ]
 
+            # TODO: drop this conversion once tracksdata coerces numpy scalars at
+            # the SQL query boundary. napari stores selected_label as a numpy
+            # integer, and SQLGraph.has_node(np.int64(n)) answers False where
+            # has_node(n) answers True, so an existing node reads as missing and
+            # the caller goes on to add a node that is already there. The
+            # in-memory backend matches either type, so this only bites on a
+            # database. Same conversion in _on_paint.
+            selected_label = int(self.selected_label)
+
             # A label that names a node outside the solution but still present in
             # graph_full is soft-deleted: the node was removed, or added and then
             # undone. Select a new label if this is the case.
             if not self.tracks_viewer.tracks.graph_solution.has_node(
-                self.selected_label
-            ) and self.tracks_viewer.tracks.graph_full.has_node(self.selected_label):
+                selected_label
+            ) and self.tracks_viewer.tracks.graph_full.has_node(selected_label):
                 _new_label(self, new_track_id=False)
+                # _new_label picks a different label, so re-read it.
+                selected_label = int(self.selected_label)
 
             # if a node with the given label is already in the graph
-            if self.tracks_viewer.tracks.graph_solution.has_node(self.selected_label):
+            if self.tracks_viewer.tracks.graph_solution.has_node(selected_label):
                 # Update the track id
                 self.tracks_viewer.selected_track = (
-                    self.tracks_viewer.tracks.get_track_id(self.selected_label)
+                    self.tracks_viewer.tracks.get_track_id(selected_label)
                 )
-                existing_time = self.tracks_viewer.tracks.get_time(self.selected_label)
+                existing_time = self.tracks_viewer.tracks.get_time(selected_label)
                 if existing_time == current_timepoint:
                     # we are changing the existing node. This is fine
                     pass
