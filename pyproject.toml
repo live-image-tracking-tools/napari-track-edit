@@ -129,7 +129,13 @@ conflicts = [
 [tool.pytest.ini_options]
 # Benchmarks are slow and run in a dedicated CI job; exclude them from the normal
 # test suite (`just test` / `pytest .`). Run with `pytest tests/benchmarks -o addopts=`.
-addopts = "--ignore=tests/benchmarks"
+# Tests marked `network` hit external download servers (Zenodo, Google Drive, CTC),
+# which are flaky, so they are deselected too and run monthly by the
+# download-sources workflow. Run them with `pytest -m network`.
+addopts = "--ignore=tests/benchmarks -m 'not network'"
+markers = [
+    "network: needs access to external download servers (deselected by default)",
+]
 # Benchmark modules are named bench_*.py; collect those in addition to test_*.py so
 # that pointing pytest at the tests/benchmarks directory discovers them.
 python_files = ["test_*.py", "bench_*.py"]
