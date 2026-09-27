@@ -21,8 +21,12 @@ Motile is a library that makes it easy to solve tracking problems using optimiza
 by framing the task as an Integer Linear Program (ILP).
 See the `motile documentation`_ for more details on the concepts and method.
 
-.. video:: images/results_demo_720p.mp4
-   :width: 720
+.. The video is hosted as a GitHub attachment (uploaded through a GitHub comment box),
+   so that it does not have to be tracked in the repository.
+
+.. raw:: html
+
+   <video autoplay muted loop playsinline controls style="width: 100%; max-width: 720px;" src="https://github.com/user-attachments/assets/cd23271d-bbe6-40c2-80cb-8404136a564a"></video>
 
 .. toctree::
    :maxdepth: 2
