@@ -1,0 +1,10 @@
+/* The theme keeps table cells on one line, which cuts off long descriptions (e.g. in the
+   key bindings tables). Let the cells wrap, but keep the key column on one line. */
+.wy-table-responsive table td,
+.wy-table-responsive table th {
+    white-space: normal;
+}
+.wy-table-responsive table td:first-child,
+.wy-table-responsive table td:first-child * {
+    white-space: nowrap;
+}

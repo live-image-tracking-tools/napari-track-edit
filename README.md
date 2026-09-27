@@ -61,7 +61,7 @@ track objects in napari Labels or Points layers. For details, please read the
 
 ![napari_track_edit_quick_demo](https://github.com/user-attachments/assets/07a4a954-3d2d-4d67-8f75-aec11ee14697)
 
-If you are new to using napari-track-edit, you can follow this [tutorial](./assets/napari-track-edit_tutorial.pdf) to learn the basics.
+If you are new to using napari-track-edit, you can follow this [tutorial](https://live-image-tracking-tools.github.io/napari-track-edit/napari-track-edit_tutorial.html) to learn the basics.
 
 ## Package the application into an executable and create the installer
 
