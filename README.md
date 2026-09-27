@@ -8,7 +8,7 @@
 <img src="docs/source/images/logo_transparent.png" align="right" width="180" alt="Napari Track Edit logo" />
 
 A napari plugin for interactive visualization, navigation, and editing of object tracking results. You can open and edit existing tracking data, manually create new tracking results, or run automatic tracking with [motile](https://github.com/funkelab/motile).
-The full documentation of the plugin can be found [here](https://live-image-tracking-tools.github.io/napari-track-edit/).
+The full documentation of the plugin can be found [here](https://liveimagetrackingtools.org/napari-track-edit/).
 
 Motile is a library that makes it easy to solve tracking problems using optimization
 by framing the task as an Integer Linear Program (ILP).
@@ -61,9 +61,9 @@ See the developer guide in [`DEVELOPER.md`](DEVELOPER.md) for more information.
 Start napari and open all widgets via `Plugins` > `Napari Track Edit` > `Open all widgets`.
 
 From here you can:
-- load your own Labels or Points data to [track with motile](https://live-image-tracking-tools.github.io/napari-track-edit/tracking.html#tracking-with-motile),
-- load an image to [manually track objects](https://live-image-tracking-tools.github.io/napari-track-edit/tracking.html#tracking-from-scratch),
-- or [load existing tracking data](https://live-image-tracking-tools.github.io/napari-track-edit/saving_loading.html#loading-tracks) to explore or edit.
+- load your own Labels or Points data to [track with motile](https://liveimagetrackingtools.org/napari-track-edit/tracking.html#tracking-with-motile),
+- load an image to [manually track objects](https://liveimagetrackingtools.org/napari-track-edit/tracking.html#tracking-from-scratch),
+- or [load existing tracking data](https://liveimagetrackingtools.org/napari-track-edit/saving_loading.html#loading-tracks) to explore or edit.
 
 If you would like to see an example first, go to `Plugins` > `Napari Track Edit` > `Widget - Getting started`, and click on one of the two examples, `Hela cells (2D)` or `Mouse embryo (3D)`, to download and view them:
 
@@ -71,8 +71,8 @@ If you would like to see an example first, go to `Plugins` > `Napari Track Edit`
 - Mouse Embryo Membrane is a 3D dataset of images and segmentations of a membrane labeled developing early mouse embryo (4-26 cells)
 from [`Fabrèges et al (2024)`](https://www.science.org/doi/10.1126/science.adh1145) available [`here`](https://zenodo.org/records/13903500).
 
-For details, please read the [documentation](https://live-image-tracking-tools.github.io/napari-track-edit/).
-If you are new to napari-track-edit, you can follow this [tutorial](https://live-image-tracking-tools.github.io/napari-track-edit/napari-track-edit_tutorial.html) to learn the basics.
+For details, please read the [documentation](https://liveimagetrackingtools.org/napari-track-edit/).
+If you are new to napari-track-edit, you can follow this [tutorial](https://liveimagetrackingtools.org/napari-track-edit/napari-track-edit_tutorial.html) to learn the basics.
 
 https://github.com/user-attachments/assets/cd23271d-bbe6-40c2-80cb-8404136a564a
 

@@ -16,7 +16,7 @@ from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksV
 from napari_track_edit.download_progress import DownloadCancelled, download_progress
 from napari_track_edit.example_data import SAMPLE_TRACKS, raw_data_is_downloaded
 
-DOCS_URL = "https://live-image-tracking-tools.github.io/napari-track-edit"
+DOCS_URL = "https://liveimagetrackingtools.org/napari-track-edit"
 KEYBINDINGS_URL = f"{DOCS_URL}/key_bindings.html"
 TUTORIAL_URL = f"{DOCS_URL}/napari-track-edit_tutorial.html"
 

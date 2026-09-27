@@ -7,7 +7,7 @@
 You can open and edit existing tracking data, manually create new tracking results, or run automatic tracking via the Napari Track Edit integration, which offers object tracking using the [`motile`](https://funkelab.github.io/motile/) library.
 
 This tutorial will walk you through the main functionalities.
-You can find the full documentation [`here`](https://live-image-tracking-tools.github.io/napari-track-edit/).
+You can find the full documentation [`here`](https://liveimagetrackingtools.org/napari-track-edit/).
 
 ## Preparations
 
@@ -143,7 +143,7 @@ Manual tracking from scratch requires that you open an `Image` layer first. In t
     <p>2. Go to <code>File > Open Sample > Napari Track Edit > Fluo-N2DL-HeLa crop (2D)</code> to open the 2D HeLa cell test dataset</p>
     <p>3. Hide the segmentation '01_ST' and 'centroids' layers for now, but select 01_raw and go to the <code>Tracking</code> > <code>Track from Scratch</code>. Select <code>01_raw</code> from the dropdown menu, and click <code>Track with Points</code>. A new Points layer is generated, and you should see a new element in the Results list: 01_raw_manual_tracks. Select the <code>Add points</code> tool in the top left corner of the layer controls, and click on one of the nuclei in the viewer. Go to the next time point, and click again. You should see a growing lineage tree at the bottom of your screen. What happens if you add multiple points in the same time point? Try to build three small lineages.</p>
     <p>4. To compute tracks automatically, go to the <code>Tracking</code> tab, and choose parameters for tracking. Use '01_ST' as input layer. You can consult the
-    <a href="https://live-image-tracking-tools.github.io/napari-track-edit/tracking.html" target="_blank" style="color: #0073e6; text-decoration: underline;">documentation</a> to help you decide on the different values. Click <code>Run Tracking</code> to start the computation. After the solver has finished, you should see that the Lineage View is now populated with tracks and that the cells are relabeled.</p>
+    <a href="https://liveimagetrackingtools.org/napari-track-edit/tracking.html" target="_blank" style="color: #0073e6; text-decoration: underline;">documentation</a> to help you decide on the different values. Click <code>Run Tracking</code> to start the computation. After the solver has finished, you should see that the Lineage View is now populated with tracks and that the cells are relabeled.</p>
     <p>5. Click <code>Back to editing</code> and test multiple combinations of parameters. Note that you can also use the Points layer 'centroids' as input. Compare the different tracking results by clicking on the different entries in the <code>Tracks List</code> widget.</p>
 </div>
 
@@ -179,7 +179,7 @@ Apart from the lineage tree, you can also view object properties in the <code>Li
 
 ## Editing Tracks
 
-When inspecting a tracking result, you may notice mistakes that you want to correct by deleting, adding, or modifying nodes and/or edges. You can edit the tracks using the buttons in the <code>Editing & Selection</code> tab or their corresponding keyboard shortcuts, or by editing the Napari Points and Segmentation layers directly. To undo/redo an action, click <code>Undo</code>/<code>Redo</code> in the menu or press <code>Z</code>/ <code>R</code>. Find out more in <a href="https://live-image-tracking-tools.github.io/napari-track-edit/editing.html"><code>documentation</code></a>.
+When inspecting a tracking result, you may notice mistakes that you want to correct by deleting, adding, or modifying nodes and/or edges. You can edit the tracks using the buttons in the <code>Editing & Selection</code> tab or their corresponding keyboard shortcuts, or by editing the Napari Points and Segmentation layers directly. To undo/redo an action, click <code>Undo</code>/<code>Redo</code> in the menu or press <code>Z</code>/ <code>R</code>. Find out more in <a href="https://liveimagetrackingtools.org/napari-track-edit/editing.html"><code>documentation</code></a>.
 
 <div style="display: flex; flex-wrap: nowrap; justify-content: center; align-items: flex-start; gap: 10px; margin: 10px 0; break-inside: avoid; page-break-inside: avoid;">
     <figure style="flex: 1449 1 0; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
