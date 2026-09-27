@@ -145,6 +145,9 @@ class TrackGraph(napari.layers.Tracks):
             # (e.g. after undoing the very first action). Same as in __init__.
             track_data = np.zeros((1, track_data.shape[1]), dtype=float)
 
+        # Setting data resets the features, which drops node_id. Switch to track_id first
+        # to avoid napari warning about it, node_id is restored in _apply_node_colors.
+        self._color_by = "track_id"
         self.data = track_data
         self.graph = track_edges
         self.tracks_layer_graph = copy.deepcopy(self.graph)

@@ -59,7 +59,6 @@ class TrackingFromScratch(QWidget):
         create_layout.addLayout(start_row)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(create_box)
 
         layout.addStretch()
