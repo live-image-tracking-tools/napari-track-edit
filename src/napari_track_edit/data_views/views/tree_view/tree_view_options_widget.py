@@ -19,6 +19,7 @@ class TreeViewOptionsWidget(QWidget):
 
         display_box = QGroupBox("Show")
         display_layout = QHBoxLayout()
+        display_layout.setContentsMargins(6, 8, 6, 4)
 
         self.track_ids_checkbox = QCheckBox("Track IDs")
         self.track_ids_checkbox.setChecked(show_track_ids)
@@ -46,8 +47,8 @@ class TreeViewOptionsWidget(QWidget):
 
         display_box.setLayout(display_layout)
         display_box.setMaximumWidth(230)
-        display_box.setMaximumHeight(60)
 
         layout = QVBoxLayout()
+        layout.setContentsMargins(5, 0, 2, 0)
         layout.addWidget(display_box)
         self.setLayout(layout)

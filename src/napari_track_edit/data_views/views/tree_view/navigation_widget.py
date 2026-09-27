@@ -42,6 +42,7 @@ class NavigationWidget(QWidget):
 
         navigation_box = QGroupBox("Navigation [\u2b05 \u27a1 \u2b06 \u2b07]")
         navigation_layout = QHBoxLayout()
+        navigation_layout.setContentsMargins(6, 8, 6, 4)
         left_button = QPushButton("\u2b05")
         right_button = QPushButton("\u27a1")
         up_button = QPushButton("\u2b06")
@@ -57,10 +58,11 @@ class NavigationWidget(QWidget):
         navigation_layout.addWidget(up_button)
         navigation_layout.addWidget(down_button)
         navigation_box.setLayout(navigation_layout)
+        navigation_box.setMinimumWidth(170)
         navigation_box.setMaximumWidth(250)
-        navigation_box.setMaximumHeight(60)
 
         layout = QHBoxLayout()
+        layout.setContentsMargins(5, 0, 2, 0)
         layout.addWidget(navigation_box)
 
         self.setLayout(layout)

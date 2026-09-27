@@ -9,6 +9,7 @@ from qtpy.QtCore import QEvent, QObject
 from qtpy.QtGui import QKeyEvent
 from qtpy.QtWidgets import (
     QHBoxLayout,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -126,18 +127,22 @@ class TreeWidget(QWidget):
         panel_layout.addWidget(self.navigation_widget)
         panel_layout.addWidget(self.flip_widget)
         panel_layout.addWidget(self.options_widget)
+        panel_layout.addStretch(1)
         panel_layout.setSpacing(0)
         panel_layout.setContentsMargins(0, 0, 0, 0)
 
         panel = QWidget()
         panel.setLayout(panel_layout)
-        panel.setMaximumWidth(1060)  # 930 + room for the options checkboxes
-        panel.setMaximumHeight(82)
+        panel.setMaximumWidth(1140)  # 930 + room for the options checkboxes
+        panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
-        # Make a collapsible for TreeView widgets
+        # Make a collapsible for TreeView widgets. The margins live on the collapsible's
+        # outer layout and on the layout of its content widget, so set both.
         collapsible_widget = QCollapsible("Show/Hide Tree View Controls")
         collapsible_widget.layout().setContentsMargins(0, 0, 0, 0)
         collapsible_widget.layout().setSpacing(0)
+        collapsible_widget.content().layout().setContentsMargins(3, 3, 3, 3)
+        collapsible_widget.content().layout().setSpacing(3)
         collapsible_widget.addWidget(panel)
         collapsible_widget.collapse(animate=False)
 
