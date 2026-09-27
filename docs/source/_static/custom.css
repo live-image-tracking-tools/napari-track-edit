@@ -19,12 +19,13 @@
     --nte-green-dark: #2e9e63;
     --nte-blue: #4a8ae2;
     --nte-blue-dark: #2e6fc7;
+    --nte-blue-light: #c6ddfd;
 }
 
 /* sidebar header (project name + search) and the top bar on small screens */
 .wy-side-nav-search,
 .wy-nav-top {
-    background-color: var(--nte-pink);
+    background-color: var(--nte-blue-light);
 }
 /* dark project name and home icon, better readable on the pink */
 .wy-side-nav-search > a,
@@ -37,7 +38,7 @@
     color: #000;
 }
 .wy-side-nav-search input[type="text"] {
-    border-color: var(--nte-pink-dark);
+    border-color: var(--nte-blue);
 }
 
 /* sidebar: section captions in green, current page marked in pink */
@@ -90,5 +91,5 @@ a:hover {
 .rst-content .tip,
 .rst-content .hint,
 .rst-content .important {
-    background: #e6f7ee;
+    background: var(--blue-light);
 }
