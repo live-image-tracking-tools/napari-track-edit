@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import numpy as np
 from napari.utils import DirectLabelColormap
-from napari.utils.colormaps import label_colormap
+from napari.utils.colormaps import ensure_colormap, label_colormap
 
 if TYPE_CHECKING:
     from funtracks.data_model import Tracks
@@ -13,6 +13,40 @@ if TYPE_CHECKING:
 # What a node is painted with while its own color is not known yet - see add_node.
 PINK = (0.75, 0.08, 0.4)
 GREY = (0.7, 0.7, 0.7)  # What every node is colored when no feature is selected at all.
+
+
+def _split_key(base_key: str, index: int) -> str:
+    """The synthetic per-component feature key for one value of a
+    `num_values > 1` feature (e.g. EllipsoidAxes' major/minor axis lengths) -
+    lets `TrackColormap` color by a single component like it would a plain
+    scalar feature. Never collides with a real feature key, which can't
+    contain "[" or "]" (both are invalid in the graph attribute names
+    `Tracks.get_nodes_attr` reads)."""
+    return f"{base_key}[{index}]"
+
+
+def _split_feature(feature_key: str) -> tuple[str, int] | None:
+    """`(base_key, index)` if `feature_key` was built by `_split_key`, else None."""
+    if feature_key.endswith("]") and "[" in feature_key:
+        base_key, _, index_str = feature_key[:-1].rpartition("[")
+        if base_key and index_str.isdigit():
+            return base_key, int(index_str)
+    return None
+
+
+def _split_value_name(feature: dict, index: int) -> str:
+    """One component's display name, e.g. "major_axis_length" - same naming
+    tiers `extract_sorted_tracks` uses inline for the tree view: an explicit
+    per-index display name, then `value_names`, then `{display_name}_{index}`.
+    """
+    display_name = feature.get("display_name", None)
+    if isinstance(display_name, list | tuple):
+        return display_name[index]
+    value_names = feature.get("value_names", None)
+    num_values = feature.get("num_values", 1)
+    if isinstance(value_names, list) and len(value_names) == num_values:
+        return str(value_names[index])
+    return f"{display_name}_{index}"
 
 
 def construct_direct_colormap(color_dict: dict) -> DirectLabelColormap:
@@ -116,6 +150,45 @@ class BinaryColorSource:
         ).map(np.asarray([1, 2]))
 
 
+class GradientColorSource:
+    """Continuous feature (area, mean intensity, ...) -> color, via one of
+    napari's own named colormaps (default "viridis").
+
+    `vmin`/`vmax` are not known up front - a `Feature` carries no range, only
+    its `value_type` (see `make_color_source`) - so they're set from the data
+    on the first `map()` call and then held fixed, the same "snapshot on
+    first use" behavior `CategoricalColorSource` gets for free from
+    `label_colormap`'s fixed cycle. `shuffle()` re-derives them from whatever
+    values are passed in, e.g. after a feature switch.
+    """
+
+    def __init__(self, colormap: str = "plasma"):
+        self._colormap = ensure_colormap(colormap)
+        self.vmin: float | None = None
+        self.vmax: float | None = None
+
+    def map(self, values: np.ndarray) -> np.ndarray:
+        arr = np.atleast_1d(np.asarray(values, dtype=float))
+        if self.vmin is None or self.vmax is None:
+            self._set_range(arr)
+        span = self.vmax - self.vmin
+        norm = np.zeros_like(arr) if span == 0 else (arr - self.vmin) / span
+        colors = self._colormap.map(np.clip(norm, 0, 1))
+        return colors[0] if np.asarray(values).ndim == 0 else colors
+
+    def _set_range(self, arr: np.ndarray) -> None:
+        finite = arr[np.isfinite(arr)]
+        self.vmin, self.vmax = (
+            (0.0, 1.0) if finite.size == 0 else (float(finite.min()), float(finite.max()))
+        )
+
+    def shuffle(self) -> None:
+        """Drop the cached range so the next `map()` call re-derives it from
+        whatever values it's given - e.g. after switching to this feature."""
+        self.vmin = None
+        self.vmax = None
+
+
 class ConstantColorSource:
     """One color for every node"""
 
@@ -139,14 +212,22 @@ def make_color_source(tracks: Tracks | None, feature_key: str | None) -> ColorSo
     """The `ColorSource` that can render a feature's values.
 
     A source and a feature have to match: a group's True/False needs two
-    colors, no feature at all means one flat color, categorical features get random
-    colors via CategoricalColorSource. TODO: GradientColorSource for continuous features.
+    colors, no feature at all means one flat color, a numeric feature (area,
+    intensity, ...) gets a gradient via GradientColorSource, and everything
+    else (tracklet/lineage ids) gets random colors via CategoricalColorSource.
     """
     if feature_key is None:
         return ConstantColorSource()
-    feature = tracks.features.get(feature_key) if tracks is not None else None
+    split = _split_feature(feature_key)
+    base_key = split[0] if split is not None else feature_key
+    feature = tracks.features.get(base_key) if tracks is not None else None
+    if split is not None:
+        # one component of a num_values > 1 feature is always a plain scalar
+        return GradientColorSource()
     if feature is not None and feature["value_type"] == "bool":
         return BinaryColorSource()
+    if feature is not None and feature["value_type"] == "float":
+        return GradientColorSource()
     return CategoricalColorSource()
 
 
@@ -166,9 +247,11 @@ def color_feature_available(tracks: Tracks | None, feature_key: str | None) -> b
         return True
     if tracks is None:
         return False
+    split = _split_feature(feature_key)
+    base_key = split[0] if split is not None else feature_key
     return (
-        feature_key in tracks.features
-        and feature_key in tracks.graph_solution.node_attr_keys()
+        base_key in tracks.features
+        and base_key in tracks.graph_solution.node_attr_keys()
     )
 
 
@@ -200,10 +283,42 @@ def categorical_feature_keys(tracks: Tracks | None) -> list[str]:
     return keys
 
 
+def numeric_feature_keys(tracks: Tracks | None) -> list[str]:
+    """The node features that can drive gradient coloring: every float
+    feature with a column on the graph (see `color_feature_available`).
+    Int features are excluded - track/lineage ids are ints too, and those are
+    categorical (see `categorical_feature_keys`), not continuous.
+
+    A `num_values > 1` feature (e.g. EllipsoidAxes' major/minor axis lengths)
+    has no single scalar to put on a gradient, so it's offered one component
+    at a time instead, via the synthetic keys `_split_key` builds - same
+    approach the tree view uses to plot them (see `extract_sorted_tracks`).
+    """
+    if tracks is None:
+        return []
+    features = tracks.features
+    attr_keys = set(tracks.graph_solution.node_attr_keys())
+    keys: list[str] = []
+    for key, feature in features.node_features.items():
+        if feature["value_type"] != "float" or key not in attr_keys:
+            continue
+        num_values = feature.get("num_values", 1)
+        if num_values > 1:
+            keys += [_split_key(key, i) for i in range(num_values)]
+        else:
+            keys.append(key)
+    return keys
+
+
 def feature_display_name(tracks: Tracks | None, feature_key: str | None) -> str:
     """The label to show for a feature in the UI."""
     if feature_key is None:
         return "None"
+    split = _split_feature(feature_key)
+    if split is not None:
+        base_key, index = split
+        feature = tracks.features.get(base_key) if tracks is not None else None
+        return feature_key if feature is None else _split_value_name(feature, index)
     feature = tracks.features.get(feature_key) if tracks is not None else None
     return feature_key if feature is None else feature.get("display_name", feature_key)
 
@@ -312,7 +427,14 @@ class TrackColormap:
 
     def _feature_values(self, tracks: Tracks, nodes) -> list:
         key = self.feature_key or tracks.features.tracklet_key
-        return tracks.get_nodes_attr(nodes, key)
+        split = _split_feature(key)
+        if split is None:
+            return tracks.get_nodes_attr(nodes, key)
+        # a component of a num_values > 1 feature (e.g. EllipsoidAxes) - the
+        # graph only has the whole vector under base_key, so read that and
+        # pick out this component per node.
+        base_key, index = split
+        return [v[index] for v in tracks.get_nodes_attr(nodes, base_key)]
 
     def map(self, values: np.ndarray) -> np.ndarray:
         """Map feature values to base RGBA (no per-node alpha, no cache lookup).

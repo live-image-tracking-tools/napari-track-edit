@@ -21,6 +21,7 @@ from superqt import QLabeledDoubleSlider
 from napari_track_edit.data_views.colormap import (
     categorical_feature_keys,
     feature_display_name,
+    numeric_feature_keys,
 )
 from napari_track_edit.data_views.views.ortho_views import initialize_ortho_views
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
@@ -87,8 +88,9 @@ class ColorByWidget(QWidget):
     updates the shared colormap *and* rebuilds the labels, points, tracks,
     tree and table.
 
-    Currently, only categorical features are offered (see `categorical_feature_keys`),
-    plus "None", which paints every node one flat color.
+    Offers categorical features (see `categorical_feature_keys`) and
+    continuous/gradient features (see `numeric_feature_keys`), plus "None",
+    which paints every node one flat color.
     """
 
     def __init__(self, tracks_viewer: TracksViewer):
@@ -122,7 +124,11 @@ class ColorByWidget(QWidget):
     def _populate(self, *_args) -> None:
         """Rebuild the entries and show the feature currently in use."""
 
-        keys = [None, *categorical_feature_keys(self.tracks_viewer.tracks)]
+        keys = [
+            None,
+            *categorical_feature_keys(self.tracks_viewer.tracks),
+            *numeric_feature_keys(self.tracks_viewer.tracks),
+        ]
         current = self.tracks_viewer.color_feature_key
         with QSignalBlocker(self.combo):
             self.combo.clear()
