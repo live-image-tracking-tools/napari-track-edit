@@ -8,3 +8,87 @@
 .wy-table-responsive table td:first-child * {
     white-space: nowrap;
 }
+
+/* -- Colors from the logo -----------------------------------------------------
+   pink #ff5a93, green #52cc8a, blue #4a8ae2. Darker shades are used where text
+   needs to stay readable on a white background. */
+:root {
+    --nte-pink: #ff5a93;
+    --nte-pink-dark: #d23c74;
+    --nte-green: #52cc8a;
+    --nte-green-dark: #2e9e63;
+    --nte-blue: #4a8ae2;
+    --nte-blue-dark: #2e6fc7;
+}
+
+/* sidebar header (project name + search) and the top bar on small screens */
+.wy-side-nav-search,
+.wy-nav-top {
+    background-color: var(--nte-pink);
+}
+/* dark project name and home icon, better readable on the pink */
+.wy-side-nav-search > a,
+.wy-side-nav-search > a:visited,
+.wy-side-nav-search > a:hover,
+.wy-side-nav-search .wy-dropdown > a,
+.wy-nav-top a,
+.wy-nav-top a:visited,
+.wy-nav-top i {
+    color: #000;
+}
+.wy-side-nav-search input[type="text"] {
+    border-color: var(--nte-pink-dark);
+}
+
+/* sidebar: section captions in green, current page marked in pink */
+.wy-menu-vertical header,
+.wy-menu-vertical p.caption {
+    color: var(--nte-green);
+}
+.wy-menu-vertical li.toctree-l1.current > a {
+    border-left: 4px solid var(--nte-pink);
+}
+
+/* links */
+a,
+a:visited,
+.rst-content a code {
+    color: var(--nte-blue-dark);
+}
+a:hover {
+    color: var(--nte-pink-dark);
+}
+.wy-menu-vertical a,
+.wy-menu-vertical a:visited {
+    color: #d9d9d9;
+}
+.wy-menu-vertical li.current a,
+.wy-menu-vertical li.current a:visited {
+    color: #404040;
+}
+
+/* inline code */
+.rst-content code.literal,
+.rst-content tt.literal {
+    color: var(--nte-pink-dark);
+}
+
+/* admonitions */
+.rst-content .note .admonition-title,
+.rst-content .seealso .admonition-title {
+    background: var(--nte-blue);
+}
+.rst-content .note,
+.rst-content .seealso {
+    background: #e8f0fc;
+}
+.rst-content .tip .admonition-title,
+.rst-content .hint .admonition-title,
+.rst-content .important .admonition-title {
+    background: var(--nte-green);
+}
+.rst-content .tip,
+.rst-content .hint,
+.rst-content .important {
+    background: #e6f7ee;
+}
