@@ -22,8 +22,7 @@ For example, to create a new environment with conda:
 ```
 conda create -n napari_track_edit python=3.12
 conda activate napari_track_edit
-pip install napari-track-edit
-pip install pyqt6
+pip install "napari-track-edit[all]"
 ```
 
 ### Verify installation of the plugin
