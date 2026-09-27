@@ -11,6 +11,7 @@ class FlipTreeWidget(QWidget):
         super().__init__()
 
         flip_layout = QVBoxLayout()
+        flip_layout.setContentsMargins(6, 8, 6, 4)
         display_box = QGroupBox("Plot axes [F]")
         flip_button = QPushButton("Flip")
         flip_button.clicked.connect(self.flip)
@@ -18,10 +19,11 @@ class FlipTreeWidget(QWidget):
         display_box.setLayout(flip_layout)
 
         layout = QVBoxLayout()
+        layout.setContentsMargins(5, 0, 2, 0)
         layout.addWidget(display_box)
         self.setLayout(layout)
-        display_box.setMaximumWidth(90)
-        display_box.setMaximumHeight(82)
+        display_box.setMinimumWidth(110)
+        display_box.setMaximumWidth(110)
 
     def flip(self):
         """Send a signal to flip the axes of the plot"""

@@ -23,6 +23,7 @@ class TreeViewModeWidget(QWidget):
 
         display_box = QGroupBox("Display [Q]")
         display_layout = QHBoxLayout()
+        display_layout.setContentsMargins(6, 8, 6, 4)
         button_group = QButtonGroup()
         self.show_all_radio = QRadioButton("All objects")
         self.show_all_radio.setChecked(True)
@@ -35,9 +36,9 @@ class TreeViewModeWidget(QWidget):
         display_layout.addWidget(self.show_lineage_radio)
         display_box.setLayout(display_layout)
         display_box.setMaximumWidth(250)
-        display_box.setMaximumHeight(60)
 
         layout = QVBoxLayout()
+        layout.setContentsMargins(5, 0, 2, 0)
         layout.addWidget(display_box)
 
         self.setLayout(layout)

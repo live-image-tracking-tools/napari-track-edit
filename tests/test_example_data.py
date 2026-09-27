@@ -47,6 +47,7 @@ DOWNLOAD_SOURCES = {
 }
 
 
+@pytest.mark.network
 @pytest.mark.parametrize("name", list(DOWNLOAD_SOURCES))
 def test_download_sources_are_reachable(name):
     """Everything the app downloads is still available. Fetches the first byte
