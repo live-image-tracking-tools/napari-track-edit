@@ -1,3 +1,5 @@
+
+
 # Napari Track Edit
 
 [![tests](https://github.com/live-image-tracking-tools/napari-track-edit/workflows/tests/badge.svg)](https://github.com/live-image-tracking-tools/napari-track-edit/actions)
@@ -72,7 +74,7 @@ from [`Fabrèges et al (2024)`](https://www.science.org/doi/10.1126/science.adh1
 For details, please read the [documentation](https://live-image-tracking-tools.github.io/napari-track-edit/).
 If you are new to napari-track-edit, you can follow this [tutorial](https://live-image-tracking-tools.github.io/napari-track-edit/napari-track-edit_tutorial.html) to learn the basics.
 
-https://github.com/user-attachments/assets/13ed1b35-1cef-48ae-a8b5-3720bb0dbbcb
+https://github.com/user-attachments/assets/cd23271d-bbe6-40c2-80cb-8404136a564a
 
 ## Issues
 
