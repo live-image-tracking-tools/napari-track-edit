@@ -1,7 +1,10 @@
+from pathlib import Path
+
 import napari
 from qtpy.QtCore import Qt, QUrl
-from qtpy.QtGui import QDesktopServices
+from qtpy.QtGui import QDesktopServices, QPixmap
 from qtpy.QtWidgets import (
+    QHBoxLayout,
     QLabel,
     QMessageBox,
     QTextBrowser,
@@ -13,12 +16,15 @@ from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksV
 from napari_track_edit.download_progress import DownloadCancelled, download_progress
 from napari_track_edit.example_data import SAMPLE_TRACKS, raw_data_is_downloaded
 
-DOCS_URL = "https://live-image-tracking-tools.github.io/napari-track-edit"
+DOCS_URL = "https://liveimagetrackingtools.org/napari-track-edit"
 KEYBINDINGS_URL = f"{DOCS_URL}/key_bindings.html"
-TUTORIAL_URL = "https://github.com/live-image-tracking-tools/napari-track-edit/blob/main/assets/napari-track-edit_tutorial.pdf"
+TUTORIAL_URL = f"{DOCS_URL}/napari-track-edit_tutorial.html"
 
 # Links use this scheme to load an example instead of navigating to a page.
 EXAMPLE_SCHEME = "load-example"
+
+LOGO_PATH = Path(__file__).parents[1] / "resources" / "logo.png"
+LOGO_HEIGHT = 58  # in logical pixels
 
 
 class WelcomeWidget(QWidget):
@@ -33,13 +39,17 @@ class WelcomeWidget(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
-        # Title
+        # Title, with the logo in the top right corner
         title = QLabel("Napari Track Edit")
         font = title.font()
         font.setPointSize(16)
         font.setBold(True)
         title.setFont(font)
-        layout.addWidget(title)
+        title_row = QHBoxLayout()
+        title_row.addWidget(self._logo_label())
+        title_row.addWidget(title)
+        title_row.addStretch()
+        layout.addLayout(title_row)
 
         # Top links
         example_links = "&nbsp;&nbsp;".join(
@@ -98,6 +108,20 @@ class WelcomeWidget(QWidget):
 
         layout.addWidget(content)
         self.setLayout(layout)
+
+    def _logo_label(self) -> QLabel:
+        """A label showing the plugin logo, scaled to LOGO_HEIGHT and kept sharp on
+        high-dpi screens."""
+        logo = QLabel()
+        pixmap = QPixmap(str(LOGO_PATH))
+        if not pixmap.isNull():
+            ratio = self.devicePixelRatioF()
+            pixmap = pixmap.scaledToHeight(
+                round(LOGO_HEIGHT * ratio), Qt.SmoothTransformation
+            )
+            pixmap.setDevicePixelRatio(ratio)
+            logo.setPixmap(pixmap)
+        return logo
 
     def _on_link_clicked(self, url: QUrl) -> None:
         """Open documentation links in a browser, load examples in the app."""

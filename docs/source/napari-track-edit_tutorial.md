@@ -1,13 +1,13 @@
+<link rel="stylesheet" href="napari-track-edit_tutorial.css">
+
 # Interactive Cell Tracking with Napari Track Edit
-*September 2026 - Napari Track Edit v6.\* - Caroline Malin-Mayor - Teun Huijben - Anniek Stokkermans*
+*September 2026 - Napari Track Edit v1.\* - Caroline Malin-Mayor - Teun Huijben - Anniek Stokkermans*
 
 [`Napari Track Edit`](https://www.Napari-hub.org/plugins/motile-tracker) is a Napari plugin for interactive visualization, navigation, and editing of object tracking results.
 You can open and edit existing tracking data, manually create new tracking results, or run automatic tracking via the Napari Track Edit integration, which offers object tracking using the [`motile`](https://funkelab.github.io/motile/) library.
 
 This tutorial will walk you through the main functionalities.
 You can find the full documentation [`here`](https://liveimagetrackingtools.org/napari-track-edit/).
-
-Please follow the preparation instructions below before the workshop.
 
 ## Preparations
 
@@ -20,26 +20,20 @@ Currently, this requires python >=3.11.
 For example, to create a new environment with conda:
 
 ```
-conda create -n napari_track_edit python=3.11
+conda create -n napari_track_edit python=3.12
 conda activate napari_track_edit
-pip install napari-track-edit
-pip install pyqt6
+pip install "napari-track-edit[all]"
 ```
 
 ### Verify installation of the plugin
-If your installation was successful, you should be able to find 'Napari Track Edit' under `Plugins`. Please go to `Plugins > Napari Track Edit > Open all widgets` to check if the start up screen looks like this:
+If your installation was successful, you should be able to start `napari` from the terminal and find 'Napari Track Edit' under `Plugins`. Please go to `Plugins > Napari Track Edit > Open all widgets` to check if the start up screen looks like this:
 
 <div style="display: flex; flex-wrap: nowrap; justify-content: center; align-items: flex-start; gap: 20px; margin: 20px 0; break-inside: avoid; page-break-inside: avoid;">
-    <figure style="flex: 0 1 auto; width: 430px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-        <img src="./main_widget_startup.png" style="display: block; width: 100%; height: auto;" />
+    <figure style="flex: 0 1 auto; width: 390px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
+        <img src="images/main_widget_startup.png" style="display: block; width: 100%; height: auto;" />
         <figcaption style="margin-top: 6px; font-size: 0.9em;">Napari Track Edit startup screen</figcaption>
     </figure>
 </div>
-
-### Plugin layout
-All plugin widgets are listed under `Plugins > Napari Track Edit`, where they can be (re)opened individually or all at once.
-You can hide, close, or rearrange the widgets as you like. The `/` key toggles the visibility of all widgets at once.
-You can find an overview of all mouse and keyboard bindings at the end of this document.
 
 ### Downloading sample data
 Two sample datasets are provided with the plugin:
@@ -47,24 +41,26 @@ Two sample datasets are provided with the plugin:
 - Mouse Embryo Membrane is a 3D dataset of images and segmentations of a membrane labeled developing early mouse embryo (4-26 cells)
 from [`Fabrèges et al (2024)`](https://www.science.org/doi/10.1126/science.adh1145) available [`here`](https://zenodo.org/records/13903500).
 
-To download and open the sample data, click `File > Open Sample > Napari Track Edit > Fluo-N2DL-HeLa (2D)` and `File > Open Sample > Napari Track Edit > Mouse Embryo Membranes (3D)`.
-This may take a few minutes. After downloading, the data will remain available in the plugin for re-use.
+The sample image data are listed under `File > Open Sample > Napari Track Edit > Fluo-N2DL-HeLa (2D)` and `File > Open Sample > Napari Track Edit > Mouse Embryo Membranes (3D)`. Tracks for the sample data are available as well: go to `Plugins > Napari Track Edit > Getting Started`, and click on one of the two examples: `Hela cells (2D)` or `Mouse embryo (3D)` to download and view them. After downloading, the data will remain available in the plugin for re-use.
 
-If you see these images after opening the sample data, you are ready to start the workshop!
-
-<div style="display: flex; flex-wrap: nowrap; justify-content: center; align-items: flex-start; gap: 20px; margin: 20px 0; break-inside: avoid; page-break-inside: avoid;">
-    <figure style="flex: 0 1 auto; width: 320px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-        <img src="./sample1.png" style="display: block; width: 100%; height: auto;" />
-        <figcaption style="margin-top: 6px; font-size: 0.9em;">Fluo-N2DL-HeLa (2D)</figcaption>
-    </figure>
-    <figure style="flex: 0 1 auto; width: 320px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-        <img src="./sample2.png" style="display: block; width: 100%; height: auto;" />
-        <figcaption style="margin-top: 6px; font-size: 0.9em;">Mouse Embryo Membranes (3D)</figcaption>
-    </figure>
-</div>
+### Plugin layout
+All plugin widgets are listed under `Plugins > Napari Track Edit`, where they can be (re)opened individually or all at once.
+You can hide, close, or rearrange the widgets as you like. The `/` key toggles the visibility of all widgets at once.
+You can find an overview of all mouse and keyboard bindings at the end of this document.
 
 ## Inspecting a tracking result
-To get familiar with the tool, it is easiest to look at an example first. Go to `Plugins > Napari Track Edit > Getting Started`, and click on one of the two examples: Hela cells (2D) or Mouse embryo (3D) at the bottom of the widget.
+To get familiar with the tool, it is easiest to look at an example first. Opening the sample data via `Plugins > Napari Track Edit > Getting Started` should look like this:
+
+<div style="display: flex; flex-wrap: nowrap; justify-content: center; align-items: flex-start; gap: 10px; margin: 10px 0; break-inside: avoid; page-break-inside: avoid;">
+    <figure style="flex: 0 1 auto; width: 320px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
+        <img src="images/tracking_result_2D.jpg" style="display: block; width: 100%; height: auto;" />
+        <figcaption style="margin-top: 6px; font-size: 0.9em;">Viewing HeLa Cells (2D) sample tracks with the Table widget active</figcaption>
+    </figure>
+    <figure style="flex: 0 1 auto; width: 320px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
+        <img src="images/tracking_result_3D.jpg" style="display: block; width: 100%; height: auto;" />
+        <figcaption style="margin-top: 6px; font-size: 0.9em;">Viewing Mouse Embryo (3D) sample tracks with orthogonal views enabled</figcaption>
+    </figure>
+</div>
 
 ### Track visualization
 Tracking results are displayed with:
@@ -77,28 +73,17 @@ Tracking results are displayed with:
 - a **Lineage View**, available from `Plugins > Napari Track Edit > Widget - Lineage View`, with nodes and edges color-coded by tracklet ID and with symbols matching the state of nodes.
 - a **Table View**, available from `Plugins > Napari Track Edit > Widget - Table`, with all object properties.
 
-<div style="display: flex; flex-wrap: nowrap; justify-content: center; align-items: flex-start; gap: 20px; margin: 20px 0; break-inside: avoid; page-break-inside: avoid;">
-    <figure style="flex: 0 1 auto; width: 320px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-        <img src="./tracking_result2D.png" style="display: block; width: 100%; height: auto;" />
-        <figcaption style="margin-top: 6px; font-size: 0.9em;">Viewing a 2D + time tracking result</figcaption>
-    </figure>
-    <figure style="flex: 0 1 auto; width: 320px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-        <img src="./tracking_result3D.png" style="display: block; width: 100%; height: auto;" />
-        <figcaption style="margin-top: 6px; font-size: 0.9em;">Viewing a 3D + time tracking result with orthogonal views enabled</figcaption>
-    </figure>
-</div>
-
 ### Selecting nodes
 You can select one or multiple nodes for closer inspection. Selection of nodes is possible in the Points and Labels layers, in the Lineage View, and in the Table view. Selecting a single node  highlights it and centers the object if it is outside the viewing range. You can append (or subtract) nodes to (from) the selection by pressing `SHIFT` when clicking.
 You can restrict the display to the lineages of selected nodes in the Viewer (via the `Visualization` tab) and in the `Lineage View` (via the Lineage View controls).
 
 <div style="display: flex; flex-wrap: nowrap; justify-content: center; align-items: flex-start; gap: 20px; margin: 20px 0; break-inside: avoid; page-break-inside: avoid;">
     <figure style="flex: 0 1 auto; width: 320px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-        <img src="./all_objects.png" style="display: block; width: 100%; height: auto;" />
+        <img src="images/all_objects.png" style="display: block; width: 100%; height: auto;" />
         <figcaption style="margin-top: 6px; font-size: 0.9em;">Display all objects</figcaption>
     </figure>
     <figure style="flex: 0 1 auto; width: 320px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-        <img src="./lineages.png" style="display: block; width: 100%; height: auto;" />
+        <img src="images/lineages.png" style="display: block; width: 100%; height: auto;" />
         <figcaption style="margin-top: 6px; font-size: 0.9em;">Display the lineages that have at least one selected node</figcaption>
     </figure>
 </div>
@@ -124,7 +109,7 @@ Manual tracking from scratch requires that you open an `Image` layer first. In t
 
 <div style="display: flex; flex-wrap: nowrap; justify-content: center; align-items: flex-start; gap: 20px; margin: 20px 0; break-inside: avoid; page-break-inside: avoid;">
     <figure style="flex: 0 1 auto; width: 520px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-        <img src="./manual_editing.png" style="display: block; width: 100%; height: auto;" />
+        <img src="images/manual_editing.png" style="display: block; width: 100%; height: auto;" />
         <figcaption style="margin-top: 6px; font-size: 0.9em;">Manual tracking with Points</figcaption>
     </figure>
 </div>
@@ -139,13 +124,13 @@ Manual tracking from scratch requires that you open an `Image` layer first. In t
         After the solve is complete, you can find the Tracking Result in the <code>Tracks List</code> tab.
         Tracking Results will accumulate here for each set of parameters that you tried.
     </div>
-    <div style="display: flex; flex-wrap: nowrap; justify-content: center; align-items: flex-start; gap: 20px; flex: 0 0 auto;">
-        <figure style="flex: 0 1 auto; width: 170px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-            <img src="./tracking_parameters.png" style="display: block; width: 100%; height: auto;" />
+    <div style="display: flex; flex-wrap: nowrap; align-items: flex-end; gap: 16px; flex: 0 0 360px;">
+        <figure style="flex: 465 1 0; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
+            <img src="images/tracking_parameters.png" style="display: block; width: 100%; height: auto;" />
             <figcaption style="margin-top: 6px; font-size: 0.9em;">Tracking parameters</figcaption>
         </figure>
-        <figure style="flex: 0 1 auto; width: 170px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-            <img src="./tracks_list.png" style="display: block; width: 100%; height: auto;" />
+        <figure style="flex: 563 1 0; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
+            <img src="images/tracks_list.png" style="display: block; width: 100%; height: auto;" />
             <figcaption style="margin-top: 6px; font-size: 0.9em;">Tracking results</figcaption>
         </figure>
     </div>
@@ -157,7 +142,7 @@ Manual tracking from scratch requires that you open an `Image` layer first. In t
     <p>2. Go to <code>File > Open Sample > Napari Track Edit > Fluo-N2DL-HeLa crop (2D)</code> to open the 2D HeLa cell test dataset</p>
     <p>3. Hide the segmentation '01_ST' and 'centroids' layers for now, but select 01_raw and go to the <code>Tracking</code> > <code>Track from Scratch</code>. Select <code>01_raw</code> from the dropdown menu, and click <code>Track with Points</code>. A new Points layer is generated, and you should see a new element in the Results list: 01_raw_manual_tracks. Select the <code>Add points</code> tool in the top left corner of the layer controls, and click on one of the nuclei in the viewer. Go to the next time point, and click again. You should see a growing lineage tree at the bottom of your screen. What happens if you add multiple points in the same time point? Try to build three small lineages.</p>
     <p>4. To compute tracks automatically, go to the <code>Tracking</code> tab, and choose parameters for tracking. Use '01_ST' as input layer. You can consult the
-    <a href="https://liveimagetrackingtools.org/napari-track-edit/motile.html" target="_blank" style="color: #0073e6; text-decoration: underline;">documentation</a> to help you decide on the different values. Click <code>Run Tracking</code> to start the computation. After the solver has finished, you should see that the Lineage View is now populated with tracks and that the cells are relabeled.</p>
+    <a href="https://liveimagetrackingtools.org/napari-track-edit/tracking.html" target="_blank" style="color: #0073e6; text-decoration: underline;">documentation</a> to help you decide on the different values. Click <code>Run Tracking</code> to start the computation. After the solver has finished, you should see that the Lineage View is now populated with tracks and that the cells are relabeled.</p>
     <p>5. Click <code>Back to editing</code> and test multiple combinations of parameters. Note that you can also use the Points layer 'centroids' as input. Compare the different tracking results by clicking on the different entries in the <code>Tracks List</code> widget.</p>
 </div>
 
@@ -166,7 +151,7 @@ Apart from the lineage tree, you can also view object properties in the <code>Li
 
 <div style="display: flex; flex-wrap: nowrap; justify-content: center; align-items: flex-start; gap: 20px; margin: 20px 0; break-inside: avoid; page-break-inside: avoid;">
     <figure style="flex: 0 1 auto; width: 520px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-        <img src="./size_feature.png" style="display: block; width: 100%; height: auto;" />
+        <img src="images/size_feature.jpg" style="display: block; width: 100%; height: auto;" />
         <figcaption style="margin-top: 6px; font-size: 0.9em;">View object sizes of selected lineages</figcaption>
     </figure>
 </div>
@@ -178,7 +163,7 @@ Apart from the lineage tree, you can also view object properties in the <code>Li
         In the <code>Groups</code> tab you can create groups of nodes that you want to store to review later, for example because these are of particular interest, need to be corrected, or belong to a specific object/cell type. You can add or remove individual nodes, entire tracks, or entire lineages. You can also select all nodes in a group or export them.
     </div>
     <figure style="flex: 0 0 auto; width: 260px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-        <img src="./groups.png" style="display: block; width: 100%; height: auto;" />
+        <img src="images/groups.png" style="display: block; width: 100%; height: auto;" />
         <figcaption style="margin-top: 6px; font-size: 0.9em;">Creating groups of nodes</figcaption>
     </figure>
 </div>
@@ -193,12 +178,16 @@ Apart from the lineage tree, you can also view object properties in the <code>Li
 
 ## Editing Tracks
 
-When inspecting a tracking result, you may notice mistakes that you want to correct by deleting, adding, or modifying nodes and/or edges. You can edit the tracks using the buttons in the <code>Editing & Selection</code> tab or their corresponding keyboard shortcuts, or by editing the Napari Points and Segmentation layers directly. To undo/redo an action, click <code>Undo</code>/<code>Redo</code> in the menu or press <code>Z</code>/ <code>R</code>. Find out more in <a href="https://funkelab.github.io/motile_Napari_plugin/editing.html"><code>documentation</code></a>.
+When inspecting a tracking result, you may notice mistakes that you want to correct by deleting, adding, or modifying nodes and/or edges. You can edit the tracks using the buttons in the <code>Editing & Selection</code> tab or their corresponding keyboard shortcuts, or by editing the Napari Points and Segmentation layers directly. To undo/redo an action, click <code>Undo</code>/<code>Redo</code> in the menu or press <code>Z</code>/ <code>R</code>. Find out more in <a href="https://liveimagetrackingtools.org/napari-track-edit/editing.html"><code>documentation</code></a>.
 
-<div style="display: flex; flex-wrap: nowrap; justify-content: center; align-items: flex-start; gap: 20px; margin: 20px 0; break-inside: avoid; page-break-inside: avoid;">
-    <figure style="flex: 0 1 auto; width: 660px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-        <img src="./editing.png" style="display: block; width: 100%; height: auto;" />
-        <figcaption style="margin-top: 6px; font-size: 0.9em;">Node and edge editing operations</figcaption>
+<div style="display: flex; flex-wrap: nowrap; justify-content: center; align-items: flex-start; gap: 10px; margin: 10px 0; break-inside: avoid; page-break-inside: avoid;">
+    <figure style="flex: 1449 1 0; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
+        <img src="images/editing_nodes.png" style="display: block; width: 100%; height: auto;" />
+        <figcaption style="margin-top: 6px; font-size: 0.9em;">Node editing operations</figcaption>
+    </figure>
+    <figure style="flex: 1482 1 0; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
+        <img src="images/editing_edges.png" style="display: block; width: 100%; height: auto;" />
+        <figcaption style="margin-top: 6px; font-size: 0.9em;">Edge editing operations</figcaption>
     </figure>
 </div>
 
@@ -237,7 +226,7 @@ When inspecting a tracking result, you may notice mistakes that you want to corr
         You can save your tracking results in the <code>Tracks List</code> tab. This will save the parameters and the tracking data to the displayed destination. You can load your results back in at the bottom of the <code>Tracks List</code> tab by loading a Motile Run and selecting the folder. In addition, Napari Track Edit allows you to import and export the results from/to <code>csv</code> and <code><a href="https://github.com/live-image-tracking-tools/geff">geff</code></a> via the dropdown menu at the bottom and the export (middle) button in the Results List.
     </div>
     <figure style="flex: 0 0 auto; width: 200px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-        <img src="./save_and_export.png" style="display: block; width: 100%; height: auto;" />
+        <img src="images/save_and_export.png" style="display: block; width: 100%; height: auto;" />
     </figure>
 </div>
 </div>
@@ -255,65 +244,13 @@ When inspecting a tracking result, you may notice mistakes that you want to corr
   <p>10. Go to the <code>Groups</code> widget, and export a group to csv and inspect the file. Which nodes are included when you load it back in?</p>
 </div>
 
-<div style="display: flex; flex-direction: column; align-items: center; gap: 20px; margin: 40px 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-  <p style="font-size: 1.2em; font-weight: bold; margin: 0;">Thank you for participating in the workshop!</p>
-  <figure style="width: 200px; margin: 0; break-inside: avoid; page-break-inside: avoid;">
-    <img src="./logo.png" style="display: block; width: 100%; height: auto;" />
-  </figure>
-</div>
+<div class="page"></div>
 
 ## Mouse and keyboard bindings
 
-### Napari viewer and layer key bindings and mouse functions
+:[Mouse and keyboard bindings](_key_bindings.md)
 
-| Mouse / Key Binding | Action |
-| ------------------- | ------ |
-| Click on a point or label  | Select this node (center view if necessary)  |
-| `SHIFT` + click on point or label  | Add this node to selection  |
-| `CTRL`/`CMD` + click on point or label  | Center view on node |
-| `ALT`/`OPTION` + click on point or label  | Use this node's Tracklet ID as the current one (like the pipette, but without changing selection or time point) |
-| Mouse drag with point layer selection tool active  | Select multiple nodes at once   |
-| `Q` | Toggle between viewing all nodes in the points/labels or only those for the currently selected lineages or groups  |
-| `T` | Center orthogonal views to mouse cursor location.
-| `/` | Show/hide all widgets.
-
-### Lineage view key and mouse functions
-*********************************
-| Mouse / Key Binding | Action |
-| ------------------- | ------ |
-| Click on a point or label | Select this node (center view if necessary) |
-| `SHIFT` + click on node | Add this node to selection |
-| `CTRL`/`CMD` + click on node  | Center view on node |
-| `ALT`/`OPTION` + click on node  | Use this node's Tracklet ID as the current one (like the pipette, but without changing selection or time point) |
-| Scroll | Zoom in or out
-| Scroll + `X` / Right mouse click + drag horizontally | Restrict zoom to the x-axis of the Lineage View |
-| Scroll + `Y` / Right mouse click + drag vertically | Restrict zoom to the y-axis of the Lineage View |
-| Mouse drag | Pan |
-| `SHIFT` + Mouse drag | Rectangular selection of nodes |
-| `ESC` | Clear selection |
-| `E` | Restore selection |
-| `P` / Mouse button 4 (Back) | Go to previous selection in history (if present)
-| `N` / Mouse button 5 (Next)| Go to next selection in history (if present)
-| `Q` | Switch between viewing all lineages (vertically) or the currently selected lineages (horizontally) |
-| `W` | Switch between plotting the lineage tree and the object size |
-| `F` | Flip plot axes |
-| Left arrow | Select the node to the left |
-| Right arrow | Select the node to the right |
-| Up arrow | Select the parent node (vertical view of all lineages) or the next adjacent lineage (horizontal view of selected lineage) |
-| Down arrow | Select the child node (vertical view of all lineages) or the previous adjacent lineage (horizontal view of selected lineage) |
-
-
-### Key bindings for editing tracks
-*********************************
-| Mouse / Key Binding | Action |
-| ------------------- | ------ |
-| `M` | Start new track |
-| `D` / `Delete`   | Delete selected nodes   |
-| `C` | Connect selected nodes |
-| `SHIFT` + `C` | Connect selected nodes linearly (no divisions) |
-| `B` | Break all existing edges in the current node selection
-| `Y`  | Set a divison for a trio of selected nodes  |
-| `H`  | Merge horizontal node pairs (nodes that are on the same time point)  |
-| `S`  | Swap the predecessors of two nodes at the same time point, if possible  |
-| `Z`  | Undo last editing action |
-| `R`  | Redo last editing action |
+<div style="display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 16px; margin: 20px 0 0 0; break-inside: avoid; page-break-inside: avoid;">
+  <p style="font-size: 1.2em; font-weight: bold; margin: 0;">Thank you for participating in the workshop!</p>
+  <img src="images/logo_transparent.png" style="display: block; width: 100px; height: auto;" />
+</div>

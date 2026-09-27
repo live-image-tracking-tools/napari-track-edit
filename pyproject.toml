@@ -88,7 +88,7 @@ napari-track-edit = "napari_track_edit:napari.yaml"
 
 [project.urls]
 "Bug Tracker" = "https://github.com/live-image-tracking-tools/napari-track-edit/issues"
-"Documentation" ="https://live-image-tracking-tools.github.io/napari-track-edit/"
+"Documentation" ="https://liveimagetrackingtools.org/napari-track-edit/"
 
 [project.scripts]
 napari-track-edit = "napari_track_edit.__main__:main"
