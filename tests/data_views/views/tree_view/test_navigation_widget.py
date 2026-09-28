@@ -151,10 +151,11 @@ class TestMoveMethod:
 
         mock_selected_nodes.add.assert_called_once_with("4")
 
-    def test_move_up_horizontal_gets_next_track(
+    def test_move_down_horizontal_gets_next_track(
         self, qtbot, track_df, lineage_df, mock_selected_nodes
     ):
-        """Test move up in horizontal view gets next track node."""
+        """Test move down in horizontal tree view gets the next (lower on screen)
+        track node: tree lanes are drawn top to bottom."""
         widget = NavigationWidget(
             track_df=track_df,
             lineage_df=lineage_df,
@@ -167,15 +168,16 @@ class TestMoveMethod:
         # Should look in lineage_df first (node 2 is at x_axis_pos 0)
         # No node with higher x_axis_pos in lineage at same time
         # Should fall back to track_df
-        widget.move("up")
+        widget.move("down")
 
         # Node 3 is at t=1, x_axis_pos=5 (higher than node 2's 0)
         mock_selected_nodes.add.assert_called_once_with("3")
 
-    def test_move_down_horizontal_gets_previous_track(
+    def test_move_up_horizontal_gets_previous_track(
         self, qtbot, track_df, lineage_df, mock_selected_nodes
     ):
-        """Test move down in horizontal view gets previous track node."""
+        """Test move up in horizontal tree view gets the previous (higher on screen)
+        track node."""
         # Select node 3 instead
         mock_selected = MagicMock()
         mock_selected.__len__ = MagicMock(return_value=1)
@@ -192,9 +194,44 @@ class TestMoveMethod:
 
         # Node 3 is at t=1, x_axis_pos=5
         # Should find node 2 at t=1, x_axis_pos=0 (lower)
-        widget.move("down")
+        widget.move("up")
 
         mock_selected.add.assert_called_once_with("2")
+
+    @pytest.mark.parametrize(
+        ("direction", "start", "expected"), [("up", "2", "3"), ("down", "3", "2")]
+    )
+    def test_move_up_down_horizontal_feature_follows_feature_value(
+        self, qtbot, lineage_df, direction, start, expected
+    ):
+        """Test that in feature mode up/down move to a higher/lower feature value,
+        since the feature axis increases upward."""
+        track_df = pd.DataFrame(
+            {
+                "node_id": ["1", "2", "3"],
+                "parent_id": [None, "1", "1"],
+                "t": [0, 1, 1],
+                "x_axis_pos": [0, 0, 5],
+                "area": [10, 20, 30],
+            }
+        )
+        mock_selected = MagicMock()
+        mock_selected.__len__ = MagicMock(return_value=1)
+        mock_selected.__getitem__ = MagicMock(return_value=start)
+
+        widget = NavigationWidget(
+            track_df=track_df,
+            lineage_df=track_df,
+            view_direction="horizontal",
+            selected_nodes=mock_selected,
+            plot_type="feature",
+        )
+        widget.feature = "area"
+        qtbot.addWidget(widget)
+
+        widget.move(direction)
+
+        mock_selected.add.assert_called_once_with(expected)
 
     def test_move_left_vertical_gets_previous_track(
         self, qtbot, track_df, lineage_df, mock_selected_nodes
