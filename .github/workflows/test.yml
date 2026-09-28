@@ -103,10 +103,10 @@ jobs:
       - name: Test
         uses: aganders3/headless-gui@v2
         with:
-          run: uv run pytest --color=yes --cov=motile_tracker --cov-report=xml --cov-report=term-missing .
+          run: uv run pytest --color=yes --cov=napari_track_edit --cov-report=xml --cov-report=term-missing .
 
       - name: Coverage
         uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: funkelab/motile_tracker
+          slug: live-image-tracking-tools/napari-track-edit

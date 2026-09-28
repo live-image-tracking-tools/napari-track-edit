@@ -3,17 +3,20 @@
 Tests cover node operations, edge operations, display modes, and selection management.
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import napari
 import pytest
-from funtracks.data_model import SolutionTracks
+from funtracks.data_model import Tracks
 
-from motile_tracker.data_views.views.layers.track_graph import TrackGraph
-from motile_tracker.data_views.views.layers.track_labels import TrackLabels
-from motile_tracker.data_views.views.layers.track_points import TrackPoints
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
-from motile_tracker.motile.backend.motile_run import MotileRun
+from napari_track_edit.data_views.views.layers.track_graph import TrackGraph
+from napari_track_edit.data_views.views.layers.track_labels import TrackLabels
+from napari_track_edit.data_views.views.layers.track_points import TrackPoints
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import (
+    BASE_TEXT,
+    TracksViewer,
+)
+from napari_track_edit.motile.backend.motile_run import MotileRun
 
 
 @pytest.fixture(autouse=True)
@@ -47,7 +50,7 @@ class TestNodeOperations:
 
         tracks_viewer.delete_node()
 
-        assert not tracks.graph.has_node(node_to_delete)
+        assert not tracks.graph_solution.has_node(node_to_delete)
 
     def test_delete_multiple_nodes(self, tracks_viewer_setup, click_node):
         """Test deleting multiple selected nodes removes all of them."""
@@ -62,7 +65,7 @@ class TestNodeOperations:
         tracks_viewer.delete_node()
 
         for node in nodes_to_delete:
-            assert not tracks.graph.has_node(node)
+            assert not tracks.graph_solution.has_node(node)
 
     def test_delete_node_with_no_tracks(self, viewer):
         """Test delete_node does nothing when no tracks are loaded."""
@@ -75,12 +78,12 @@ class TestNodeOperations:
 class TestEdgeOperations:
     """Tests for edge manipulation operations."""
 
-    def test_delete_edge(self, tracks_viewer_setup, click_node):
-        """Test deleting edges with various selection scenarios."""
+    def test_disconnect_nodes(self, tracks_viewer_setup, click_node):
+        """Test that disconnect_nodes breaks the edge between two connected nodes."""
         viewer, tracks_viewer, tracks = tracks_viewer_setup
 
         # Test 1: Delete edge between two connected nodes
-        edges = tracks.graph.edge_list()
+        edges = tracks.graph_solution.edge_list()
         if not edges:
             pytest.skip("No edges in test graph")
 
@@ -88,20 +91,20 @@ class TestEdgeOperations:
         click_node(tracks_viewer, source)
         click_node(tracks_viewer, target, append=True)
 
-        tracks_viewer.delete_edge()
+        tracks_viewer.disconnect_nodes()
 
         # Verify the edge was actually deleted from the graph
-        assert not tracks.graph.has_edge(source, target)
+        assert not tracks.graph_solution.has_edge(source, target)
 
-        # Test 2: Delete edge with wrong number of selections
-        single_node = list(tracks.graph.node_ids())[0]
+        # Test 2: A single selected node is a no-op
+        single_node = list(tracks.graph_solution.node_ids())[0]
         click_node(tracks_viewer, single_node)
 
-        edge_count_before = tracks.graph.num_edges()
-        tracks_viewer.delete_edge()
+        edge_count_before = tracks.graph_solution.num_edges()
+        tracks_viewer.disconnect_nodes()
 
         # Should not have deleted anything
-        assert tracks.graph.num_edges() == edge_count_before
+        assert tracks.graph_solution.num_edges() == edge_count_before
 
     def test_swap_nodes(self, viewer, graph_2d_without_segmentation, click_node):
         """Test swapping predecessors of two nodes updates the graph correctly.
@@ -127,9 +130,7 @@ class TestEdgeOperations:
             [{"source_id": 7, "target_id": 6, "solution": True}]
         )
 
-        tracks = SolutionTracks(
-            graph=graph_2d_without_segmentation, ndim=3, time_attr="t"
-        )
+        tracks = Tracks(graph=graph_2d_without_segmentation, ndim=3, time_attr="t")
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
 
@@ -140,13 +141,13 @@ class TestEdgeOperations:
         tracks_viewer.swap_nodes()
 
         # After swap: predecessors are exchanged (4->6, 7->5)
-        assert tracks.graph.has_edge(4, 6)
-        assert tracks.graph.has_edge(7, 5)
-        assert not tracks.graph.has_edge(4, 5)
-        assert not tracks.graph.has_edge(7, 6)
+        assert tracks.graph_solution.has_edge(4, 6)
+        assert tracks.graph_solution.has_edge(7, 5)
+        assert not tracks.graph_solution.has_edge(4, 5)
+        assert not tracks.graph_solution.has_edge(7, 6)
 
-    def test_create_edge_sorts_by_time(self, viewer, graph_2d, click_node):
-        """Test create_edge orders nodes by time (earlier -> later).
+    def test_connect_nodes_sorts_by_time(self, viewer, graph_2d, click_node):
+        """Test connect_nodes orders nodes by time (earlier -> later).
 
         Uses graph_2d (with segmentation) so click_node goes through TrackLabels,
         which returns np.int64 node IDs — matching the real UI path.
@@ -161,13 +162,13 @@ class TestEdgeOperations:
         click_node(tracks_viewer, 6)  # t4, clicked first
         click_node(tracks_viewer, 2, append=True)  # t1, shift-clicked second
 
-        tracks_viewer.create_edge()
+        tracks_viewer.connect_nodes()
 
         # Edge must go from earlier (2) to later (6), regardless of selection order
-        assert tracks.graph.has_edge(2, 6)
+        assert tracks.graph_solution.has_edge(2, 6)
 
-    def test_create_edge_with_force(self, viewer, graph_2d, monkeypatch, click_node):
-        """Test create_edge handles forceable errors by retrying with force=True.
+    def test_connect_nodes_with_force(self, viewer, graph_2d, monkeypatch, click_node):
+        """Test connect_nodes handles forceable errors by retrying with force=True.
 
         Uses graph_2d (with segmentation) so click_node goes through TrackLabels,
         which returns np.int64 node IDs — matching the real UI path.
@@ -184,16 +185,429 @@ class TestEdgeOperations:
 
         # Approve the force dialog automatically
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_viewer.confirm_force_operation",
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "confirm_force_operation",
             lambda message: (True, False),
         )
 
-        tracks_viewer.create_edge()
+        tracks_viewer.connect_nodes()
 
         # New edge should be in the graph
-        assert tracks.graph.has_edge(2, 4)
+        assert tracks.graph_solution.has_edge(2, 4)
         # Conflicting edge should have been removed by force
+        assert not tracks.graph_solution.has_edge(3, 4)
+
+    def test_partially_connected_selection_connects(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """A partly connected selection is completed rather than rebuilt.
+
+        3 -> 4 already exists but 4 -> 6 does not, so only the missing edge is added.
+        """
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        assert tracks.graph.has_edge(3, 4)
+        click_node(tracks_viewer, 3)  # t1
+        click_node(tracks_viewer, 4, append=True)  # t2
+        click_node(tracks_viewer, 6, append=True)  # t4
+
+        # node 4 already has child 5, so the mode dialog does come up here
+        ask_mock = MagicMock(return_value=False)  # keep it as a division
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            ask_mock,
+        )
+
+        tracks_viewer.connect_nodes()
+
+        ask_mock.assert_called_once()
+        assert tracks.graph.has_edge(4, 6)  # the missing pair was added
+        assert tracks.graph.has_edge(3, 4)  # the connected pair was left alone
+        assert tracks.graph.has_edge(4, 5)  # and so was the edge outside the selection
+
+    def test_disconnect_breaks_the_whole_chain(self, tracks_viewer_setup, click_node):
+        """A whole chain is broken apart, every fragment getting its own tracklet."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        # 3 -> 4 -> 5 is a connected chain in graph_2d
+        click_node(tracks_viewer, 3)
+        click_node(tracks_viewer, 4, append=True)
+        click_node(tracks_viewer, 5, append=True)
+
+        tracks_viewer.disconnect_nodes()
+
         assert not tracks.graph.has_edge(3, 4)
+        assert not tracks.graph.has_edge(4, 5)
+        assert tracks.graph.has_edge(1, 3)  # edges leaving the selection are kept
+        assert len({int(tracks.get_track_id(n)) for n in (3, 4, 5)}) == 3
+
+    def test_disconnect_mother_and_daughters(self, tracks_viewer_setup, click_node):
+        """Nodes in the same time point are fine: a mother and both of its daughters
+        are split into three fragments, undone again in a single step."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        # 1 divides into 2 and 3, which are both in t=1
+        click_node(tracks_viewer, 1)
+        click_node(tracks_viewer, 2, append=True)
+        click_node(tracks_viewer, 3, append=True)
+
+        tracks_viewer.disconnect_nodes()
+
+        assert not tracks.graph_solution.has_edge(1, 2)
+        assert not tracks.graph_solution.has_edge(1, 3)
+        assert tracks.graph_solution.has_edge(3, 4)  # 4 is not selected
+        assert len({int(tracks.get_track_id(n)) for n in (1, 2, 3)}) == 3
+
+        tracks_viewer.undo()
+        assert tracks.graph_solution.has_edge(1, 2)
+        assert tracks.graph_solution.has_edge(1, 3)
+
+    def test_disconnect_skip_edge(self, tracks_viewer_setup, click_node):
+        """A skip edge between two selected nodes is broken as well, but nodes that
+        are only connected through an unselected node are not."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        click_node(tracks_viewer, 2)
+        click_node(tracks_viewer, 6, append=True)
+        tracks_viewer.connect_nodes()
+        assert tracks.graph_solution.has_edge(2, 6)  # t1 -> t4
+
+        tracks_viewer.disconnect_nodes()
+        assert not tracks.graph_solution.has_edge(2, 6)
+
+        # 3 -> 4 -> 5, but there is no edge 3 -> 5
+        click_node(tracks_viewer, 3)
+        click_node(tracks_viewer, 5, append=True)
+        tracks_viewer.disconnect_nodes()
+        assert tracks.graph_solution.has_edge(3, 4)
+        assert tracks.graph_solution.has_edge(4, 5)
+
+    def test_connect_fully_connected_selection_warns(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Connecting a chain that is connected already never disconnects it, but
+        tells the user there is nothing to connect."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        ask_mock = MagicMock()
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            ask_mock,
+        )
+        warning_mock = MagicMock()
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.show_warning",
+            warning_mock,
+        )
+
+        click_node(tracks_viewer, 3)
+        click_node(tracks_viewer, 4, append=True)
+        click_node(tracks_viewer, 5, append=True)
+
+        tracks_viewer.connect_nodes()
+
+        ask_mock.assert_not_called()  # nothing to connect, so no mode to choose
+        warning_mock.assert_called_once()
+        assert "Cannot connect nodes" in warning_mock.call_args.args[0]
+        assert tracks.graph.has_edge(3, 4)
+        assert tracks.graph.has_edge(4, 5)
+
+    def test_disconnect_unconnected_selection_warns(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Disconnecting nodes that share no edge tells the user there is nothing to
+        disconnect, and leaves the graph alone."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        warning_mock = MagicMock()
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.show_warning",
+            warning_mock,
+        )
+
+        click_node(tracks_viewer, 2)  # t1
+        click_node(tracks_viewer, 6, append=True)  # t4, not connected to 2
+
+        num_edges_before = tracks.graph.num_edges()
+        tracks_viewer.disconnect_nodes()
+
+        warning_mock.assert_called_once()
+        assert "nothing to disconnect" in warning_mock.call_args.args[0]
+        assert tracks.graph.num_edges() == num_edges_before
+
+    def test_disconnect_horizontal_selection_warns_nothing_to_disconnect(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Nodes in the same time point can never be connected, so the user is told
+        there is nothing to disconnect rather than that they cannot be chained."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        warning_mock = MagicMock()
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.show_warning",
+            warning_mock,
+        )
+
+        # nodes 2 and 3 are both in t=1
+        click_node(tracks_viewer, 2)
+        click_node(tracks_viewer, 3, append=True)
+
+        num_edges_before = tracks.graph_solution.num_edges()
+        tracks_viewer.disconnect_nodes()
+
+        warning_mock.assert_called_once()
+        assert "nothing to disconnect" in warning_mock.call_args.args[0]
+        assert tracks.graph_solution.num_edges() == num_edges_before
+
+    def test_repeated_warnings_are_all_shown(self, tracks_viewer_setup, click_node):
+        """The same error must reach the user every time, not only the first time.
+
+        Python's warnings module suppresses repeats of a warning from the same
+        location, so this checks the notifications napari actually emits.
+        """
+        from napari.utils.notifications import notification_manager
+
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        received = []
+        notification_manager.notification_ready.connect(received.append)
+        try:
+            click_node(tracks_viewer, 2)
+            click_node(tracks_viewer, 6, append=True)
+            tracks_viewer.disconnect_nodes()
+            tracks_viewer.disconnect_nodes()
+        finally:
+            notification_manager.notification_ready.disconnect(received.append)
+
+        messages = [n.message for n in received if "nothing to disconnect" in n.message]
+        assert len(messages) == 2
+
+    def test_horizontal_selection_reports_the_connect_error(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """A selection that can never be chained is reported by the connect action."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        # nodes 2 and 3 are both in t=1
+        click_node(tracks_viewer, 2)
+        click_node(tracks_viewer, 3, append=True)
+
+        warning_mock = MagicMock()
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.show_warning",
+            warning_mock,
+        )
+
+        num_edges_before = tracks.graph.num_edges()
+        tracks_viewer.connect_nodes()
+
+        warning_mock.assert_called_once()
+        assert "Cannot connect nodes" in warning_mock.call_args.args[0]
+        assert tracks.graph.num_edges() == num_edges_before
+
+    def test_connect_mode_dialog_divisions(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Node 4 already has child 5, so the user is asked which mode they want.
+
+        Choosing 'with divisions' keeps the existing child edge.
+        """
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        click_node(tracks_viewer, 4)  # t2, has child 5
+        click_node(tracks_viewer, 6, append=True)  # t4, unconnected
+
+        ask_mock = MagicMock(return_value=False)  # False == with divisions
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            ask_mock,
+        )
+
+        tracks_viewer.connect_nodes()
+
+        ask_mock.assert_called_once()
+        assert tracks.graph.has_edge(4, 6)
+        assert tracks.graph.has_edge(4, 5)  # kept as a division
+
+    def test_connect_mode_dialog_linear(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Choosing 'linear' turns the existing child edge into a conflict."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        click_node(tracks_viewer, 4)
+        click_node(tracks_viewer, 6, append=True)
+        tracks_viewer.force = False
+
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            MagicMock(return_value=True),  # True == linear
+        )
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "confirm_force_operation",
+            lambda message: (True, False),
+        )
+
+        tracks_viewer.connect_nodes()
+
+        assert tracks.graph.has_edge(4, 6)
+        assert not tracks.graph.has_edge(4, 5)  # broken to keep the track linear
+
+    def test_connect_mode_dialog_cancelled(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Cancelling the mode dialog leaves the graph untouched."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        click_node(tracks_viewer, 4)
+        click_node(tracks_viewer, 6, append=True)
+
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            MagicMock(return_value=None),
+        )
+
+        num_edges_before = tracks.graph.num_edges()
+        tracks_viewer.connect_nodes()
+
+        assert tracks.graph.num_edges() == num_edges_before
+        assert not tracks.graph.has_edge(4, 6)
+
+    def test_connect_mode_dialog_skipped_without_a_choice(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """Node 2 has no children, so both modes are the same and nothing is asked."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        click_node(tracks_viewer, 2)  # t1, no children
+        click_node(tracks_viewer, 6, append=True)
+
+        ask_mock = MagicMock()
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            ask_mock,
+        )
+
+        tracks_viewer.connect_nodes()
+
+        ask_mock.assert_not_called()
+        assert tracks.graph.has_edge(2, 6)
+
+    def test_keyboard_shortcuts_bypass_the_dialog(
+        self, tracks_viewer_setup, monkeypatch, click_node
+    ):
+        """C and Shift+C pick a mode directly, without asking, and B disconnects."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        ask_mock = MagicMock()
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "ask_connect_mode",
+            ask_mock,
+        )
+
+        # C: connect with divisions
+        click_node(tracks_viewer, 4)
+        click_node(tracks_viewer, 6, append=True)
+        tracks_viewer.connect_nodes_with_divisions()
+
+        ask_mock.assert_not_called()
+        assert tracks.graph.has_edge(4, 6)
+        assert tracks.graph.has_edge(4, 5)
+
+        # B: break the new edge again
+        tracks_viewer.disconnect_nodes()
+        assert not tracks.graph.has_edge(4, 6)
+        assert tracks.graph.has_edge(4, 5)
+
+        # Shift+C: connect linearly, forcing away the conflicting child edge
+        monkeypatch.setattr(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer."
+            "confirm_force_operation",
+            lambda message: (True, False),
+        )
+        tracks_viewer.connect_nodes_linearly()
+
+        ask_mock.assert_not_called()
+        assert tracks.graph.has_edge(4, 6)
+        assert not tracks.graph.has_edge(4, 5)
+
+    def test_set_division_makes_and_breaks_division(self, viewer, graph_2d, click_node):
+        """Test set_division connects a mother to two daughters and back again.
+
+        Node 4 (t2) already has daughter 5 (t4), node 6 (t4) is unconnected, so the
+        first call completes the division and the second call breaks it.
+        """
+        tracks = MotileRun(graph=graph_2d, run_name="test", ndim=3, time_attr="t")
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(tracks=tracks, name="test")
+
+        click_node(tracks_viewer, 5)
+        click_node(tracks_viewer, 6, append=True)
+        click_node(tracks_viewer, 4, append=True)
+
+        tracks_viewer.set_division()
+        assert tracks.graph_solution.has_edge(4, 5)
+        assert tracks.graph_solution.has_edge(4, 6)
+
+        # Running it again on the same trio breaks the division
+        tracks_viewer.set_division()
+        assert not tracks.graph_solution.has_edge(4, 5)
+        assert not tracks.graph_solution.has_edge(4, 6)
+
+        # Undo restores the division
+        tracks_viewer.undo()
+        assert tracks.graph_solution.has_edge(4, 5)
+        assert tracks.graph_solution.has_edge(4, 6)
+
+    def test_set_division_invalid_selection_warns(self, viewer, graph_2d, click_node):
+        """Test set_division shows a warning instead of raising on a bad selection."""
+        tracks = MotileRun(graph=graph_2d, run_name="test", ndim=3, time_attr="t")
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(tracks=tracks, name="test")
+
+        # Nodes 2 and 3 are both at t=1, so there is no unique mother node
+        click_node(tracks_viewer, 2)
+        click_node(tracks_viewer, 3, append=True)
+        click_node(tracks_viewer, 5, append=True)
+
+        with patch(
+            "napari_track_edit.data_views.views_coordinator.tracks_viewer.QMessageBox.warning"
+        ) as warning:
+            tracks_viewer.set_division()
+
+        warning.assert_called_once()
+        assert "exactly one node to be earlier" in warning.call_args[0][2]
+        assert not tracks.graph_solution.has_edge(2, 5)
+        assert not tracks.graph_solution.has_edge(3, 5)
+
+    def test_set_division_without_three_nodes_warns(self, viewer, graph_2d, click_node):
+        """Test set_division warns instead of raising when not exactly 3 nodes are selected.
+
+        Unlike the button, the [Y] keybinding is active whatever the selection is, so
+        set_division must cope with a selection that is not a trio.
+        """
+        tracks = MotileRun(graph=graph_2d, run_name="test", ndim=3, time_attr="t")
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(tracks=tracks, name="test")
+
+        for select in (lambda: None, lambda: click_node(tracks_viewer, 4)):
+            tracks_viewer.selected_nodes.reset()
+            select()
+            with patch(
+                "napari_track_edit.data_views.views_coordinator.tracks_viewer.QMessageBox.warning"
+            ) as warning:
+                tracks_viewer.set_division()
+
+            warning.assert_called_once()
+            assert "exactly 3 distinct nodes" in warning.call_args[0][2]
 
 
 class TestDisplayModes:
@@ -290,7 +704,7 @@ class TestDisplayModes:
         assert tracks_viewer.visible == "all"
 
         # Test 3: Lineage mode with selection
-        node = list(tracks.graph.node_ids())[0]
+        node = list(tracks.graph_solution.node_ids())[0]
         click_node(tracks_viewer, node)
         tracks_viewer.set_display_mode("lineage")
         assert tracks_viewer.mode == "lineage"
@@ -309,7 +723,7 @@ class TestDisplayModes:
         viewer, tracks_viewer, tracks = tracks_viewer_setup
 
         # Select a node and switch to lineage mode
-        node = list(tracks.graph.node_ids())[0]
+        node = list(tracks.graph_solution.node_ids())[0]
         click_node(tracks_viewer, node)
         tracks_viewer.set_display_mode("lineage")
 
@@ -329,7 +743,7 @@ class TestSelectionManagement:
         viewer, tracks_viewer, tracks = tracks_viewer_setup
 
         # Test 1: Center on single node
-        node = list(tracks.graph.node_ids())[0]
+        node = list(tracks.graph_solution.node_ids())[0]
         click_node(tracks_viewer, node)
 
         with patch.object(tracks_viewer, "center_on_node") as center_mock:
@@ -339,7 +753,7 @@ class TestSelectionManagement:
 
         # Test 2: No centering with multiple nodes
         tracks_viewer.selected_nodes.reset()
-        nodes = list(tracks.graph.node_ids())[:2]
+        nodes = list(tracks.graph_solution.node_ids())[:2]
         for i, node in enumerate(nodes):
             click_node(tracks_viewer, node, append=(i > 0))
 
@@ -349,11 +763,11 @@ class TestSelectionManagement:
             center_mock.assert_not_called()
 
     def test_selected_track_management(self, tracks_viewer_setup, click_node):
-        """Test selected_track updates and clearing."""
+        """Test selected_track follows the selection, and outlives clearing it."""
         viewer, tracks_viewer, tracks = tracks_viewer_setup
 
         # Test 1: Update selected_track from selection
-        node = list(tracks.graph.node_ids())[0]
+        node = list(tracks.graph_solution.node_ids())[0]
         click_node(tracks_viewer, node)
         tracks_viewer.update_selection()
 
@@ -361,12 +775,123 @@ class TestSelectionManagement:
         expected_track_id = tracks.get_track_id(node)
         assert tracks_viewer.selected_track == expected_track_id
 
-        # Test 2: Clear selected_track when selection cleared
+        # Test 2: Keep selected_track when the selection is cleared. It is the
+        # track being painted in, and editing carries on in it - undoing a paint,
+        # for instance, deselects but should not send the next stroke to a
+        # different track and colour.
         tracks_viewer.selected_nodes.reset()
         tracks_viewer.update_selection()
 
-        # selected_track should be None
-        assert tracks_viewer.selected_track is None
+        assert tracks_viewer.selected_track == expected_track_id
+
+        # Test 3: Selecting another node still moves it
+        other = next(
+            n
+            for n in tracks.graph_solution.node_ids()
+            if tracks.get_track_id(n) != expected_track_id
+        )
+        click_node(tracks_viewer, other)
+        tracks_viewer.update_selection()
+
+        assert tracks_viewer.selected_track == tracks.get_track_id(other)
+
+
+class TestPickTrackId:
+    """Tests for select_track_id_from_node (ALT/OPTION + click)."""
+
+    def test_picks_track_id_without_selecting_or_moving(self, tracks_viewer_setup):
+        """Picking a node in another frame adopts its track id and nothing else."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        # node 6 is the only node of track 5 and lives at t=4
+        viewer.dims.set_point(0, 0)
+        assert viewer.dims.current_step[0] == 0
+
+        with patch.object(tracks_viewer, "center_on_node") as center_mock:
+            tracks_viewer.select_track_id_from_node(6)
+            center_mock.assert_not_called()
+
+        assert tracks_viewer.selected_track == tracks.get_track_id(6)
+        assert len(tracks_viewer.selected_nodes) == 0
+        assert viewer.dims.current_step[0] == 0
+
+        # track 5 has no node in frame 0, so a fresh label is offered to paint with
+        seg_layer = tracks_viewer.tracking_layers.seg_layer
+        assert seg_layer.selected_label != 6
+        assert not tracks.graph_solution.has_node(seg_layer.selected_label)
+
+    def test_picks_the_node_itself_in_the_current_frame(self, tracks_viewer_setup):
+        """A node in the current frame becomes the label to paint with directly."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        # node 2 is at t=1
+        viewer.dims.set_point(0, 1)
+        tracks_viewer.select_track_id_from_node(2)
+
+        assert tracks_viewer.selected_track == tracks.get_track_id(2)
+        assert tracks_viewer.tracking_layers.seg_layer.selected_label == 2
+        assert len(tracks_viewer.selected_nodes) == 0
+
+    def test_revalidates_when_the_label_is_already_selected(self, tracks_viewer_setup):
+        """Picking the same node again after a time change re-runs the validation."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+        seg_layer = tracks_viewer.tracking_layers.seg_layer
+
+        viewer.dims.set_point(0, 1)
+        tracks_viewer.select_track_id_from_node(2)
+        assert seg_layer.selected_label == 2
+
+        # node 2 is the only node of track 2, so in frame 0 a new label is needed.
+        # Setting selected_label to 2 emits nothing here, so the pick has to validate
+        # by hand or we would paint frame 0 with an existing node id from frame 1.
+        viewer.dims.set_point(0, 0)
+        tracks_viewer.select_track_id_from_node(2)
+
+        assert tracks_viewer.selected_track == tracks.get_track_id(2)
+        assert seg_layer.selected_label != 2
+        assert not tracks.graph_solution.has_node(seg_layer.selected_label)
+
+    def test_without_segmentation(self, viewer, graph_2d_without_segmentation):
+        """Without a seg layer the track id is set directly and the signal fires."""
+        tracks = MotileRun(
+            graph=graph_2d_without_segmentation,
+            run_name="test",
+            ndim=3,
+            time_attr="t",
+        )
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(tracks=tracks, name="test")
+        assert tracks_viewer.tracking_layers.seg_layer is None
+
+        emitted = []
+        tracks_viewer.update_track_id.connect(lambda: emitted.append(True))
+        tracks_viewer.select_track_id_from_node(6)
+
+        assert tracks_viewer.selected_track == tracks.get_track_id(6)
+        assert len(tracks_viewer.selected_nodes) == 0
+        assert emitted
+
+    def test_unknown_node_is_ignored(self, tracks_viewer_setup):
+        """A node that is not in the graph leaves the current track id alone."""
+        viewer, tracks_viewer, tracks = tracks_viewer_setup
+
+        tracks_viewer.select_track_id_from_node(1)
+        before = tracks_viewer.selected_track
+
+        tracks_viewer.select_track_id_from_node(9999)
+        assert tracks_viewer.selected_track == before
+
+
+class TestOverlayText:
+    """Tests for the viewer text overlay."""
+
+    def test_set_display_mode_names_the_mode(self, tracks_viewer_setup):
+        """Each mode writes its own overlay text to the viewer."""
+        viewer, tracks_viewer, _ = tracks_viewer_setup
+
+        for mode, label in (("lineage", "Lineage"), ("group", "Group"), ("all", "All")):
+            tracks_viewer.set_display_mode(mode)
+            assert viewer.text_overlay.text == BASE_TEXT + label
 
 
 class TestSingletonLifecycle:
@@ -480,18 +1005,18 @@ class TestUndoRedo:
         # Do a real action: delete unconnected node 3
         click_node(tracks_viewer, 3)
         tracks_viewer.delete_node()
-        assert not tracks.graph.has_node(3)
+        assert not tracks.graph_solution.has_node(3)
 
         # Undo: node 3 should be restored
         tracks_viewer.undo()
-        assert tracks.graph.has_node(3)
+        assert tracks.graph_solution.has_node(3)
 
         # Redo: node 3 should be gone again
         tracks_viewer.redo()
-        assert not tracks.graph.has_node(3)
+        assert not tracks.graph_solution.has_node(3)
 
         tracks_viewer.undo()
-        assert tracks.graph.has_node(3)
+        assert tracks.graph_solution.has_node(3)
 
     def test_undo_redo_with_no_tracks(self, viewer):
         """Test undo/redo do nothing when no tracks are loaded."""
@@ -507,7 +1032,7 @@ class TestLayerCreation:
 
     def test_layers_present_after_update_tracks(self, viewer, solution_tracks_2d):
         """Test that points, tracks graph, and seg layers are added to the viewer
-        after calling update_tracks with a SolutionTracks that has segmentation."""
+        after calling update_tracks with a Tracks that has segmentation."""
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
 
@@ -529,7 +1054,7 @@ class TestLayerCreation:
     def test_layers_present_after_solve(self, viewer, segmentation_2d):
         """End-to-end test: solve on a segmentation, wrap result in MotileRun,
         load into TracksViewer, and verify all three layer types are present."""
-        from motile_tracker.motile.backend import MotileRun, SolverParams, solve
+        from napari_track_edit.motile.backend import MotileRun, SolverParams, solve
 
         segmentation = segmentation_2d
         params = SolverParams()
@@ -550,3 +1075,108 @@ class TestLayerCreation:
         assert "solve_test_points" in layer_names
         assert "solve_test_tracks" in layer_names
         assert "solve_test_seg" in layer_names
+
+
+class TestClearTracks:
+    """Tests that emptying the results list empties every view with it."""
+
+    def _load(self, viewer, tracks, name="test"):
+        """Load tracks the way the UI does, through the results list.
+
+        tree_widget_present is what the docked TreeWidget sets; without it
+        update_track_df returns early and track_df stays empty whatever happens,
+        which would make the assertions about it meaningless.
+        """
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.tree_widget_present = True
+        tracks_viewer.tracks_list.add_tracks(tracks, name, select=True)
+        return tracks_viewer
+
+    def _delete_row(self, tracks_viewer, row=0):
+        tracks_list = tracks_viewer.tracks_list
+        tracks_list.remove_tracks(tracks_list.tracks_list.item(row))
+
+    def test_removing_only_row_clears_tracks(self, viewer, solution_tracks_2d):
+        tracks_viewer = self._load(viewer, solution_tracks_2d)
+        assert tracks_viewer.tracks is not None
+        # guard against the assertions below passing vacuously
+        assert not tracks_viewer.track_df.empty
+
+        self._delete_row(tracks_viewer)
+
+        assert tracks_viewer.tracks is None
+        assert tracks_viewer.track_df.empty
+        assert tracks_viewer.axis_order == []
+        assert tracks_viewer.mode == "all"
+        assert len(tracks_viewer.selected_nodes) == 0
+
+    def test_removing_only_row_removes_layers(self, viewer, solution_tracks_2d):
+        tracks_viewer = self._load(viewer, solution_tracks_2d)
+        assert "test_points" in [layer.name for layer in viewer.layers]
+
+        self._delete_row(tracks_viewer)
+
+        layers = tracks_viewer.tracking_layers
+        assert layers.points_layer is None
+        assert layers.tracks_layer is None
+        assert layers.seg_layer is None
+        layer_names = [layer.name for layer in viewer.layers]
+        assert "test_points" not in layer_names
+        assert "test_tracks" not in layer_names
+        assert "test_seg" not in layer_names
+
+    def test_removing_one_of_two_rows_keeps_showing_tracks(
+        self, viewer, solution_tracks_2d, graph_2d
+    ):
+        """Deleting a row while another remains must not clear anything: Qt selects
+        the neighbouring row, which re-emits view_tracks."""
+        second = MotileRun(graph=graph_2d, run_name="second", ndim=3, time_attr="t")
+        tracks_viewer = self._load(viewer, solution_tracks_2d, "first")
+        tracks_viewer.tracks_list.add_tracks(second, "second", select=True)
+
+        self._delete_row(tracks_viewer, row=1)
+
+        assert tracks_viewer.tracks is not None
+        assert not tracks_viewer.track_df.empty
+        assert tracks_viewer.tracking_layers.points_layer is not None
+
+    def test_clear_with_node_selected(self, viewer, solution_tracks_2d):
+        """A live selection must not make the clear raise, and must not survive it."""
+        tracks_viewer = self._load(viewer, solution_tracks_2d)
+        node = next(iter(solution_tracks_2d.graph_solution.node_ids()))
+        tracks_viewer.selected_nodes.add(node)
+
+        self._delete_row(tracks_viewer)
+
+        assert len(tracks_viewer.selected_nodes) == 0
+        assert not tracks_viewer.selected_nodes.has_valid_last_shown_set
+        assert not tracks_viewer.selected_nodes.has_previous_set
+
+    def test_clear_in_lineage_mode(self, viewer, solution_tracks_2d):
+        """Lineage mode walks the graph to decide what is visible, so the clear has
+        to survive being called while it is active."""
+        tracks_viewer = self._load(viewer, solution_tracks_2d)
+        node = next(iter(solution_tracks_2d.graph_solution.node_ids()))
+        tracks_viewer.selected_nodes.add(node)
+        tracks_viewer.set_display_mode("lineage")
+
+        self._delete_row(tracks_viewer)
+
+        assert tracks_viewer.tracks is None
+        assert tracks_viewer.mode == "all"
+
+    def test_actions_do_not_raise_after_clear(self, viewer, solution_tracks_2d):
+        """Buttons and keybindings that stay enabled after the clear used to
+        dereference the removed tracks object."""
+        tracks_viewer = self._load(viewer, solution_tracks_2d)
+        self._delete_row(tracks_viewer)
+
+        tracks_viewer.request_new_track()
+        tracks_viewer.toggle_display_mode()
+        tracks_viewer.update_selection()
+        tracks_viewer.filter_visible_nodes()
+        tracks_viewer.delete_node()
+        tracks_viewer.connect_nodes()
+        tracks_viewer.set_division()
+        tracks_viewer.undo()
+        tracks_viewer.redo()

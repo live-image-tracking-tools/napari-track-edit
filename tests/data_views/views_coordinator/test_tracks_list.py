@@ -9,17 +9,25 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from funtracks.data_model import SolutionTracks, Tracks
+import tracksdata as td
+from funtracks.data_model import Tracks
 from funtracks.import_export import write_to_geff
 from qtpy.QtWidgets import QDialog
 from tracksdata.nodes import Mask
 
-from motile_tracker.data_views.views_coordinator.tracks_list import (
+from napari_track_edit.data_views.views_coordinator.tracks_list import (
+    SQL_LOAD_OPTION,
     TracksButton,
     TracksList,
     default_save_dir,
 )
-from motile_tracker.motile.backend.motile_run import MotileRun, SolverParams
+from napari_track_edit.import_export.sql_io import (
+    is_sql_backed,
+    sql_database_path,
+    tracks_from_sql,
+    write_tracks_to_sql,
+)
+from napari_track_edit.motile.backend.motile_run import MotileRun, SolverParams
 
 
 @pytest.fixture(autouse=True)
@@ -79,6 +87,21 @@ class TestTracksListAddRemove:
         tracks_list.remove_tracks(item)
         assert tracks_list.tracks_list.count() == 0
 
+    def test_remove_last_tracks_emits_cleared(self, tracks_list, motile_run):
+        emitted = []
+        tracks_list.tracks_cleared.connect(lambda: emitted.append(True))
+        tracks_list.add_tracks(motile_run, "run1", select=False)
+        tracks_list.remove_tracks(tracks_list.tracks_list.item(0))
+        assert emitted == [True]
+
+    def test_remove_one_of_two_does_not_emit_cleared(self, tracks_list, motile_run):
+        emitted = []
+        tracks_list.tracks_cleared.connect(lambda: emitted.append(True))
+        tracks_list.add_tracks(motile_run, "run1", select=False)
+        tracks_list.add_tracks(motile_run, "run2", select=False)
+        tracks_list.remove_tracks(tracks_list.tracks_list.item(0))
+        assert emitted == []
+
     def test_selection_changed_emits_signal(self, tracks_list, motile_run):
         emitted = []
         tracks_list.view_tracks.connect(lambda t, n: emitted.append((t, n)))
@@ -87,100 +110,92 @@ class TestTracksListAddRemove:
         assert len(emitted) == 1
         assert emitted[0][1] == "run1"
 
-    def test_add_solution_tracks_not_wrapped(self, tracks_list, solution_tracks_2d):
-        """SolutionTracks added to the list should NOT be wrapped in MotileRun."""
+    def test_add_tracks_not_wrapped(self, tracks_list, solution_tracks_2d):
+        """Tracks added to the list should NOT be wrapped in MotileRun."""
         tracks_list.add_tracks(solution_tracks_2d, "imported", select=False)
         item = tracks_list.tracks_list.item(0)
         widget = tracks_list.tracks_list.itemWidget(item)
-        assert isinstance(widget.tracks, SolutionTracks)
+        assert widget.tracks is solution_tracks_2d
         assert not isinstance(widget.tracks, MotileRun)
 
-    def test_view_tracks_emits_solution_tracks_for_plain_tracks(
-        self, tracks_list, graph_2d
-    ):
-        """The list stores plain Tracks, but view_tracks must emit a
-        SolutionTracks because the views and actions still need track IDs.
+    def test_view_tracks_emits_the_stored_object(self, tracks_list, graph_2d):
+        """view_tracks must emit the very object the list holds.
+
+        The list used to convert to the deprecated Tracks on the way
+        out, which rebuilt the solution view and the segmentation: a second
+        subgraph() over the whole graph, and a viewer editing a different
+        object than the one the save and export buttons read.
         """
         # the fixture graph stores track ids in "track_id", so that has to be
         # declared: tracklet_attr is how a caller names an existing column
-        plain_tracks = Tracks(graph_2d, ndim=3, time_attr="t", tracklet_attr="track_id")
+        tracks = Tracks(graph_2d, ndim=3, time_attr="t", tracklet_attr="track_id")
 
         emitted = []
         tracks_list.view_tracks.connect(lambda t, n: emitted.append((t, n)))
-        tracks_list.add_tracks(plain_tracks, "plain", select=True)
+        tracks_list.add_tracks(tracks, "plain", select=True)
 
-        # stored as-is, not converted on the way in
         item = tracks_list.tracks_list.item(0)
-        assert tracks_list.tracks_list.itemWidget(item).tracks is plain_tracks
+        assert tracks_list.tracks_list.itemWidget(item).tracks is tracks
 
         assert len(emitted) == 1
-        converted = emitted[0][0]
-        assert isinstance(converted, SolutionTracks)
-        # the conversion must carry over the attributes the views rely on
-        # rather than re-deriving them
-        assert converted.scale == plain_tracks.scale
-        assert converted.ndim == plain_tracks.ndim
-        assert (converted.segmentation is None) == (plain_tracks.segmentation is None)
-        # the point of converting: the views need track ids to actually be on
-        # the graph, not merely named by the FeatureDict
-        assert converted.features.tracklet_key in converted.graph.node_attr_keys()
-        assert converted.features.lineage_key in converted.graph.node_attr_keys()
+        assert emitted[0][0] is tracks
+        # the views need track ids to actually be on the graph, not merely
+        # named by the FeatureDict
+        assert tracks.features.tracklet_key in tracks.graph_solution.node_attr_keys()
+        assert tracks.features.lineage_key in tracks.graph_solution.node_attr_keys()
 
-    def test_view_tracks_computes_missing_track_ids(self, tracks_list, graph_2d):
-        """Tracks with no track id column at all must come out of the
-        conversion with one computed, not merely declared.
+    def test_view_tracks_emits_tracks_with_track_ids(self, tracks_list, graph_2d):
+        """Tracks built from a graph with no track id column must still reach
+        the views with one computed, not merely declared.
 
-        Tracks imported from a geff that never had track ids land here. On
-        funtracks < 2.1, passing a FeatureDict to Tracks.__init__ activates the
-        declared features without computing the missing ones, so the conversion
-        has to enable them itself. From 2.1 the constructor already computes
-        them, so this only checks that the outcome is the same either way.
+        Tracks imported from a geff that never had track ids land here. The
+        list no longer repairs this on the way out, so the guarantee has to
+        come from Tracks.__init__ itself.
         """
         graph_2d.remove_node_attr_key("track_id")
         graph_2d.remove_node_attr_key("lineage_id")
-        plain_tracks = Tracks(graph_2d, ndim=3, time_attr="t")
+        tracks = Tracks(graph_2d, ndim=3, time_attr="t")
 
         emitted = []
         tracks_list.view_tracks.connect(lambda t, n: emitted.append((t, n)))
-        tracks_list.add_tracks(plain_tracks, "plain", select=True)
+        tracks_list.add_tracks(tracks, "plain", select=True)
 
-        converted = emitted[0][0]
-        assert converted.features.tracklet_key in converted.graph.node_attr_keys()
-        assert converted.features.lineage_key in converted.graph.node_attr_keys()
+        viewed = emitted[0][0]
+        assert viewed.features.tracklet_key in viewed.graph_solution.node_attr_keys()
+        assert viewed.features.lineage_key in viewed.graph_solution.node_attr_keys()
 
     def test_view_tracks_segmentation_follows_edits(self, tracks_list, graph_2d):
-        """The emitted tracks must own their segmentation, not borrow the old one.
+        """The emitted tracks must own the segmentation they render.
 
         A GraphArrayView renders from, and listens to, the single graph object
-        it was built with. Handing the original view to the converted tracks
-        left it bound to the graph of the tracks in the list, so an edit made
-        through the converted tracks (painting a label) never invalidated its
-        cache: the pixels snapped back while the centroid moved.
+        it was built with. When the list converted on the way out, the emitted
+        tracks could end up bound to the graph of a different object, so an
+        edit made through the emitted tracks (painting a label) never
+        invalidated its cache: the pixels snapped back while the centroid
+        moved.
         """
-        plain_tracks = Tracks(graph_2d, ndim=3, time_attr="t", tracklet_attr="track_id")
-        assert plain_tracks.segmentation is not None
+        tracks = Tracks(graph_2d, ndim=3, time_attr="t", tracklet_attr="track_id")
+        assert tracks.segmentation is not None
 
         emitted = []
         tracks_list.view_tracks.connect(lambda t, n: emitted.append((t, n)))
-        tracks_list.add_tracks(plain_tracks, "plain", select=True)
-        converted = emitted[0][0]
+        tracks_list.add_tracks(tracks, "plain", select=True)
+        viewed = emitted[0][0]
 
-        assert converted.segmentation.graph is converted.graph_solution
+        assert viewed.segmentation.graph is viewed.graph_solution
 
         node = 1
-        time = converted.get_time(node)
-        assert (np.asarray(converted.segmentation[time]) == node).any()
+        time = viewed.get_time(node)
+        assert (np.asarray(viewed.segmentation[time]) == node).any()
 
-        old_mask = converted.get_mask(node)
-        converted.update_mask(
-            node, Mask(np.zeros_like(old_mask.mask), bbox=old_mask.bbox)
-        )
+        old_mask = viewed.get_mask(node)
+        viewed.update_mask(node, Mask(np.zeros_like(old_mask.mask), bbox=old_mask.bbox))
 
-        assert not (np.asarray(converted.segmentation[time]) == node).any()
+        assert not (np.asarray(viewed.segmentation[time]) == node).any()
 
     def test_view_tracks_passes_through_motile_run(self, tracks_list, motile_run):
-        """A MotileRun is already a SolutionTracks, so it must be emitted
-        unchanged rather than rebuilt (which would drop its solver params).
+        """A MotileRun is already a Tracks, so it must be emitted unchanged
+        rather than rebuilt (which would drop its solver params).
         """
         emitted = []
         tracks_list.view_tracks.connect(lambda t, n: emitted.append((t, n)))
@@ -196,7 +211,7 @@ class TestTracksListAddRemove:
 
 
 class TestTracksListSavePathFields:
-    def test_save_dir_defaults_to_appdirs(self, tracks_list):
+    def test_save_dir_defaults_to_platformdirs(self, tracks_list):
         """The save directory starts where the sample data lives, not in the
         user's home directory."""
         assert tracks_list.save_dir_line.text() == str(default_save_dir())
@@ -271,7 +286,7 @@ class TestTracksListSavePathFields:
 
     def test_browse_sets_save_dir(self, tracks_list, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_list."
+            "napari_track_edit.data_views.views_coordinator.tracks_list."
             "QFileDialog.getExistingDirectory",
             lambda *a, **k: str(tmp_path),
         )
@@ -281,7 +296,7 @@ class TestTracksListSavePathFields:
     def test_browse_cancelled_leaves_save_dir(self, tracks_list, monkeypatch):
         before = tracks_list.save_dir_line.text()
         monkeypatch.setattr(
-            "motile_tracker.data_views.views_coordinator.tracks_list."
+            "napari_track_edit.data_views.views_coordinator.tracks_list."
             "QFileDialog.getExistingDirectory",
             lambda *a, **k: "",
         )
@@ -378,15 +393,15 @@ class TestTracksListSave:
 
 
 # ---------------------------------------------------------------------------
-# TracksList — save SolutionTracks directly (not wrapped in MotileRun)
+# TracksList — save Tracks directly (not wrapped in MotileRun)
 # ---------------------------------------------------------------------------
 
 
-class TestTracksListSaveSolutionTracks:
+class TestTracksListSaveTracks:
     def test_solution_tracks_saved_directly_to_path(
         self, tracks_list, solution_tracks_2d, tmp_path
     ):
-        """SolutionTracks are written with write_to_geff at the save path,
+        """Tracks are written with write_to_geff at the save path,
         not wrapped in a MotileRun."""
         tracks_list.add_tracks(solution_tracks_2d, "imported", select=True)
         tracks_list.save_dir_line.setText(str(tmp_path))
@@ -572,7 +587,7 @@ class TestTracksListLoadGeff:
 
         assert len(emitted) == 1
         # tracks_loaded hands out the stored object as-is, which is a plain
-        # Tracks. Only view_tracks converts to SolutionTracks.
+        # Tracks; nothing converts on the way in or out.
         assert isinstance(emitted[0][0], Tracks)
         assert emitted[0][1] == geff_path
 
@@ -642,7 +657,7 @@ class TestTracksListLoadExternal:
 
         tracks_list.dropdown_menu.setCurrentText("External tracks from CSV")
         with patch(
-            "motile_tracker.data_views.views_coordinator.tracks_list.ImportDialog",
+            "napari_track_edit.data_views.views_coordinator.tracks_list.ImportDialog",
             return_value=mock_dialog,
         ):
             tracks_list.load_tracks()
@@ -654,7 +669,7 @@ class TestTracksListLoadExternal:
         mock_dialog.exec_.return_value = QDialog.Rejected
 
         with patch(
-            "motile_tracker.data_views.views_coordinator.tracks_list.ImportDialog",
+            "napari_track_edit.data_views.views_coordinator.tracks_list.ImportDialog",
             return_value=mock_dialog,
         ):
             assert tracks_list._load_tracks("csv") is None
@@ -667,7 +682,7 @@ class TestTracksListLoadExternal:
         mock_dialog.tracks = None
 
         with patch(
-            "motile_tracker.data_views.views_coordinator.tracks_list.ImportDialog",
+            "napari_track_edit.data_views.views_coordinator.tracks_list.ImportDialog",
             return_value=mock_dialog,
         ):
             assert tracks_list._load_tracks("csv") is None
@@ -686,7 +701,7 @@ class TestTracksListExport:
         item = tracks_list.tracks_list.item(0)
 
         with patch(
-            "motile_tracker.data_views.views_coordinator.tracks_list.ExportDialog.show_export_dialog"
+            "napari_track_edit.data_views.views_coordinator.tracks_list.ExportDialog.show_export_dialog"
         ) as mock_export:
             tracks_list.show_export_dialog(item)
             mock_export.assert_called_once()
@@ -699,8 +714,201 @@ class TestTracksListExport:
         tracks_list.request_colormap.connect(lambda: emitted.append(True))
 
         with patch(
-            "motile_tracker.data_views.views_coordinator.tracks_list.ExportDialog.show_export_dialog"
+            "napari_track_edit.data_views.views_coordinator.tracks_list.ExportDialog.show_export_dialog"
         ):
             tracks_list.show_export_dialog(item)
 
         assert len(emitted) == 1
+
+
+# ---------------------------------------------------------------------------
+# TracksList — SQL database
+# ---------------------------------------------------------------------------
+
+_GET_OPEN_FILE_NAME = (
+    "napari_track_edit.data_views.views_coordinator.tracks_list."
+    "QFileDialog.getOpenFileName"
+)
+
+
+@pytest.fixture
+def tracks_db(graph_2d, tmp_path):
+    """A tracks database on disk, written the way the export dialog writes one.
+
+    Built with an explicit scale, because that is what a database written by
+    napari_track_edit records and what keeps the load from having to ask.
+    """
+    path = tmp_path / "saved_tracks.db"
+    write_tracks_to_sql(
+        Tracks(graph_2d, ndim=3, time_attr="t", scale=[1.0, 0.5, 0.25]), path
+    )
+    return path
+
+
+class TestTracksListLoadSql:
+    def test_dropdown_offers_sql(self, tracks_list):
+        assert tracks_list.dropdown_menu.findText(SQL_LOAD_OPTION) != -1
+
+    def test_load_tracks_dispatches_sql(self, tracks_list):
+        tracks_list.dropdown_menu.setCurrentText(SQL_LOAD_OPTION)
+        with patch.object(tracks_list, "load_sql_tracks", return_value=None) as mock:
+            tracks_list.load_tracks()
+            mock.assert_called_once()
+
+    def test_load_adds_database_backed_tracks(self, tracks_list, tracks_db):
+        tracks_list.dropdown_menu.setCurrentText(SQL_LOAD_OPTION)
+        with patch(_GET_OPEN_FILE_NAME, return_value=(str(tracks_db), "")):
+            tracks_list.load_tracks()
+
+        assert tracks_list.tracks_list.count() == 1
+        widget = tracks_list.tracks_list.itemWidget(tracks_list.tracks_list.item(0))
+        assert widget.name.text() == "saved_tracks"
+        assert is_sql_backed(widget.tracks)
+        assert sql_database_path(widget.tracks) == tracks_db
+
+    def test_load_emits_tracks_loaded_with_database_path(self, tracks_list, tracks_db):
+        tracks_list.dropdown_menu.setCurrentText(SQL_LOAD_OPTION)
+        emitted = []
+        tracks_list.tracks_loaded.connect(lambda t, p: emitted.append((t, p)))
+
+        with patch(_GET_OPEN_FILE_NAME, return_value=(str(tracks_db), "")):
+            tracks_list.load_tracks()
+
+        assert len(emitted) == 1
+        assert emitted[0][1] == tracks_db
+
+    def test_load_cancelled_adds_nothing(self, tracks_list):
+        tracks_list.dropdown_menu.setCurrentText(SQL_LOAD_OPTION)
+        with patch(_GET_OPEN_FILE_NAME, return_value=("", "")):
+            tracks_list.load_tracks()
+
+        assert tracks_list.tracks_list.count() == 0
+
+    def test_load_bad_path_warns(self, tracks_list, tmp_path):
+        not_a_database = tmp_path / "nope.db"
+        not_a_database.write_bytes(b"not a database")
+
+        tracks_list.dropdown_menu.setCurrentText(SQL_LOAD_OPTION)
+        with (
+            patch(_GET_OPEN_FILE_NAME, return_value=(str(not_a_database), "")),
+            pytest.warns(UserWarning, match="Could not"),
+        ):
+            tracks_list.load_tracks()
+
+        assert tracks_list.tracks_list.count() == 0
+
+    def test_recorded_scale_is_restored(self, tracks_list, tracks_db):
+        tracks_list.dropdown_menu.setCurrentText(SQL_LOAD_OPTION)
+        with patch(_GET_OPEN_FILE_NAME, return_value=(str(tracks_db), "")):
+            tracks_list.load_tracks()
+
+        widget = tracks_list.tracks_list.itemWidget(tracks_list.tracks_list.item(0))
+        assert widget.tracks.scale == [1.0, 0.5, 0.25]
+
+    def test_loads_without_asking_when_no_scale_is_recorded(
+        self, tracks_list, solution_tracks_2d, tmp_path
+    ):
+        """A database with no scale loads with none, exactly like a geff does.
+
+        Tracks with no scale are an ordinary state throughout the application, so
+        the load must not stop to ask - a modal here would also hang the suite.
+        """
+        foreign = tmp_path / "foreign.db"
+        td.graph.SQLGraph.from_other(
+            solution_tracks_2d.graph_full, drivername="sqlite", database=str(foreign)
+        )
+
+        tracks_list.dropdown_menu.setCurrentText(SQL_LOAD_OPTION)
+        with patch(_GET_OPEN_FILE_NAME, return_value=(str(foreign), "")):
+            tracks_list.load_tracks()
+
+        assert tracks_list.tracks_list.count() == 1
+        widget = tracks_list.tracks_list.itemWidget(tracks_list.tracks_list.item(0))
+        assert widget.tracks.scale is None
+
+
+class TestTracksListOnDiskNote:
+    def test_hidden_for_in_memory_tracks(self, tracks_list, solution_tracks_2d):
+        tracks_list.add_tracks(solution_tracks_2d, "in memory")
+        assert not tracks_list.on_disk_label.isVisibleTo(tracks_list)
+
+    def test_shown_for_database_backed_tracks(self, tracks_list, tracks_db):
+        tracks_list.add_tracks(tracks_from_sql(tracks_db), "on disk")
+        assert tracks_list.on_disk_label.isVisibleTo(tracks_list)
+        assert str(tracks_db) in tracks_list.on_disk_label.text()
+
+    def test_hidden_when_the_last_database_row_is_removed(self, tracks_list, tracks_db):
+        """Removing the row clears the selection, and the note must go with it.
+
+        Left up, it would keep claiming edits are being written to a database
+        that is no longer open anywhere.
+        """
+        tracks_list.add_tracks(tracks_from_sql(tracks_db), "on disk")
+        assert tracks_list.on_disk_label.isVisibleTo(tracks_list)
+
+        tracks_list.remove_tracks(tracks_list.tracks_list.item(0))
+
+        assert not tracks_list.on_disk_label.isVisibleTo(tracks_list)
+
+    def test_hidden_again_when_an_in_memory_row_is_selected(
+        self, tracks_list, tracks_db, solution_tracks_2d
+    ):
+        tracks_list.add_tracks(tracks_from_sql(tracks_db), "on disk")
+        tracks_list.add_tracks(solution_tracks_2d, "in memory")
+        assert not tracks_list.on_disk_label.isVisibleTo(tracks_list)
+
+
+class TestTracksListExportRebind:
+    def test_rebound_tracks_replace_the_row(
+        self, tracks_list, solution_tracks_2d, tracks_db
+    ):
+        """Exporting with 'continue editing' swaps the row over to the database."""
+        tracks_list.add_tracks(solution_tracks_2d, "run")
+        item = tracks_list.tracks_list.item(0)
+        rebound = tracks_from_sql(tracks_db)
+
+        with patch(
+            "napari_track_edit.data_views.views_coordinator.tracks_list."
+            "ExportDialog.show_export_dialog",
+            return_value=rebound,
+        ):
+            tracks_list.show_export_dialog(item)
+
+        widget = tracks_list.tracks_list.itemWidget(item)
+        assert widget.tracks is rebound
+        assert tracks_list.on_disk_label.isVisibleTo(tracks_list)
+
+    def test_rebound_tracks_are_redisplayed(
+        self, tracks_list, solution_tracks_2d, tracks_db
+    ):
+        """Re-emitting view_tracks is what makes the layers and tree rebuild."""
+        tracks_list.add_tracks(solution_tracks_2d, "run")
+        item = tracks_list.tracks_list.item(0)
+        rebound = tracks_from_sql(tracks_db)
+
+        emitted = []
+        tracks_list.view_tracks.connect(lambda t, n: emitted.append(t))
+
+        with patch(
+            "napari_track_edit.data_views.views_coordinator.tracks_list."
+            "ExportDialog.show_export_dialog",
+            return_value=rebound,
+        ):
+            tracks_list.show_export_dialog(item)
+
+        assert len(emitted) == 1
+        assert is_sql_backed(emitted[0])
+
+    def test_plain_export_leaves_the_row_alone(self, tracks_list, solution_tracks_2d):
+        tracks_list.add_tracks(solution_tracks_2d, "run")
+        item = tracks_list.tracks_list.item(0)
+
+        with patch(
+            "napari_track_edit.data_views.views_coordinator.tracks_list."
+            "ExportDialog.show_export_dialog",
+            return_value=True,
+        ):
+            tracks_list.show_export_dialog(item)
+
+        widget = tracks_list.tracks_list.itemWidget(item)
+        assert widget.tracks is solution_tracks_2d

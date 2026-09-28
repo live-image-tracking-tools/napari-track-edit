@@ -1,0 +1,49 @@
+/* Extra styles for the PDF export of napari-track-edit_tutorial.md with the VS Code
+   'Markdown PDF' extension, loaded by the <link> at the top of the tutorial (the extension
+   strips <style> blocks from the markdown, but keeps <link> tags).
+
+   The only tables in the tutorial are the key bindings (_key_bindings.md), which are made
+   compact here so that they fit on a single page. */
+
+h1, h2, h3, h4 {
+    break-after: avoid;
+    page-break-after: avoid;
+}
+
+table {
+    width: 100%;
+    font-size: 12px;
+    line-height: 14px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+table > thead > tr > th,
+table > tbody > tr > td {
+    padding: 1px 12px 1px 0;
+}
+
+table th:first-child,
+table td:first-child {
+    width: 150px;
+    white-space: nowrap;
+}
+
+/* the default inline code style has a larger line height, which makes rows uneven */
+table code {
+    line-height: 14px;
+}
+
+/* the monospace font draws arrows very small, so use the text font for the keys */
+table td:first-child code {
+    font-family: inherit;
+}
+
+/* bring the category headings (### Selection, ...) closer to their tables */
+table + h3 {
+    margin-top: 10px;
+    margin-bottom: 4px;
+}
+table {
+    margin-bottom: 0;
+}

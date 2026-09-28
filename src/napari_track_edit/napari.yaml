@@ -1,0 +1,91 @@
+name: napari-track-edit
+display_name: Napari Track Edit
+# use 'hidden' to remove plugin from napari hub search results
+visibility: public
+# see https://napari.org/stable/plugins/manifest.html for valid categories
+categories: ["Utilities"]
+contributions:
+  commands:
+    - id: napari-track-edit.main_app
+      python_name: napari_track_edit.application_menus.main_app:MainAppWidget
+      title: "Open all menus and the lineage view"
+    - id: napari-track-edit.tracking_group
+      python_name: napari_track_edit.application_menus.main_app:TrackingGroupWidget
+      title: "Open tracking widgets"
+    - id: napari-track-edit.editing_group
+      python_name: napari_track_edit.application_menus.main_app:EditingGroupWidget
+      title: "Open editing widgets"
+    - id: napari-track-edit.getting_started
+      python_name: napari_track_edit.application_menus.main_app:GettingStarted_LauncherWidget
+      title: "Open Getting started menu"
+    - id: napari-track-edit.tracking
+      python_name: napari_track_edit.application_menus.main_app:Tracking_LauncherWidget
+      title: "Open Tracking menu"
+    - id: napari-track-edit.tracks_list
+      python_name: napari_track_edit.application_menus.main_app:TrackList_LauncherWidget
+      title: "Open Tracks List menu"
+    - id: napari-track-edit.editing_selection
+      python_name: napari_track_edit.application_menus.main_app:EditingSelection_LauncherWidget
+      title: "Open Editing && Selection menu"
+    - id: napari-track-edit.visualization
+      python_name: napari_track_edit.application_menus.main_app:Visualization_LauncherWidget
+      title: "Open Visualization menu"
+    - id: napari-track-edit.features
+      python_name: napari_track_edit.application_menus.main_app:Feature_LauncherWidget
+      title: "Open Feature menu"
+    - id: napari-track-edit.groups
+      python_name: napari_track_edit.application_menus.main_app:Groups_LauncherWidget
+      title: "Open Groups menu"
+    - id: napari-track-edit.table
+      python_name: napari_track_edit.application_menus.main_app:Table_LauncherWidget
+      title: "Open Table menu"
+    - id: napari-track-edit.lineage_view
+      python_name: napari_track_edit.application_menus.main_app:LineageView_LauncherWidget
+      title: "Open Lineage View menu"
+    - id: napari-track-edit.solve
+      python_name: napari_track_edit.motile.backend.solve:solve
+      title: "Run motile tracking (backend only)"
+    - id: napari-track-edit.Fluo_N2DL_HeLa
+      python_name: napari_track_edit.example_data:Fluo_N2DL_HeLa
+      title: "Load Fluo-N2DL-HeLa tracking dataset"
+    - id: napari-track-edit.Fluo_N2DL_HeLa_crop
+      python_name: napari_track_edit.example_data:Fluo_N2DL_HeLa_crop
+      title: "Load Fluo-N2DL-HeLa tracking dataset (crop)"
+    - id: napari-track-edit.Mouse_Embryo_Membrane
+      python_name: napari_track_edit.example_data:Mouse_Embryo_Membrane
+      title: "Load Mouse Embryo_Membrane tracking dataset"
+  widgets:
+    - command: napari-track-edit.main_app
+      display_name: Open all widgets
+    - command: napari-track-edit.tracking_group
+      display_name: Open tracking widgets
+    - command: napari-track-edit.editing_group
+      display_name: Open editing widgets
+    - command: napari-track-edit.getting_started
+      display_name: Widget - Getting started
+    - command: napari-track-edit.tracking
+      display_name: Widget - Tracking
+    - command: napari-track-edit.tracks_list
+      display_name: Widget - Tracks List
+    - command: napari-track-edit.editing_selection
+      display_name: Widget - Editing & Selection
+    - command: napari-track-edit.visualization
+      display_name: Widget - Visualization
+    - command: napari-track-edit.features
+      display_name: Widget - Features
+    - command: napari-track-edit.groups
+      display_name: Widget - Groups
+    - command: napari-track-edit.table
+      display_name: Widget - Table
+    - command: napari-track-edit.lineage_view
+      display_name: Widget - Lineage View
+  sample_data:
+    - command: napari-track-edit.Fluo_N2DL_HeLa
+      key: "Fluo-N2DL-HeLa"
+      display_name: "Fluo-N2DL-HeLa (2D)"
+    - command: napari-track-edit.Fluo_N2DL_HeLa_crop
+      key: "Fluo-N2DL-HeLa-crop"
+      display_name: "Fluo-N2DL-HeLa crop (2D)"
+    - command: napari-track-edit.Mouse_Embryo_Membrane
+      key: "Mouse_Embryo_Membrane"
+      display_name: "Mouse Embryo Membranes (3D)"
