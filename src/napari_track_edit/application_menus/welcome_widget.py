@@ -34,8 +34,7 @@ class WelcomeWidget(QWidget):
         super().__init__()
         self.viewer = viewer
 
-        content_widget = QWidget()
-        layout = QVBoxLayout(content_widget)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
@@ -51,12 +50,13 @@ class WelcomeWidget(QWidget):
         title_row.addStretch()
         layout.addLayout(title_row)
 
-        # Top links
+        # Links and quick start in a single browser, so that they scroll together
+        # and the example links stay reachable on small screens
         example_links = "&nbsp;&nbsp;".join(
             f'<a href="{EXAMPLE_SCHEME}:{name}"><b>🔬 {name}</b></a>'
             for name in SAMPLE_TRACKS
         )
-        links_html = f"""
+        content_html = f"""
         <p style="margin: 8px 0; line-height: 1.8;">
             <a href="{DOCS_URL}"><b>📖 Documentation</b></a>&nbsp;&nbsp;
             <a href="{KEYBINDINGS_URL}"><b>🖱️ Keybindings</b></a>&nbsp;&nbsp;
@@ -65,49 +65,34 @@ class WelcomeWidget(QWidget):
         <p style="margin: 8px 0; line-height: 1.8;">
             <b>Example data:</b>&nbsp;&nbsp;{example_links}
         </p>
+
+        <h3>Quick Start</h3>
+        <ol>
+            <li><b>Load Data</b>: Drag and drop your label or points data in the napari viewer.</li>
+            <li><b>Configure Tracking</b>: Specify parameters in the Tracking panel and click 'Run Tracking'.</li>
+            <li><b>Results</b>: Results are added to the Tracks List. View and navigate a tracking result in the napari layers and in the Lineage View.</li>
+            <li><b>Edit Results</b>: Use the Editing &amp; Selection panel to refine results.</li>
+            <li><b>Visualization options</b>: Use the Visualization panel to adjust display mode and to show orthogonal views.</li>
+            <li><b>Save &amp; Load</b>: Save or export results in the Tracks List. To pick up where you left off, load the project from Motile Run.</li>
+        </ol>
+
+        <h3>Tips</h3>
+        <ul>
+            <li>Right-click on the 'eye' icon (middle) at the top of the docked widgets to set menu visibility.</li>
+            <li>Toggle panels with the <code>/</code> key to maximize viewing space.</li>
+            <li>View individual lineages by changing the display mode in Visualization tab and in the Lineage View (press [Q])</li>
+            <li>If you have segmentation data, you can view additional features (e.g. area/volume) in the Lineage View (press [W])</li>
+            <li>Assign objects to custom groups to keep track of different cell populations or conditions ('Groups' menu).</li>
+            <li>Import data from external tracks from CSV or GEFF in the Tracks List menu.</li>
+        </ul>
         """
-        links = QTextBrowser()
-        links.setOpenLinks(False)  # handled in _on_link_clicked
-        links.anchorClicked.connect(self._on_link_clicked)
-        links.setHtml(links_html)
-        links.setMaximumHeight(100)
-        links.setStyleSheet(
-            "QTextBrowser { border: none; background: transparent; margin: 0px; padding: 0px; }"
-        )
-        links.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        links.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        layout.addWidget(links)
-
-        # Content
         content = QTextBrowser()
-        content.setOpenExternalLinks(True)
+        content.setOpenLinks(False)  # handled in _on_link_clicked
+        content.anchorClicked.connect(self._on_link_clicked)
+        content.setHtml(content_html)
         content.setStyleSheet("QTextBrowser { border: none; background: transparent; }")
-
-        content.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         content.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-
-        content.setMarkdown("""
-### Quick Start
-
-1. **Load Data**: Drag and drop your label or points data in the napari viewer.
-2. **Configure Tracking**: Specify parameters in the Tracking panel and click 'Run Tracking'.
-3. **Results**: Results are added to the Tracks List. View and navigate a tracking result in the napari layers and in the Lineage View.
-4. **Edit Results**: Use the Editing & Selection panel to refine results.
-5. **Visualization options**: Use the Visualization panel to adjust display mode and to show orthogonal views.
-6. **Save & Load**: Save or export results in the Tracks List. To pick up where you left off, load the project from Motile Run.
-
-### Tips
-
-- Right-click on the 'eye' icon (middle) at the top of the docked widgets to set menu visibility.
-- Toggle panels with the `/` key to maximize viewing space.
-- View individual lineages by changing the display mode in Visualization tab and in the Lineage View (press [Q])
-- If you have segmentation data, you can view additional features (e.g. area/volume) in the Lineage View (press [W])
-- Assign objects to custom groups to keep track of different cell populations or conditions ('Groups' menu).
-- Import data from external tracks from CSV or GEFF in the Tracks List menu.
-        """)
-
         layout.addWidget(content)
-        self.setLayout(layout)
 
     def _logo_label(self) -> QLabel:
         """A label showing the plugin logo, scaled to LOGO_HEIGHT and kept sharp on
