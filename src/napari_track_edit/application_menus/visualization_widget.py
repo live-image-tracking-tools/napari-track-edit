@@ -41,8 +41,6 @@ class VisualizationConfigWidget(QWidget):
         super().__init__()
 
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        self.orth_views_connection = None
-        self.orth_view_manager = None
 
         box = QGroupBox(label)
         box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
@@ -210,10 +208,6 @@ class VisualizationWidget(QWidget):
 
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
 
-        # Initialize ortho-views attributes
-        self.orth_views_connection = None
-        self.orth_view_manager = None
-
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(10)
@@ -249,73 +243,66 @@ class VisualizationWidget(QWidget):
         main_layout.addWidget(self.color_by_widget)
 
         self.show_ortho_views = QCheckBox("Orthogonal views")
-        self.show_ortho_views.stateChanged.connect(self.initialize_ortho_views)
+        self.show_ortho_views.toggled.connect(self.toggle_ortho_views)
         self.show_ortho_views.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        # the ortho views outlive this widget, so pick them up again when it is reopened
+        if self.viewer in _VIEWER_MANAGERS:
+            manager = _VIEWER_MANAGERS[self.viewer]
+            self.show_ortho_views.setChecked(manager.is_shown())
+            self._follow_ortho_checkbox(manager)
 
         self.show_viewer_overlay = QCheckBox("Display keybinds on canvas")
-        self.show_viewer_overlay.setChecked(True)
+        self.show_viewer_overlay.setChecked(self.viewer.text_overlay.visible)
         self.show_viewer_overlay.toggled.connect(self.toggle_viewer_text_overlay)
 
         main_layout.addWidget(self.show_ortho_views)
         main_layout.addWidget(self.show_viewer_overlay)
         main_layout.addStretch(1)
 
+    def cleanup(self) -> None:
+        """Stop following the TracksViewer, which outlives this widget.
+
+        Called by MenuManager when the dock is destroyed.
+        """
+
+        for signal, slot in (
+            (self.tracks_viewer.mode_updated, self._update_widget_availability),
+            (self.tracks_viewer.tracks_updated, self.color_by_widget._populate),
+            (self.tracks_viewer.colormap_updated, self.color_by_widget._populate),
+        ):
+            with contextlib.suppress(ValueError, KeyError, RuntimeError):
+                signal.disconnect(slot)
+
     def toggle_viewer_text_overlay(self, checked: bool):
         """Change the visibility of the text overlay"""
 
         self.viewer.text_overlay.visible = checked
 
-    def initialize_ortho_views(self, checked: bool):
-        """Initializes the ortho views."""
+    def toggle_ortho_views(self, checked: bool):
+        """Show or hide the ortho views, creating them the first time."""
 
-        if self.show_ortho_views.isChecked() != checked:
-            # sync checkbox state, since there are two ways to trigger this function (checkbox or menu action in ortho view widget)
-            self.show_ortho_views.setChecked(checked)
         if self.viewer in _VIEWER_MANAGERS:
-            self.orth_view_manager = _VIEWER_MANAGERS[self.viewer]
-            if not checked:
-                self.orth_view_manager.hide()
-                self.orth_view_manager.set_splitter_sizes(
-                    0.0, 0.0
-                )  # minimal size for right and bottom
-            else:
-                self.orth_view_manager.show()
+            manager = _VIEWER_MANAGERS[self.viewer]
         else:
-            self.orth_view_manager = initialize_ortho_views(
-                self.viewer
-            )  # store to be able to disconnect later
-            self.orth_views_connection = (
-                self.orth_view_manager.main_controls_widget.show_orth_views.connect(
-                    self.initialize_ortho_views
-                )
-            )
-            # remove connection and reset checkbox when destroyed
-            self.orth_view_manager.main_controls_widget.destroyed.connect(
-                self._on_ortho_cleanup
-            )
-            self.orth_view_manager.show()
+            manager = initialize_ortho_views(self.viewer)
+            self._follow_ortho_checkbox(manager)
 
-    def _on_ortho_cleanup(self):
-        """Called when ortho_view_manager cleans up and deletes its widgets."""
-        self._disconnect_ortho_views()
-        # Uncheck the checkbox without triggering initialize_ortho_views
-        self.show_ortho_views.blockSignals(True)
-        self.show_ortho_views.setChecked(False)
-        self.show_ortho_views.blockSignals(False)
+        if checked:
+            manager.show()
+        else:
+            manager.hide()
+            manager.set_splitter_sizes(0.0, 0.0)  # minimal size for right and bottom
 
-    def _disconnect_ortho_views(self):
-        """Safely disconnect from ortho views signals."""
+    def _follow_ortho_checkbox(self, manager) -> None:
+        """Keep our checkbox in sync with the ortho views' own checkbox.
 
-        if (
-            self.orth_views_connection is not None
-            and self.orth_view_manager is not None
-        ):
-            with contextlib.suppress(TypeError, RuntimeError):
-                self.orth_view_manager.main_controls_widget.show_orth_views.disconnect(
-                    self.orth_views_connection
-                )
-            self.orth_views_connection = None
-        self.orth_view_manager = None
+        This is a Qt-to-Qt connection, so Qt drops it when either checkbox is
+        deleted and nothing needs to be disconnected by hand.
+        """
+
+        manager.main_controls_widget.show_checkbox.toggled.connect(
+            self.show_ortho_views.setChecked
+        )
 
     def _update_mode(self, mode: str) -> None:
         """Update the display mode on the Tracksviewer"""
