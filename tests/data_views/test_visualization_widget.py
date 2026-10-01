@@ -645,4 +645,80 @@ class TestPlaneLinkedImage:
         viewer.layers.remove(image)
 
         assert not widget.plane_sliders.link_btn.isChecked()
-        assert widget.plane_sliders.linked_image is None
+        assert widget.plane_sliders.linked_images == []
+
+    def test_several_images_can_be_linked(self, linked, viewer):
+        widget, image, layers = linked
+        sliders = widget.plane_sliders
+        second = viewer.add_image(
+            np.random.random(layers.seg_layer.data.shape), name="raw 2"
+        )
+        viewer.layers.selection.active = layers.seg_layer  # adding selected the image
+        sliders._set_mode("plane")
+        sliders.plane_slider.setValue(3)
+
+        for name in ("raw", "raw 2"):
+            sliders.link_dropdown.setCurrentText(name)
+            sliders.link_btn.setChecked(True)
+
+        # picking another image in the dropdown no longer unlinks the first one
+        assert sliders.linked_images == [image, second]
+        sliders.plane_slider.setValue(5)
+        for linked_image in (image, second):
+            assert linked_image.depiction == "plane"
+            assert linked_image.plane.position == (5.0, 0.0, 0.0)
+
+    def test_chain_button_follows_the_picked_image(self, linked, viewer):
+        widget, _, layers = linked
+        sliders = widget.plane_sliders
+        viewer.add_image(np.random.random(layers.seg_layer.data.shape), name="raw 2")
+
+        sliders.link_dropdown.setCurrentText("raw")
+        sliders.link_btn.setChecked(True)
+        sliders.link_dropdown.setCurrentText("raw 2")
+        assert not sliders.link_btn.isChecked()
+        sliders.link_dropdown.setCurrentText("raw")
+        assert sliders.link_btn.isChecked()
+
+    def test_linked_images_are_marked_in_the_dropdown(self, linked, viewer):
+        widget, _, layers = linked
+        sliders = widget.plane_sliders
+        dropdown = sliders.link_dropdown
+        viewer.add_image(np.random.random(layers.seg_layer.data.shape), name="raw 2")
+
+        dropdown.setCurrentText("raw")
+        sliders.link_btn.setChecked(True)
+
+        def marked():
+            return {
+                dropdown.itemText(i)
+                for i in range(dropdown.count())
+                if not dropdown.itemIcon(i).isNull()
+            }
+
+        assert marked() == {"raw"}
+        # the marker survives the dropdown being rebuilt
+        viewer.add_image(np.zeros((2, 3, 4, 5)), name="another")
+        assert marked() == {"raw"}
+
+        sliders.link_btn.setChecked(False)
+        assert marked() == set()
+
+    def test_unlinking_one_image_keeps_the_other(self, linked, viewer):
+        widget, image, layers = linked
+        sliders = widget.plane_sliders
+        second = viewer.add_image(
+            np.random.random(layers.seg_layer.data.shape), name="raw 2"
+        )
+        viewer.layers.selection.active = layers.seg_layer  # adding selected the image
+        sliders._set_mode("plane")
+        for name in ("raw", "raw 2"):
+            sliders.link_dropdown.setCurrentText(name)
+            sliders.link_btn.setChecked(True)
+
+        sliders.link_dropdown.setCurrentText("raw")
+        sliders.link_btn.setChecked(False)
+
+        assert sliders.linked_images == [second]
+        assert image.depiction == "volume"
+        assert second.depiction == "plane"

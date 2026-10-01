@@ -133,7 +133,7 @@ class PlaneSliderWidget(QWidget):
 
         self.viewer = viewer
         self._link_group = link_group if link_group is not None else list
-        self.linked_image = None
+        self.linked_images = []
         self.viewer.dims.events.ndisplay.connect(self._update_view_mode)
         self.viewer.layers.selection.events.changed.connect(self._on_selection_changed)
 
@@ -240,15 +240,17 @@ class PlaneSliderWidget(QWidget):
             (Image,),
             follow_active=False,
             layer_filter=self._can_link,
+            layer_icon=self._link_marker,
         )
         self.link_dropdown.setToolTip(
-            "Image layers with the same shape as the layers to link to"
+            "Image layers with the same shape as the layers to link to.\n"
+            "Linked layers are marked with a chain."
         )
         self.link_dropdown.layer_changed.connect(self._on_link_layer_changed)
         self.link_btn = QPushButton()
         self.link_btn.setCheckable(True)
         self.link_btn.setToolTip(
-            "Link or unlink an image layer to the plane controls.\n"
+            "Link or unlink the image layer picked in the dropdown to the plane controls.\n"
             "Only the plane, its depiction and the clipping planes are shared, not e.g.\n"
             "the visibility or opacity."
         )
@@ -367,29 +369,47 @@ class PlaneSliderWidget(QWidget):
         icon = FA6S.link_slash if linked else FA6S.link
         self.link_btn.setIcon(qticon(icon, color="white"))
 
+    def _link_marker(self, layer):
+        """Mark the linked images in the dropdown with a chain"""
+
+        if layer in self.linked_images:
+            return qticon(FA6S.link, color="white")
+        return None
+
     def _update_link_options(self, *_args) -> None:
-        """List the image layers that match the (new) link group, which drops a linked
-        image that no longer matches.
+        """List the image layers that match the (new) link group, and unlink the linked
+        images that were removed or no longer match.
         """
 
+        for image in list(self.linked_images):
+            if image not in self.viewer.layers or not self._can_link(image):
+                self._unlink_image(image)
         self.link_dropdown.refresh()
         self._on_link_layer_changed()
 
     def _on_link_layer_changed(self, *_args) -> None:
-        """Unlink the linked image when another layer is picked or it is removed."""
+        """Show on the chain button whether the image picked in the dropdown is linked"""
 
         selected = self.link_dropdown.selected_layer
-        if self.link_btn.isChecked() and selected is not self.linked_image:
-            self.link_btn.setChecked(False)
+        linked = selected is not None and selected in self.linked_images
+        with silenced(self.link_btn):
+            self.link_btn.setChecked(linked)
+        self._set_link_icon(linked=linked)
         self.link_btn.setEnabled(selected is not None)
 
     def _on_link_toggled(self, checked: bool) -> None:
         """Link the image picked in the dropdown to the plane controls, or unlink it."""
 
+        image = self.link_dropdown.selected_layer
+        if image is None:
+            return
         if checked:
-            self._link_image(self.link_dropdown.selected_layer)
+            self._link_image(image)
         else:
-            self._unlink_image()
+            self._unlink_image(image)
+        # update the markers
+        self.link_dropdown.refresh()
+        self._on_link_layer_changed()
 
     def _link_image(self, image) -> None:
         """Let an image share the plane controls of the link group
@@ -398,20 +418,20 @@ class PlaneSliderWidget(QWidget):
         same plane instead of taking on the view of the image.
         """
 
-        self.linked_image = image
-        self._set_link_icon(linked=True)
+        if image in self.linked_images:
+            return
+        self.linked_images.append(image)
         reference = self._link_reference()
         if reference is not None:
             self._adopt_plane(image, reference)
         self._update_group()
 
-    def _unlink_image(self) -> None:
-        """Release the linked image and return it to a plain volume, without clipping"""
+    def _unlink_image(self, image) -> None:
+        """Release a linked image and return it to a plain volume, without clipping"""
 
-        image, self.linked_image = self.linked_image, None
-        self._set_link_icon(linked=False)
-        if image is None:
+        if image not in self.linked_images:
             return
+        self.linked_images.remove(image)
 
         # the image may have been the layer the sliders followed
         with contextlib.suppress(TypeError, RuntimeError, ValueError):
@@ -478,15 +498,15 @@ class PlaneSliderWidget(QWidget):
     def _group_of(self, layer) -> list:
         """The layer followed by the other layers that share its plane controls
 
-        These are the layers of the link group plus the linked image, if the layer is
+        These are the layers of the link group plus the linked images, if the layer is
         one of them. The link group comes first, so that a layer without a plane (e.g.
-        Points) keeps borrowing the plane of the segmentation when an image is linked.
+        Points) keeps borrowing the plane of the segmentation when images are linked.
         """
 
         group = [
             other
-            for other in (*self._link_group(), self.linked_image)
-            if other is not None and other in self.viewer.layers
+            for other in (*self._link_group(), *self.linked_images)
+            if other in self.viewer.layers
         ]
         if layer not in group:
             return [layer]

@@ -21,6 +21,9 @@ class LayerDropdown(QComboBox):
             explicitly picks a layer from the dropdown.
         layer_filter (Callable, optional): only list the layers of the listed types for
             which this returns True. Call `refresh` when its outcome may have changed.
+        layer_icon (Callable, optional): returns an icon to show next to a layer, or
+            None for no icon, e.g. to mark layers. Call `refresh` when it may have
+            changed.
     """
 
     layer_changed = Signal(str)
@@ -33,6 +36,7 @@ class LayerDropdown(QComboBox):
         exclude_types: tuple = (),
         follow_active: bool = True,
         layer_filter: Callable | None = None,
+        layer_icon: Callable | None = None,
     ):
         super().__init__()
 
@@ -42,6 +46,7 @@ class LayerDropdown(QComboBox):
         self.allow_none = allow_none
         self.follow_active = follow_active
         self.layer_filter = layer_filter
+        self.layer_icon = layer_icon
         self.selected_layer = None
         self._deleted = False
 
@@ -167,7 +172,11 @@ class LayerDropdown(QComboBox):
                     names.append("No selection")
 
                 for layer in layers:
-                    self.addItem(layer.name)
+                    icon = self.layer_icon(layer) if self.layer_icon else None
+                    if icon is None:
+                        self.addItem(layer.name)
+                    else:
+                        self.addItem(icon, layer.name)
                     names.append(layer.name)
 
                 # restore previous selection if still valid
