@@ -2,7 +2,7 @@ import pytest
 from napari.layers.utils._link_layers import get_linked_layers, layer_is_linked
 from napari.layers.utils.plane import ClippingPlane
 
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 @pytest.fixture(autouse=True)

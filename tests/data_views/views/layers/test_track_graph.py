@@ -1,9 +1,9 @@
 """Tests for update_napari_tracks with the graph returned by solve()."""
 
-from funtracks.data_model import SolutionTracks
+from funtracks.data_model import Tracks
 
-from motile_tracker.data_views.views.layers.track_graph import update_napari_tracks
-from motile_tracker.motile.backend import SolverParams, solve
+from napari_track_edit.data_views.views.layers.track_graph import update_napari_tracks
+from napari_track_edit.motile.backend import SolverParams, solve
 
 
 def test_update_napari_tracks_division_edges(solution_tracks_3d_with_division):
@@ -15,7 +15,7 @@ def test_update_napari_tracks_division_edges(solution_tracks_3d_with_division):
     one entry per daughter, pointing back to the parent track.
     """
     tracks = solution_tracks_3d_with_division
-    data, edges = update_napari_tracks(tracks)
+    data, edges, _node_ids = update_napari_tracks(tracks)
 
     assert data.shape[1] == 5  # track_id, t, z, y, x
     assert len(edges) == 2, "expect one entry per daughter of the division"
@@ -39,8 +39,8 @@ def test_update_napari_tracks_with_solve_output(segmentation_2d):
     params.appear_cost = None
     soln_graph = solve(params, segmentation_2d)
 
-    tracks = SolutionTracks(graph=soln_graph, ndim=3, time_attr="t")
-    data, edges = update_napari_tracks(tracks)
+    tracks = Tracks(graph=soln_graph, ndim=3, time_attr="t")
+    data, edges, _node_ids = update_napari_tracks(tracks)
 
     assert data.shape[0] == soln_graph.num_nodes()
     assert data.shape[1] == 4  # track_id, t, y, x

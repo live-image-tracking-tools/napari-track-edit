@@ -1,11 +1,15 @@
+from unittest.mock import patch
+
 import pandas as pd
 import pytest
+from qtpy.QtCore import QEvent, QPointF, Qt
+from qtpy.QtGui import QMouseEvent
 from qtpy.QtWidgets import QApplication
 
-from motile_tracker.data_views.views.table.custom_table_widget import (
+from napari_track_edit.data_views.views.table.custom_table_widget import (
     ColoredTableWidget,
 )
-from motile_tracker.data_views.views_coordinator.tracks_viewer import TracksViewer
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +33,7 @@ def colored_table_widget(qtbot, setup_tracks_viewer):
     viewer, tracks_viewer = setup_tracks_viewer
 
     # Build dataframe from tracks
-    nodes = tracks_viewer.tracks.graph.node_ids()
+    nodes = tracks_viewer.tracks.graph_solution.node_ids()
 
     df = pd.DataFrame(
         {
@@ -109,6 +113,51 @@ def test_center_from_table_triggers_viewer(colored_table_widget, qtbot):
         widget.center_node(index)
 
 
+def test_pick_track_id_from_table(colored_table_widget, qtbot):
+    """pick_track_id adopts the row's tracklet id without selecting the node."""
+    widget, tracks_viewer = colored_table_widget
+    table = widget._table_widget
+
+    # find the row holding node 6: it is the only node of track 5 and sits at t=4
+    row = next(
+        i for i in range(table.model().rowCount()) if widget._table["ID"][i] == 6
+    )
+    index = table.model().index(row, 0)
+
+    tracks_viewer.selected_nodes.reset()
+    widget.pick_track_id(index)
+
+    assert tracks_viewer.selected_track == tracks_viewer.tracks.get_track_id(6)
+    assert len(tracks_viewer.selected_nodes) == 0
+
+
+def test_alt_click_routes_to_pick_track_id(colored_table_widget, qtbot):
+    """ALT/OPTION + click on a row picks its tracklet id instead of selecting it."""
+    widget, tracks_viewer = colored_table_widget
+    table = widget._table_widget
+
+    index = table.model().index(0, 0)
+    pos = QPointF(table.visualRect(index).center())
+    event = QMouseEvent(
+        QEvent.MouseButtonPress,
+        pos,
+        Qt.LeftButton,
+        Qt.LeftButton,
+        Qt.AltModifier,
+    )
+
+    with (
+        patch.object(widget, "pick_track_id") as pick_mock,
+        patch.object(widget, "center_node") as center_mock,
+    ):
+        table.mousePressEvent(event)
+        assert pick_mock.call_count == 1
+        center_mock.assert_not_called()
+
+    # the selection is left untouched by the pick
+    assert len(table.selectionModel().selectedRows()) == 0
+
+
 def test_center_from_tracksviewer_scrolls_table(colored_table_widget, qtbot):
     widget, _ = colored_table_widget
     table = widget._table_widget
@@ -163,8 +212,8 @@ def test_table_widget_keybinds(colored_table_widget, qtbot):
 
     The table widget supports keybinds that are delegated to tracks_viewer:
     - D / Delete: delete_node
-    - A: create_edge
-    - B: delete_edge
+    - C: connect_nodes_with_divisions
+    - Shift+C: connect_nodes_linearly
     - S: swap_nodes
     - Z: undo
     - R: redo
@@ -185,11 +234,11 @@ def test_table_widget_keybinds(colored_table_widget, qtbot):
     delete_mock = MagicMock()
     tracks_viewer.delete_node = delete_mock
 
-    create_edge_mock = MagicMock()
-    tracks_viewer.create_edge = create_edge_mock
+    connect_divisions_mock = MagicMock()
+    tracks_viewer.connect_nodes_with_divisions = connect_divisions_mock
 
-    delete_edge_mock = MagicMock()
-    tracks_viewer.delete_edge = delete_edge_mock
+    connect_linear_mock = MagicMock()
+    tracks_viewer.connect_nodes_linearly = connect_linear_mock
 
     swap_mock = MagicMock()
     tracks_viewer.swap_nodes = swap_mock
@@ -215,13 +264,15 @@ def test_table_widget_keybinds(colored_table_widget, qtbot):
     qtbot.keyPress(table_widget, Qt.Key_Delete)
     delete_mock.assert_called_once()
 
-    # Test A key calls create_edge
-    qtbot.keyPress(table_widget, Qt.Key_A)
-    create_edge_mock.assert_called_once()
+    # Test C key calls connect_nodes_with_divisions
+    qtbot.keyPress(table_widget, Qt.Key_C)
+    connect_divisions_mock.assert_called_once()
+    connect_linear_mock.assert_not_called()
 
-    # Test B key calls delete_edge
-    qtbot.keyPress(table_widget, Qt.Key_B)
-    delete_edge_mock.assert_called_once()
+    # Test Shift+C key calls connect_nodes_linearly instead
+    qtbot.keyPress(table_widget, Qt.Key_C, modifier=Qt.ShiftModifier)
+    connect_linear_mock.assert_called_once()
+    connect_divisions_mock.assert_called_once()  # still only the one call
 
     # Test S key calls swap_nodes
     qtbot.keyPress(table_widget, Qt.Key_S)
