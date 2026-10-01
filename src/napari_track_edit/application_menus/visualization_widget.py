@@ -4,7 +4,6 @@ import napari
 from napari.layers import Points
 from napari.layers.points._points_mouse_bindings import add as napari_add_point
 from napari_orthogonal_views.ortho_view_manager import _VIEWER_MANAGERS
-from napari_plane_sliders import PlaneSliderWidget
 from psygnal import Signal
 from qtpy.QtCore import QSignalBlocker
 from qtpy.QtWidgets import (
@@ -21,6 +20,7 @@ from qtpy.QtWidgets import (
 )
 from superqt import QLabeledDoubleSlider
 
+from napari_track_edit.application_menus.plane_slider_widget import PlaneSliderWidget
 from napari_track_edit.data_views.colormap import (
     categorical_feature_keys,
     feature_display_name,
