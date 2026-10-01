@@ -145,6 +145,8 @@ class TracksViewer:
         self.collection_widget = None
 
         self.set_keybinds()
+        self.viewer.text_overlay.visible = True
+        self.viewer.text_overlay.font_size = 8
 
         self.viewer.dims.events.ndisplay.connect(self.update_selection)
 
@@ -493,8 +495,6 @@ class TracksViewer:
             self.mode = "all"
             self.viewer.text_overlay.text = BASE_TEXT + "All"
 
-        self.viewer.text_overlay.visible = True
-        self.viewer.text_overlay.font_size = 8
         self.filter_visible_nodes()
         self.tracking_layers.update_visible(self.visible)
 

@@ -1,0 +1,42 @@
+name: download sources
+
+# Checks that the example data the app downloads (Zenodo, Google Drive, CTC) is
+# still available. These servers are flaky, so the check is kept out of the normal
+# test run (see the `network` marker in pyproject.toml) and runs monthly instead.
+on:
+  schedule:
+    - cron: "0 6 1 * *" # 06:00 UTC on the 1st of every month
+  workflow_dispatch:
+
+jobs:
+  download-sources:
+    name: Download sources are reachable
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # disable resyncing on uv run
+      UV_NO_SYNC: "1"
+    steps:
+      - uses: actions/checkout@v7
+      # The Ubuntu runner image ships broken Microsoft apt repos whose signature
+      # is periodically invalid, which fails the apt-get update inside setup-qt-libs.
+      - name: Remove broken Microsoft apt sources (ubuntu runner image)
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list \
+                     /etc/apt/sources.list.d/azure-cli.list \
+                     /etc/apt/sources.list.d/azure-cli.sources
+      - uses: tlambert03/setup-qt-libs@v1
+
+      - name: Set up Python
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --no-dev --group testing
+
+      - name: Test
+        uses: aganders3/headless-gui@v2
+        with:
+          run: uv run pytest --color=yes -m network tests
