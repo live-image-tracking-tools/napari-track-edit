@@ -237,7 +237,13 @@ class TrackLabels(ContourLabels):
         side_button = detect_side_button(event)
         if side_button is not None:
             self.process_click(event, side_button=side_button)
-        elif self.mode == "pan_zoom" and event.type == "mouse_press":
+        # only the left button selects: the right button is used to copy a detection
+        # from a connected source layer.
+        elif (
+            self.mode == "pan_zoom"
+            and event.type == "mouse_press"
+            and event.button == 1
+        ):
             # disable selecting in lineage mode in 3D
             # differentiate between click and drag
             was_click = yield from detect_click(event)
