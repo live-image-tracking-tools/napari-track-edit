@@ -1,8 +1,11 @@
+import contextlib
 import itertools
+from collections.abc import Callable
 from contextlib import contextmanager
 
 import napari
 import numpy as np
+from fonticon_fa6 import FA6S
 from napari.layers import Image, Labels, Points
 from napari.layers.points._points_mouse_bindings import DRAG_DIST_THRESHOLD
 from napari.layers.points._points_mouse_bindings import add as napari_add_point
@@ -20,6 +23,9 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 from superqt import QLabeledRangeSlider, QLabeledSlider
+from superqt.fonticon import icon as qticon
+
+from napari_track_edit.application_menus.layer_dropdown import LayerDropdown
 
 
 @contextmanager
@@ -112,10 +118,23 @@ class PlaneSliderWidget(QWidget):
     def __init__(
         self,
         viewer: napari.Viewer,
+        link_group: Callable[[], list] | None = None,
     ):
+        """
+        Args:
+            viewer (napari.Viewer): the viewer whose layers the controls act on.
+            link_group (Callable, optional): returns the layers that an image layer can
+                be linked to with the 'Link image' row, e.g. the tracking layers. Unlike
+                a napari link, this only shares the plane, depiction and clipping
+                planes, and leaves e.g. visibility and colormap alone. Without it, the
+                row is hidden.
+        """
+
         super().__init__()
 
         self.viewer = viewer
+        self._link_group = link_group if link_group is not None else list
+        self.linked_image = None
         self.viewer.dims.events.ndisplay.connect(self._update_view_mode)
         self.viewer.layers.selection.events.changed.connect(self._on_selection_changed)
 
@@ -215,11 +234,42 @@ class PlaneSliderWidget(QWidget):
         self.clipping_plane_slider.valueChanged.connect(self._set_clipping_plane)
         self.clipping_plane_widget = create_compact_qwidget(self.clipping_plane_slider)
 
+        # Image layer linked to the plane controls of the link group.
+        # follow_active=False: the dropdown only changes when the user picks a layer
+        self.link_dropdown = LayerDropdown(
+            self.viewer,
+            (Image,),
+            follow_active=False,
+            layer_filter=self._can_link,
+        )
+        self.link_dropdown.setToolTip(
+            "Image layers with the same shape as the layers to link to"
+        )
+        self.link_dropdown.layer_changed.connect(self._on_link_layer_changed)
+        self.link_btn = QPushButton()
+        self.link_btn.setCheckable(True)
+        self.link_btn.setToolTip(
+            "Link or unlink an image layer to the plane controls.\n"
+            "Only the plane, its depiction and the clipping planes are shared, not e.g.\n"
+            "the visibility or opacity."
+        )
+        self.link_btn.toggled.connect(self._on_link_toggled)
+        self._set_link_icon(linked=False)
+        self.link_widget = create_compact_qwidget(
+            QLabel("Link image"), self.link_dropdown, self.link_btn
+        )
+        self.link_widget.setVisible(link_group is not None)
+        # the layers to link to can be replaced, which changes which images match
+        self.viewer.layers.events.inserted.connect(self._update_link_options)
+        self.viewer.layers.events.removed.connect(self._update_link_options)
+
         # Final layout
+        self.mode_widget = create_compact_qwidget(*self._mode_buttons.values())
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
-        layout.addWidget(create_compact_qwidget(*self._mode_buttons.values()))
+        layout.addWidget(self.link_widget)
+        layout.addWidget(self.mode_widget)
         layout.addWidget(self.orientation_widget)
         layout.addWidget(self.plane_widget)
         layout.addWidget(self.clipping_plane_widget)
@@ -229,7 +279,162 @@ class PlaneSliderWidget(QWidget):
         self._set_mode("slice")
 
         # the controls only become active once a layer is selected
-        self.setEnabled(False)
+        self._set_controls_enabled(False)
+        self._update_link_options()
+        self._on_selection_changed()
+
+    def cleanup(self) -> None:
+        """Take the widget back off the viewer and its layers. Idempotent.
+
+        The widget installs callbacks and event connections on the viewer itself, which
+        would outlive it and raise when they touch its deleted Qt children. Without
+        this, a reopened menu leaves the callbacks of the previous one behind.
+        """
+
+        with contextlib.suppress(TypeError, RuntimeError, ValueError):
+            self.viewer.dims.events.ndisplay.disconnect(self._update_view_mode)
+        with contextlib.suppress(TypeError, RuntimeError, ValueError):
+            self.viewer.layers.selection.events.changed.disconnect(
+                self._on_selection_changed
+            )
+        for emitter in (
+            self.viewer.layers.events.inserted,
+            self.viewer.layers.events.removed,
+        ):
+            with contextlib.suppress(TypeError, RuntimeError, ValueError):
+                emitter.disconnect(self._update_link_options)
+
+        for callbacks in (
+            self.viewer.mouse_move_callbacks,
+            self.viewer.mouse_drag_callbacks,
+            self.viewer.mouse_double_click_callbacks,
+        ):
+            with contextlib.suppress(ValueError):
+                callbacks.remove(self._snap_cursor_to_plane)
+
+        for layer in self.viewer.layers:
+            if hasattr(layer, "plane"):
+                with contextlib.suppress(TypeError, RuntimeError, ValueError):
+                    layer.events.plane.disconnect(self._update_plane_slider)
+                with contextlib.suppress(TypeError, RuntimeError, ValueError):
+                    layer.events.depiction.disconnect(self._update_view_mode)
+
+            # restore the napari callback on any points layer whose add mode we took over
+            if not isinstance(layer, Points):
+                continue
+            with contextlib.suppress(TypeError, RuntimeError, ValueError):
+                layer.events.mode.disconnect(self._on_point_mode_changed)
+            if self._add_point_on_plane in layer.mouse_drag_callbacks:
+                layer.mouse_drag_callbacks.remove(self._add_point_on_plane)
+                if str(layer.mode) == "add":
+                    layer.mouse_drag_callbacks.append(napari_add_point)
+
+    def _set_controls_enabled(self, enabled: bool) -> None:
+        """Enable the plane controls, the link row stays usable without a selection"""
+
+        for widget in (
+            self.mode_widget,
+            self.orientation_widget,
+            self.plane_widget,
+            self.clipping_plane_widget,
+        ):
+            widget.setEnabled(enabled)
+
+    def _plane_group(self) -> list:
+        """The layers that share the plane controls on top of the napari links: the
+        linked image and the link group, if an image is linked.
+        """
+
+        if self.linked_image is None:
+            return []
+        return [self.linked_image, *self._link_group()]
+
+    def _link_reference(self):
+        """The layer of the link group whose plane a linked image takes on, e.g. the
+        segmentation. None if no layer in the group has a plane.
+        """
+
+        return next(
+            (layer for layer in self._link_group() if hasattr(layer, "plane")), None
+        )
+
+    def _can_link(self, layer) -> bool:
+        """Whether an image layer can be linked to the link group: it must have the
+        shape of the layer in the group that has a plane, if there is one.
+        """
+
+        group = self._link_group()
+        if not group or layer in group:
+            return False
+        reference = self._link_reference()
+        if reference is not None:
+            return tuple(layer.data.shape) == tuple(reference.data.shape)
+        return layer.ndim >= 3
+
+    def _set_link_icon(self, linked: bool) -> None:
+        """Show a broken chain while linked (click to unlink), a chain otherwise."""
+
+        icon = FA6S.link_slash if linked else FA6S.link
+        self.link_btn.setIcon(qticon(icon, color="white"))
+
+    def _update_link_options(self, *_args) -> None:
+        """List the image layers that match the (new) link group, which drops a linked
+        image that no longer matches.
+        """
+
+        self.link_dropdown.refresh()
+        self._on_link_layer_changed()
+
+    def _on_link_layer_changed(self, *_args) -> None:
+        """Unlink the linked image when another layer is picked or it is removed."""
+
+        selected = self.link_dropdown.selected_layer
+        if self.link_btn.isChecked() and selected is not self.linked_image:
+            self.link_btn.setChecked(False)
+        self.link_btn.setEnabled(selected is not None)
+
+    def _on_link_toggled(self, checked: bool) -> None:
+        """Link the image picked in the dropdown to the plane controls, or unlink it."""
+
+        if checked:
+            self._link_image(self.link_dropdown.selected_layer)
+        else:
+            self._unlink_image()
+
+    def _link_image(self, image) -> None:
+        """Let an image share the plane controls of the link group
+
+        The image takes on the plane view of the group, so the group keeps showing the
+        same plane instead of taking on the view of the image.
+        """
+
+        self.linked_image = image
+        self._set_link_icon(linked=True)
+        reference = self._link_reference()
+        if reference is not None:
+            self._adopt_plane(image, reference)
+        self._update_group()
+
+    def _unlink_image(self) -> None:
+        """Release the linked image and return it to a plain volume, without clipping"""
+
+        image, self.linked_image = self.linked_image, None
+        self._set_link_icon(linked=False)
+        if image is None:
+            return
+
+        # the image may have been the layer the sliders followed
+        with contextlib.suppress(TypeError, RuntimeError, ValueError):
+            image.events.plane.disconnect(self._update_plane_slider)
+        with contextlib.suppress(TypeError, RuntimeError, ValueError):
+            image.events.depiction.disconnect(self._update_view_mode)
+
+        if image in self.viewer.layers:
+            image.depiction = "volume"
+            for clip_plane in image.experimental_clipping_planes:
+                clip_plane.enabled = False
+
+        # derive the mode again, the image may be the selected layer
         self._on_selection_changed()
 
     def _on_selection_changed(self) -> None:
@@ -243,7 +448,7 @@ class PlaneSliderWidget(QWidget):
                 self.current_layer = selected_layer
             else:
                 self.current_layer = None
-            self.setEnabled(self.current_layer is not None)
+            self._set_controls_enabled(self.current_layer is not None)
             if self.current_layer is None:
                 return
 
@@ -281,12 +486,65 @@ class PlaneSliderWidget(QWidget):
             ClippingPlane(normal=[-n for n in normal], position=position, enabled=False)
         )
 
+    def _group_of(self, layer) -> list:
+        """The layer followed by the layers that share its plane controls
+
+        These are the layers napari links it to and, when one of them is in the extra
+        plane group, the members of that group (and the layers linked to those). The
+        napari linked layers come first, so that the layer a group borrows its plane
+        from does not change when an extra layer joins it.
+        """
+
+        extra = [other for other in self._plane_group() if other in self.viewer.layers]
+        group = [layer]
+        for member in group:  # grows while iterating, breadth first
+            linked = sorted(
+                (o for o in get_linked_layers(member) if o in self.viewer.layers),
+                key=self.viewer.layers.index,
+            )
+            if member in extra:
+                linked += extra
+            group += [other for other in linked if other not in group]
+        return group
+
     def _linked_layers(self) -> list:
-        """The layers the user linked the current layer to"""
+        """The layers that share the plane controls with the current layer"""
 
         if self.current_layer is None:
             return []
-        return list(get_linked_layers(self.current_layer))
+        return self._group_of(self.current_layer)[1:]
+
+    def _update_group(self) -> None:
+        """Apply the current mode to the group of the current layer again, after layers
+        joined or left the plane group
+        """
+
+        mode = self.mode
+        self._on_selection_changed()
+        if mode != "slice" and self.mode != mode:
+            self._set_mode(mode)
+
+    def _adopt_plane(self, layer, source) -> None:
+        """Give a layer that joins the group of source the plane, depiction and clipping
+        planes of source, so that the group keeps its view instead of taking on the one
+        of the new layer.
+        """
+
+        self._ensure_clipping_planes(layer)
+        self._ensure_clipping_planes(source)
+        if hasattr(layer, "plane") and hasattr(source, "plane"):
+            layer.plane.normal = source.plane.normal
+            layer.plane.position = source.plane.position
+            layer.depiction = source.depiction
+        for target, clip_plane in zip(
+            layer.experimental_clipping_planes[:2],
+            source.experimental_clipping_planes[:2],
+            strict=False,
+        ):
+            target.normal = clip_plane.normal
+            target.position = clip_plane.position
+            target.enabled = clip_plane.enabled
+        self._refresh(layer)
 
     def _target_layers(self) -> list:
         """The layers to apply clipping plane changes to: the current layer and the layers it is linked to"""
@@ -377,7 +635,7 @@ class PlaneSliderWidget(QWidget):
         if not self.snap_checkbox.isChecked() or self.viewer.dims.ndisplay != 3:
             return None
 
-        for other in (layer, *get_linked_layers(layer)):
+        for other in self._group_of(layer):
             if (
                 getattr(other, "depiction", None) == "plane"
                 and other.visible
@@ -603,7 +861,9 @@ class PlaneSliderWidget(QWidget):
             return
 
         for layer in self._target_layers():
-            if not hasattr(layer, "depiction"):
+            # napari emits even when the depiction does not change, which would
+            # needlessly redraw the layer and re-trigger mode updates
+            if getattr(layer, "depiction", depiction) == depiction:
                 continue
             # only the layer the widget acts on drives the sliders
             layer.events.depiction.disconnect(self._update_view_mode)

@@ -1,8 +1,6 @@
 import contextlib
 
 import napari
-from napari.layers import Points
-from napari.layers.points._points_mouse_bindings import add as napari_add_point
 from napari_orthogonal_views.ortho_view_manager import _VIEWER_MANAGERS
 from psygnal import Signal
 from qtpy.QtCore import QSignalBlocker
@@ -263,8 +261,12 @@ class VisualizationWidget(QWidget):
 
         # Plane and clipping plane controls. They act on the layer that is selected in
         # the viewer and on the layers it is linked to, which for the tracking layers
-        # means the group linked on their clipping planes by TracksLayerGroup.
-        self.plane_sliders = PlaneSliderWidget(self.viewer)
+        # means the group linked on their clipping planes by TracksLayerGroup. An image
+        # layer can be linked to that group for the plane controls only.
+        self.plane_sliders = PlaneSliderWidget(
+            self.viewer,
+            link_group=lambda: self.tracks_viewer.tracking_layers.track_layers,
+        )
         plane_box = QGroupBox("Plane views")
         plane_box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         plane_box_layout = QVBoxLayout(plane_box)
@@ -291,42 +293,7 @@ class VisualizationWidget(QWidget):
             with contextlib.suppress(ValueError, KeyError, RuntimeError):
                 signal.disconnect(slot)
 
-        self._disconnect_plane_sliders()
-
-    def _disconnect_plane_sliders(self) -> None:
-        """Take the plane sliders back off the viewer and the points layers.
-
-        These reach into `PlaneSliderWidget`, which does not tear itself down; without
-        it a reopened Visualization menu leaves the callbacks of the previous one
-        behind, pointing at deleted widgets.
-        """
-
-        sliders = self.plane_sliders
-        with contextlib.suppress(TypeError, RuntimeError, ValueError):
-            self.viewer.dims.events.ndisplay.disconnect(sliders.on_ndisplay_changed)
-        with contextlib.suppress(TypeError, RuntimeError, ValueError):
-            self.viewer.layers.selection.events.changed.disconnect(
-                sliders._on_selection_changed
-            )
-
-        for callbacks in (
-            self.viewer.mouse_move_callbacks,
-            self.viewer.mouse_drag_callbacks,
-            self.viewer.mouse_double_click_callbacks,
-        ):
-            with contextlib.suppress(ValueError):
-                callbacks.remove(sliders._snap_cursor_to_plane)
-
-        # restore the napari callback on any points layer whose add mode we took over
-        for layer in self.viewer.layers:
-            if not isinstance(layer, Points):
-                continue
-            with contextlib.suppress(TypeError, RuntimeError, ValueError):
-                layer.events.mode.disconnect(sliders._on_point_mode_changed)
-            if sliders._add_point_on_plane in layer.mouse_drag_callbacks:
-                layer.mouse_drag_callbacks.remove(sliders._add_point_on_plane)
-                if str(layer.mode) == "add":
-                    layer.mouse_drag_callbacks.append(napari_add_point)
+        self.plane_sliders.cleanup()
 
     def toggle_viewer_text_overlay(self, checked: bool):
         """Change the visibility of the text overlay"""
