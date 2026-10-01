@@ -32,10 +32,6 @@ if TYPE_CHECKING:
         TracksViewer,
     )
 
-from napari_track_edit.data_views.views.layers.clipping_planes import (
-    EventedClippingPlanes,
-)
-
 
 def updates_from_masked_atoms(atoms) -> list[tuple[Mask, int, int]]:
     """Turn napari >= 0.8 paint atoms into one segmentation update per label.
@@ -185,7 +181,7 @@ def _new_label(layer: TrackLabels, new_track_id=True):
         layer.colormap = layer.track_colormap.to_direct_colormap()
 
 
-class TrackLabels(EventedClippingPlanes, ContourLabels):
+class TrackLabels(ContourLabels):
     """Extended labels layer that holds the track information and emits
     and responds to dynamics visualization signals"""
 

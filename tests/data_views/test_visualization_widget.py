@@ -425,9 +425,8 @@ class TestColorByWidget:
 class TestPlaneSlidersIntegration:
     """Tests for the plane and clipping plane controls in the visualization menu.
 
-    The plane sliders act on the selected layer and on the layers linked to it, which
-    for the tracking layers is the group TracksLayerGroup links on their clipping
-    planes alone.
+    The plane sliders act on the selected layer and, for the tracking layers, on the
+    whole group of tracking layers.
     """
 
     @pytest.fixture
@@ -450,6 +449,18 @@ class TestPlaneSlidersIntegration:
         # the points layer has no plane of its own, so it borrows the one of the seg
         assert sliders._plane_layer() is layers.seg_layer
         assert set(sliders._target_layers()) == set(layers.track_layers)
+
+    def test_tracking_layers_share_nothing_else(self, plane_sliders, viewer):
+        """The group shares the plane controls only, the layers stay independent"""
+
+        _, sliders, layers = plane_sliders
+        viewer.layers.selection.active = layers.points_layer
+        sliders._set_mode("clipping_plane")
+
+        layers.points_layer.visible = False
+        layers.points_layer.opacity = 0.2
+        assert layers.seg_layer.visible
+        assert layers.seg_layer.opacity != 0.2
 
     def test_plane_mode_gives_the_points_a_slab_and_leaves_the_seg_unclipped(
         self, plane_sliders, viewer

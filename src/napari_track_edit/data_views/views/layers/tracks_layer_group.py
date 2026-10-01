@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 import napari
 from funtracks.data_model import Tracks
-from napari.experimental import link_layers, unlink_layers
 
 from napari_track_edit.data_views.views.layers.track_graph import TrackGraph
 from napari_track_edit.data_views.views.layers.track_labels import TrackLabels
@@ -85,8 +84,6 @@ class TracksLayerGroup:
         if self.seg_layer is not None:
             self.viewer.add_layer(self.seg_layer)
 
-        self.link_experimental_clipping_planes()
-
     @property
     def track_layers(self) -> list[napari.layers.Layer]:
         """The tracking layers that are currently in the viewer"""
@@ -96,55 +93,6 @@ class TracksLayerGroup:
             for layer in (self.tracks_layer, self.seg_layer, self.points_layer)
             if layer is not None
         ]
-
-    def link_experimental_clipping_planes(self):
-        """Link the clipping planes of all tracking layers
-
-        Only the clipping planes are linked, not the layers as a whole: the tracking
-        layers keep their own visibility, opacity, mode and pan/zoom locks. This works
-        because they expose their clipping planes as an evented attribute (see
-        `EventedClippingPlanes`), which is what napari requires of a linked attribute.
-
-        Linking also registers the layers as one link group, which is how the plane
-        sliders in the visualization menu find the layers that belong together.
-        """
-
-        track_layers = self.track_layers
-        if len(track_layers) > 1 and all(layer.ndim >= 3 for layer in track_layers):
-            link_layers(track_layers, ("experimental_clipping_planes",))
-            self._sync_experimental_clipping_planes(track_layers)
-
-    @staticmethod
-    def _sync_experimental_clipping_planes(
-        track_layers: list[napari.layers.Layer],
-    ) -> None:
-        """Give the layers that were just linked one common set of clipping planes
-
-        Linking leaves the current values alone, and the layers reach the viewer one at
-        a time: the plane sliders act on whichever layer is selected in between, so some
-        of the layers can already carry clipping planes by the time the group is linked.
-        Announcing the ones that are there hands them to the layers that have none.
-        """
-
-        source = next(
-            (
-                layer
-                for layer in track_layers
-                if len(layer.experimental_clipping_planes) > 0
-            ),
-            None,
-        )
-        if source is not None:
-            source.events.experimental_clipping_planes(
-                value=source.experimental_clipping_planes
-            )
-
-    def unlink_experimental_clipping_planes(self):
-        """Unlink the clipping planes of all tracking layers"""
-
-        track_layers = self.track_layers
-        if track_layers:
-            unlink_layers(track_layers, ("experimental_clipping_planes",))
 
     def _refresh(self) -> None:
         """Refresh the tracking layers with new tracks info"""

@@ -8,10 +8,6 @@ import napari
 import numpy as np
 from tracksdata.constants import DEFAULT_ATTR_KEYS
 
-from napari_track_edit.data_views.views.layers.clipping_planes import (
-    EventedClippingPlanes,
-)
-
 if TYPE_CHECKING:
     from funtracks.data_model import Tracks
 
@@ -102,7 +98,7 @@ def update_napari_tracks(
     return napari_data, napari_edges, node_ids
 
 
-class TrackGraph(EventedClippingPlanes, napari.layers.Tracks):
+class TrackGraph(napari.layers.Tracks):
     """Extended tracks layer that holds the track information and emits and responds
     to dynamics visualization signals"""
 

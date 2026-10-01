@@ -260,9 +260,8 @@ class VisualizationWidget(QWidget):
         main_layout.addWidget(self.show_viewer_overlay)
 
         # Plane and clipping plane controls. They act on the layer that is selected in
-        # the viewer and on the layers it is linked to, which for the tracking layers
-        # means the group linked on their clipping planes by TracksLayerGroup. An image
-        # layer can be linked to that group for the plane controls only.
+        # the viewer and, for the tracking layers, on the whole group of tracking layers,
+        # which an image layer can join for the plane controls only.
         self.plane_sliders = PlaneSliderWidget(
             self.viewer,
             link_group=lambda: self.tracks_viewer.tracking_layers.track_layers,

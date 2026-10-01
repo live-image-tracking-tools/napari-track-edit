@@ -9,7 +9,6 @@ from fonticon_fa6 import FA6S
 from napari.layers import Image, Labels, Points
 from napari.layers.points._points_mouse_bindings import DRAG_DIST_THRESHOLD
 from napari.layers.points._points_mouse_bindings import add as napari_add_point
-from napari.layers.utils._link_layers import get_linked_layers, unlink_layers
 from napari.layers.utils.plane import ClippingPlane
 from napari.utils.geometry import point_in_bounding_box
 from qtpy import QtCore
@@ -123,11 +122,11 @@ class PlaneSliderWidget(QWidget):
         """
         Args:
             viewer (napari.Viewer): the viewer whose layers the controls act on.
-            link_group (Callable, optional): returns the layers that an image layer can
-                be linked to with the 'Link image' row, e.g. the tracking layers. Unlike
-                a napari link, this only shares the plane, depiction and clipping
-                planes, and leaves e.g. visibility and colormap alone. Without it, the
-                row is hidden.
+            link_group (Callable, optional): returns the layers that share the plane
+                controls, e.g. the tracking layers. An image layer can join them with
+                the 'Link image' row. Only the plane, depiction and clipping planes are
+                shared, not e.g. visibility or colormap. Without it, the controls act
+                on the selected layer alone and the row is hidden.
         """
 
         super().__init__()
@@ -284,7 +283,7 @@ class PlaneSliderWidget(QWidget):
         self._on_selection_changed()
 
     def cleanup(self) -> None:
-        """Take the widget back off the viewer and its layers. Idempotent.
+        """Take the widget back off the viewer and its layers.
 
         The widget installs callbacks and event connections on the viewer itself, which
         would outlive it and raise when they touch its deleted Qt children. Without
@@ -339,15 +338,6 @@ class PlaneSliderWidget(QWidget):
             self.clipping_plane_widget,
         ):
             widget.setEnabled(enabled)
-
-    def _plane_group(self) -> list:
-        """The layers that share the plane controls on top of the napari links: the
-        linked image and the link group, if an image is linked.
-        """
-
-        if self.linked_image is None:
-            return []
-        return [self.linked_image, *self._link_group()]
 
     def _link_reference(self):
         """The layer of the link group whose plane a linked image takes on, e.g. the
@@ -463,7 +453,6 @@ class PlaneSliderWidget(QWidget):
                 plane_layer.events.depiction.connect(self._update_view_mode)
 
             self._update_point_snapping()
-            self._release_mouse_locks()
             self._update_view_mode()
             self._update_linked_slab()
 
@@ -487,25 +476,21 @@ class PlaneSliderWidget(QWidget):
         )
 
     def _group_of(self, layer) -> list:
-        """The layer followed by the layers that share its plane controls
+        """The layer followed by the other layers that share its plane controls
 
-        These are the layers napari links it to and, when one of them is in the extra
-        plane group, the members of that group (and the layers linked to those). The
-        napari linked layers come first, so that the layer a group borrows its plane
-        from does not change when an extra layer joins it.
+        These are the layers of the link group plus the linked image, if the layer is
+        one of them. The link group comes first, so that a layer without a plane (e.g.
+        Points) keeps borrowing the plane of the segmentation when an image is linked.
         """
 
-        extra = [other for other in self._plane_group() if other in self.viewer.layers]
-        group = [layer]
-        for member in group:  # grows while iterating, breadth first
-            linked = sorted(
-                (o for o in get_linked_layers(member) if o in self.viewer.layers),
-                key=self.viewer.layers.index,
-            )
-            if member in extra:
-                linked += extra
-            group += [other for other in linked if other not in group]
-        return group
+        group = [
+            other
+            for other in (*self._link_group(), self.linked_image)
+            if other is not None and other in self.viewer.layers
+        ]
+        if layer not in group:
+            return [layer]
+        return [layer, *(other for other in group if other is not layer)]
 
     def _linked_layers(self) -> list:
         """The layers that share the plane controls with the current layer"""
@@ -585,29 +570,6 @@ class PlaneSliderWidget(QWidget):
         if position is not None:
             viewer.cursor.position = tuple(position)
 
-    def _release_mouse_locks(self) -> None:
-        """Keep the mode of one layer from locking the camera on the layers linked to it
-
-        napari links `mouse_pan` and `mouse_zoom` between linked layers, but it does not
-        link `mode`. A Points layer in select or transform mode therefore switches
-        panning off on the image it is linked to, where nothing ever switches it back
-        on: that image keeps its own pan and zoom mode, and unlinking the layers leaves
-        the lock behind.
-        """
-
-        layers = self._target_layers()
-        if len(layers) > 1:
-            unlink_layers(layers, ("mouse_pan", "mouse_zoom"))
-
-        # a layer that is in its own pan and zoom mode should not be left blocked by
-        # the mode of another layer, however it got there
-        for layer in self.viewer.layers:
-            if str(getattr(layer, "mode", "")) == "pan_zoom" and not (
-                layer.mouse_pan and layer.mouse_zoom
-            ):
-                layer.mouse_pan = True
-                layer.mouse_zoom = True
-
     def _plane_layer(self):
         """The layer whose plane the plane controls act on.
 
@@ -657,7 +619,6 @@ class PlaneSliderWidget(QWidget):
         """napari restores its own callbacks whenever the mode of a layer changes"""
 
         self._update_point_add_callback(event.source)
-        self._release_mouse_locks()
 
     def _update_point_add_callback(self, layer) -> None:
         """Replace the callback that adds points while snapping applies"""
@@ -705,11 +666,8 @@ class PlaneSliderWidget(QWidget):
             layer.add(layer.world_to_data(position))
 
     def _sync_linked_planes(self) -> None:
-        """Copy the plane the widget acts on to the other linked layers that have one
-
-        napari only links attributes that all linked layers have in common, so an image
-        and a labels layer stop syncing their plane as soon as a layer without a plane
-        (e.g. Points) joins the same link group.
+        """Copy the plane the widget acts on to the other layers in the group that have
+        one, e.g. from the segmentation to the linked image
         """
 
         plane_layer = self._plane_layer()
