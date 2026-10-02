@@ -63,6 +63,10 @@ def copy_layer(layer: Layer, name: str = ""):
         # points added in an orthogonal view are created at current_size, which is not
         # synced either, so start it at the size the tracks are drawn with
         res_layer.current_size = layer.default_size
+    elif isinstance(layer, ZOnlyPoints):
+        # keep the out-of-slice display to z in the copies too
+        data, state, _ = layer.as_layer_data_tuple()
+        res_layer = ZOnlyPoints(data, **state)
     else:
         res_layer = Layer.create(*layer.as_layer_data_tuple())
 
