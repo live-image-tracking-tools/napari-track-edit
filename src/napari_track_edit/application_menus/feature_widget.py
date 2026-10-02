@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import napari
+import numpy as np
 from fonticon_fa6 import FA6S
 from funtracks.annotators._regionprops_annotator import (
     DEFAULT_INTENSITY_KEY,
@@ -13,6 +14,7 @@ from qtpy.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -23,6 +25,9 @@ from qtpy.QtWidgets import (
 )
 from superqt.fonticon import icon as qticon
 
+from napari_track_edit.application_menus.intensity_region_preview import (
+    IntensityRegionPreview,
+)
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
@@ -75,6 +80,12 @@ class FeatureWidget(QWidget):
     chosen layers' data is handed to the tracks, which holds it (lazily) for as long as
     the feature is enabled, so the choice survives a rename. Renaming a measured layer
     renames its column, and removing one drops its measurement.
+
+    Without a segmentation, mean intensity is the only feature: it is measured in a
+    disk (2D) or sphere (3D) around each point, with a diameter in scaled (world) units
+    set below the checkbox. Editing the diameter only updates a preview layer that
+    outlines the region around every point; nothing is measured until the new diameter
+    is confirmed.
     """
 
     def __init__(self, viewer: napari.Viewer):
@@ -85,6 +96,13 @@ class FeatureWidget(QWidget):
         self.tracks_viewer.tracks_updated.connect(self._update_checkboxes)
         self._checkboxes: dict[str, QCheckBox] = {}
         self.intensity_checkbox: QCheckBox | None = None
+        self.diameter_spinbox: QDoubleSpinBox | None = None
+        self.diameter_confirm_btn: QPushButton | None = None
+        self.preview_btn: QPushButton | None = None
+        # The diameter shown in the preview, before it is confirmed
+        self._pending_diameter: float | None = None
+        self.preview = IntensityRegionPreview(viewer, self.tracks_viewer)
+        self.preview.removed.connect(self._on_preview_removed)
         # The layer objects, not their names, so that a rename cannot orphan them
         self._intensity_layers: list[napari.layers.Image] = []
         self._name_connected: set[napari.layers.Image] = set()
@@ -120,11 +138,19 @@ class FeatureWidget(QWidget):
         self._clear_layout()
         self._checkboxes.clear()
         self.intensity_checkbox = None
+        self.diameter_spinbox = None
+        self.diameter_confirm_btn = None
+        self.preview_btn = None
 
         tracks = self.tracks_viewer.tracks
         if tracks is not self._tracks:
             self._tracks = tracks
             self._forget_intensity_layers()
+            self._pending_diameter = None
+            self.preview.hide()
+        else:
+            # nodes may have been added, moved or deleted
+            self.preview.refresh()
         if tracks is None:
             self.box.setVisible(False)
             return
@@ -141,13 +167,14 @@ class FeatureWidget(QWidget):
             self._checkboxes[feature_key] = checkbox
             self.checkbox_layout.addWidget(checkbox)
 
-        if tracks.segmentation is not None:
+        if tracks.intensity_annotator is not None:
             self.checkbox_layout.addWidget(self._intensity_row())
 
         self.box.setVisible(self.checkbox_layout.count() > 0)
 
     def _intensity_row(self) -> QWidget:
-        """The mean intensity checkbox, with a button to change the layers measured."""
+        """The mean intensity checkbox, with a button to change the layers measured,
+        and for point tracks the diameter to measure in."""
 
         tracks = self.tracks_viewer.tracks
 
@@ -165,14 +192,119 @@ class FeatureWidget(QWidget):
         self.intensity_update_btn.setToolTip("Change which image layers are measured")
         self.intensity_update_btn.clicked.connect(self._on_update_intensity_layers)
 
-        row = QWidget()
+        top = QWidget()
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.intensity_checkbox)
         layout.addWidget(self.intensity_update_btn)
         layout.addStretch()
+        top.setLayout(layout)
+
+        if tracks.segmentation is not None:
+            return top
+
+        self.intensity_checkbox.setToolTip(
+            "Measure the mean intensity in a disk (2D) or sphere (3D) around each "
+            "point, in the image layers you select"
+        )
+        row = QWidget()
+        row_layout = QVBoxLayout()
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.addWidget(top)
+        row_layout.addWidget(self._diameter_row())
+        row.setLayout(row_layout)
+        return row
+
+    def _diameter_row(self) -> QWidget:
+        """The diameter of the disk/sphere to measure point intensity in, with a
+        preview toggle and a button to confirm a new value."""
+
+        tracks = self.tracks_viewer.tracks
+        if self._pending_diameter is None:
+            self._pending_diameter = tracks.intensity_diameter
+
+        self.diameter_spinbox = QDoubleSpinBox()
+        self.diameter_spinbox.setDecimals(2)
+        self.diameter_spinbox.setRange(0.01, 10000)
+        self.diameter_spinbox.setValue(self._pending_diameter)
+        self.diameter_spinbox.setToolTip(
+            "Diameter of the disk (2D) or sphere (3D) around each point to measure the "
+            "mean intensity in, in scaled (world) units"
+        )
+        self.diameter_spinbox.valueChanged.connect(self._on_diameter_changed)
+
+        self.preview_btn = QPushButton(icon=qticon(FA6S.eye, color="white"))
+        self.preview_btn.setFixedSize(20, 20)
+        self.preview_btn.setCheckable(True)
+        self.preview_btn.setChecked(self.preview.is_shown)
+        self.preview_btn.setToolTip("Show the region measured around each point")
+        self.preview_btn.toggled.connect(self._on_preview_toggled)
+
+        self.diameter_confirm_btn = QPushButton("Confirm")
+        self.diameter_confirm_btn.setToolTip(
+            "Use this diameter, remeasuring the intensity if it is switched on"
+        )
+        self.diameter_confirm_btn.clicked.connect(self._confirm_diameter)
+        self._update_confirm_button()
+
+        row = QWidget()
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(QLabel("Diameter:"))
+        layout.addWidget(self.diameter_spinbox)
+        layout.addWidget(self.preview_btn)
+        layout.addWidget(self.diameter_confirm_btn)
+        layout.addStretch()
         row.setLayout(layout)
         return row
+
+    def _on_diameter_changed(self, diameter: float) -> None:
+        """Preview the new diameter, without measuring anything yet."""
+
+        self._pending_diameter = diameter
+        self._update_confirm_button()
+        if self.preview.is_shown:
+            self.preview.show(diameter)
+        else:
+            self.preview_btn.setChecked(True)
+
+    def _update_confirm_button(self) -> None:
+        """Only offer to confirm a diameter that differs from the one in use."""
+
+        tracks = self.tracks_viewer.tracks
+        if self.diameter_confirm_btn is None or tracks is None:
+            return
+        self.diameter_confirm_btn.setEnabled(
+            tracks.intensity_diameter is not None
+            and not np.isclose(self._pending_diameter, tracks.intensity_diameter)
+        )
+
+    def _confirm_diameter(self) -> None:
+        """Use the previewed diameter, remeasuring if intensity is switched on."""
+
+        tracks = self.tracks_viewer.tracks
+        if tracks is None or tracks.point_intensity_annotator is None:
+            return
+        tracks.set_intensity_diameter(self._pending_diameter)
+        self._update_confirm_button()
+        if self._measuring_intensity():
+            self._refresh_views()
+
+    def _on_preview_toggled(self, checked: bool) -> None:
+        """Show or hide the preview of the measured region."""
+
+        if checked:
+            self.preview.show(self._pending_diameter)
+        else:
+            self.preview.hide()
+
+    def _on_preview_removed(self) -> None:
+        """The user deleted the preview layer: show the preview as off."""
+
+        if self.preview_btn is not None:
+            blocked = self.preview_btn.blockSignals(True)
+            self.preview_btn.setChecked(False)
+            self.preview_btn.blockSignals(blocked)
 
     def _clear_layout(self) -> None:
         """Remove all checkboxes from the layout"""
@@ -206,7 +338,8 @@ class FeatureWidget(QWidget):
         else:
             features = {}
             self.label.setText(
-                "*Feature measurements are only supported if you are using a segmentation layer.*"
+                "*Without a segmentation layer, only the mean intensity can be measured, "
+                "in a disk (2D) or sphere (3D) of the given diameter around each point.*"
             )
 
         return features
@@ -278,14 +411,13 @@ class FeatureWidget(QWidget):
             the user cancelled or there is nothing eligible to measure.
         """
 
-        eligible, desired_shape = self._matching_image_layers()
+        eligible, requirement = self._matching_image_layers()
         if not eligible:
             QMessageBox.information(
                 self,
                 "No image layers to measure",
-                "No image layers have the same shape as the segmentation: "
-                f"{desired_shape}. \n\nIf you have multichannel data, please split the"
-                " stack into the different channels and try again.",
+                f"No image layers {requirement}. \n\nIf you have multichannel data, "
+                "please split the stack into the different channels and try again.",
             )
             return None
 
@@ -304,16 +436,24 @@ class FeatureWidget(QWidget):
         """
 
         tracks = self.tracks_viewer.tracks
-        if tracks is None or tracks.segmentation is None:
+        if tracks is None or tracks.intensity_annotator is None:
             return
+
+        if layers:
+            try:
+                tracks.set_intensity_images(
+                    [layer.data for layer in layers],
+                    channel_names=[layer.name for layer in layers],
+                )
+            except ValueError as e:
+                # e.g. point tracks measured in layers of different shapes
+                QMessageBox.warning(self, "Cannot measure intensity", str(e))
+                self._set_intensity_checked(self._measuring_intensity())
+                return
 
         self._remember_intensity_layers(layers)
 
         if layers:
-            tracks.set_intensity_images(
-                [layer.data for layer in layers],
-                channel_names=[layer.name for layer in layers],
-            )
             if DEFAULT_INTENSITY_KEY not in tracks.features:
                 tracks.enable_features([DEFAULT_INTENSITY_KEY])
         else:
@@ -391,17 +531,34 @@ class FeatureWidget(QWidget):
         tracks = self.tracks_viewer.tracks
         return tracks is not None and DEFAULT_INTENSITY_KEY in tracks.features
 
-    def _matching_image_layers(self) -> list[napari.layers.Image]:
-        """Image layers with the same shape as the segmentation, in viewer order."""
+    def _matching_image_layers(self) -> tuple[list[napari.layers.Image], str]:
+        """Image layers that intensity can be measured in, in viewer order.
+
+        With a segmentation, these are the layers with the same shape. Without
+        segmentation, any layer with the dimensions of the tracks can be used.
+
+        Returns:
+            The eligible layers, and a description of what makes a layer eligible.
+        """
 
         tracks = self.tracks_viewer.tracks
-        if tracks is None or tracks.segmentation is None:
-            return []
+        if tracks is None or tracks.intensity_annotator is None:
+            return [], "can be measured"
 
-        seg_shape = tuple(tracks.segmentation.shape)
-        return [
+        images = [
             layer
             for layer in self.viewer.layers
             if isinstance(layer, napari.layers.Image)
-            and tuple(getattr(layer.data, "shape", ())) == seg_shape
-        ], seg_shape
+        ]
+
+        if tracks.segmentation is not None:
+            seg_shape = tuple(tracks.segmentation.shape)
+            return [
+                layer
+                for layer in images
+                if tuple(getattr(layer.data, "shape", ())) == seg_shape
+            ], f"have the same shape as the segmentation: {seg_shape}"
+
+        return [layer for layer in images if layer.ndim == tracks.ndim], (
+            f"have the {tracks.ndim} dimensions of the tracks (t, [z], y, x)"
+        )

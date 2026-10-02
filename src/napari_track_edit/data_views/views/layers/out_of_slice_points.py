@@ -118,6 +118,10 @@ class _ZOnlyPoints(Points):
     hook in there.
     """
 
+    @property
+    def _type_string(self) -> str:
+        return "points"
+
     def _get_layer_slicing_state(self, data, cache):
         return _ZOnlyPointsSlicingState(layer=self, data=data, cache=cache)
 
