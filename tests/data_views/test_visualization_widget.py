@@ -155,6 +155,8 @@ def test_reopened_widget_shows_current_overlay_state(visualization_widget, qtbot
     qtbot.addWidget(new_widget)
 
     assert not new_widget.show_viewer_overlay.isChecked()
+    # take it off the shared viewer before qtbot deletes it, as MenuManager does
+    new_widget.cleanup()
 
 
 @pytest.mark.parametrize(
