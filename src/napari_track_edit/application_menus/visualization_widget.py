@@ -1,0 +1,463 @@
+import contextlib
+
+import napari
+from napari_orthogonal_views.ortho_view_manager import _VIEWER_MANAGERS
+from psygnal import Signal
+from qtpy.QtCore import QSignalBlocker
+from qtpy.QtWidgets import (
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QRadioButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+from superqt import QLabeledDoubleSlider
+
+from napari_track_edit.data_views.colormap import (
+    categorical_feature_keys,
+    feature_display_name,
+)
+from napari_track_edit.data_views.views.ortho_views import initialize_ortho_views
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
+
+
+class VisualizationConfigWidget(QWidget):
+    """Sliders and checkboxes for adjusting the opacity and contour display."""
+
+    update_visualization = Signal()
+
+    def __init__(
+        self,
+        label: str,
+        default_opacity: float,
+        default_contour: bool,
+        use_contour: bool = True,
+    ):
+        super().__init__()
+
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+
+        box = QGroupBox(label)
+        box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+
+        box_layout = QVBoxLayout(box)
+        box_layout.setContentsMargins(8, 6, 8, 6)
+        box_layout.setSpacing(6)
+
+        self.opacity = QLabeledDoubleSlider()
+        self.opacity.setValue(default_opacity)
+        self.opacity.setSingleStep(0.1)
+        self.opacity.setRange(0, 1)
+        self.opacity.setDecimals(2)
+        self.opacity.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.opacity.valueChanged.connect(self.update_visualization)
+        box_layout.addWidget(self.opacity)
+
+        self.contour = None
+        if use_contour:
+            self.contour = QCheckBox("Fill")
+            self.contour.setChecked(default_contour)
+            self.contour.stateChanged.connect(self.update_visualization)
+            self.contour.setEnabled(False)
+            self.contour.setVisible(False)
+            self.contour.setToolTip(
+                "When checked, will fill labels instead of showing contours only"
+            )
+            self.contour.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            box_layout.addWidget(self.contour)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
+        layout.addWidget(box)
+        layout.addStretch(0)
+
+
+class ColorByWidget(QWidget):
+    """A "Color by" label and the dropdown picking the feature to color by.
+
+    Selecting an entry goes through `TracksViewer.set_color_feature`, which
+    updates the shared colormap *and* rebuilds the labels, points, tracks,
+    tree and table.
+
+    Currently, only categorical features are offered (see `categorical_feature_keys`),
+    plus "None", which paints every node one flat color.
+    """
+
+    def __init__(self, tracks_viewer: TracksViewer):
+        super().__init__()
+
+        self.tracks_viewer = tracks_viewer
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+
+        self.combo = QComboBox()
+        self.combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.combo.setToolTip(
+            "Node feature used to color the labels, points, tracks, tree and table."
+        )
+        self.combo.currentIndexChanged.connect(self._on_selected)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 0, 8, 0)
+        layout.setSpacing(8)
+        layout.addWidget(QLabel("Color by"))
+        layout.addWidget(self.combo, stretch=1)
+
+        self.tracks_viewer.tracks_updated.connect(self._populate)
+        self.tracks_viewer.colormap_updated.connect(self._populate)
+        self._populate()
+
+    def showEvent(self, event):
+        # To ensure that the groups are up to date
+        self._populate()
+        super().showEvent(event)
+
+    def _populate(self, *_args) -> None:
+        """Rebuild the entries and show the feature currently in use."""
+
+        keys = [None, *categorical_feature_keys(self.tracks_viewer.tracks)]
+        current = self.tracks_viewer.color_feature_key
+        with QSignalBlocker(self.combo):
+            self.combo.clear()
+            for key in keys:
+                self.combo.addItem(
+                    feature_display_name(self.tracks_viewer.tracks, key), key
+                )
+            self.combo.setCurrentIndex(keys.index(current) if current in keys else 0)
+        self.combo.setEnabled(self.tracks_viewer.tracks is not None)
+
+    def _on_selected(self, index: int) -> None:
+        if index < 0:
+            return
+        feature_key = self.combo.itemData(index)
+        if feature_key != self.tracks_viewer.color_feature_key:
+            self.tracks_viewer.set_color_feature(feature_key)
+
+
+class ModeWidget(QWidget):
+    """Compact radio buttons for display mode."""
+
+    update_mode = Signal(str)
+
+    def __init__(self):
+        super().__init__()
+
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+
+        box = QGroupBox("Display Mode")
+        box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+
+        self.radio_group = QButtonGroup(self)
+        box_layout = QHBoxLayout(box)
+        box_layout.setContentsMargins(12, 8, 12, 8)
+        box_layout.setSpacing(14)
+
+        for text, mode in [("All", "all"), ("Lineage", "lineage"), ("Group", "group")]:
+            btn = QRadioButton(text)
+            btn.setProperty("mode", mode)
+            btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+            btn.setStyleSheet("""
+                QRadioButton {
+                    padding: 3px 8px;
+                }
+            """)
+
+            self.radio_group.addButton(btn)
+            box_layout.addWidget(btn)
+
+            if mode == "all":
+                btn.setChecked(True)
+
+        self.radio_group.buttonToggled.connect(self._on_toggled)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+        layout.addWidget(box)
+
+    @property
+    def current_mode(self) -> str:
+        btn = self.radio_group.checkedButton()
+        return btn.property("mode") if btn else None
+
+    def button_for_mode(self, mode: str) -> QRadioButton:
+        for btn in self.radio_group.buttons():
+            if btn.property("mode") == mode:
+                return btn
+        raise KeyError(f"No radio button for mode '{mode}'")
+
+    def _on_toggled(self, button, checked):
+        if checked:
+            self.update_mode.emit(button.property("mode"))
+
+
+class ReferenceTrackWidget(QWidget):
+    """Button that toggles the active tracklet ID as reference track.
+
+    While a reference track is set, stepping to another time point with the napari
+    slider shifts the view by the displacement of that track between the two time
+    points. The button shows the reference track ID and carries a border in its color.
+    """
+
+    def __init__(self, tracks_viewer: TracksViewer):
+        super().__init__()
+
+        self.tracks_viewer = tracks_viewer
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+
+        self.reference_btn = QPushButton()
+        self.reference_btn.setToolTip(
+            "Follow the active tracklet when stepping through time with the slider: "
+            "the view moves along with the cell. Click again with the same tracklet "
+            "active to stop following it."
+        )
+        self.reference_btn.clicked.connect(self._toggle_reference)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(6)
+        layout.addWidget(self.reference_btn)
+        self.tracks_viewer.update_track_id.connect(
+            lambda: self.reference_btn.setEnabled(
+                self.tracks_viewer.selected_track is not None
+            )
+        )
+        self.tracks_viewer.reference_track_updated.connect(self._update_display)
+        self._update_display()
+
+    def _toggle_reference(self) -> None:
+        """Make the active tracklet the reference track, or clear the reference when it
+        already is the reference track."""
+
+        selected = self.tracks_viewer.selected_track
+        if selected is not None and selected == self.tracks_viewer.reference_track:
+            selected = None
+        self.tracks_viewer.set_reference_track(selected)
+
+    def _update_display(self) -> None:
+        """Show the reference track ID on the button and mark it with its color"""
+
+        reference = self.tracks_viewer.reference_track
+        self.reference_btn.setText(f"Reference Track: {reference}")
+
+        if reference is None:
+            self.reference_btn.setStyleSheet(
+                """
+            QPushButton {
+                border: 2px solid rgba(0,0,0,0);
+                border-radius: 3px;
+                padding: 5px;
+            }
+            """
+            )
+            return
+
+        color = self.tracks_viewer.reference_track_color
+        r, g, b, a = [int(c * 255) if i < 3 else c for i, c in enumerate(color)]
+        css_color = f"rgba({r}, {g}, {b}, {a})"
+        self.reference_btn.setStyleSheet(
+            f"""
+            QPushButton {{
+                border: 2px solid {css_color};
+                border-radius: 3px;
+                padding: 5px;
+            }}
+            """
+        )
+
+
+class VisualizationWidget(QWidget):
+    """Widget to adjust opacity and contour display in different TrackLabels layer display modes."""
+
+    def __init__(self, viewer: napari.Viewer):
+        super().__init__()
+
+        self.viewer = viewer
+        self.tracks_viewer = TracksViewer.get_instance(viewer)
+
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
+
+        self.tracks_viewer.mode_updated.connect(self._update_widget_availability)
+
+        self.mode_widget = ModeWidget()
+        self.mode_widget.update_mode.connect(self._update_mode)
+
+        self.highlight_widget = VisualizationConfigWidget(
+            "Highlight opacity", 1.0, True
+        )
+        self.foreground_widget = VisualizationConfigWidget(
+            "Foreground opacity", 0.6, True
+        )
+        self.background_widget = VisualizationConfigWidget(
+            "Background opacity", 0.3, True, use_contour=False
+        )
+
+        self.highlight_widget.update_visualization.connect(self._update_visualization)
+        self.foreground_widget.update_visualization.connect(self._update_visualization)
+        self.background_widget.update_visualization.connect(self._update_visualization)
+
+        self.background_widget.setEnabled(False)  # initially disabled
+
+        self.reference_track_widget = ReferenceTrackWidget(self.tracks_viewer)
+        self.color_by_widget = ColorByWidget(self.tracks_viewer)
+
+        main_layout.addWidget(self.mode_widget)
+        main_layout.addWidget(self.highlight_widget)
+        main_layout.addWidget(self.foreground_widget)
+        main_layout.addWidget(self.background_widget)
+        main_layout.addWidget(self.reference_track_widget)
+        main_layout.addWidget(self.color_by_widget)
+
+        self.show_ortho_views = QCheckBox("Orthogonal views")
+        self.show_ortho_views.toggled.connect(self.toggle_ortho_views)
+        self.show_ortho_views.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        # the ortho views outlive this widget, so pick them up again when it is reopened
+        if self.viewer in _VIEWER_MANAGERS:
+            manager = _VIEWER_MANAGERS[self.viewer]
+            self.show_ortho_views.setChecked(manager.is_shown())
+            self._follow_ortho_checkbox(manager)
+
+        self.show_viewer_overlay = QCheckBox("Display keybinds on canvas")
+        self.show_viewer_overlay.setChecked(self.viewer.text_overlay.visible)
+        self.show_viewer_overlay.toggled.connect(self.toggle_viewer_text_overlay)
+
+        main_layout.addWidget(self.show_ortho_views)
+        main_layout.addWidget(self.show_viewer_overlay)
+        main_layout.addStretch(1)
+
+    def cleanup(self) -> None:
+        """Stop following the TracksViewer, which outlives this widget.
+
+        Called by MenuManager when the dock is destroyed.
+        """
+
+        for signal, slot in (
+            (self.tracks_viewer.mode_updated, self._update_widget_availability),
+            (self.tracks_viewer.tracks_updated, self.color_by_widget._populate),
+            (self.tracks_viewer.colormap_updated, self.color_by_widget._populate),
+        ):
+            with contextlib.suppress(ValueError, KeyError, RuntimeError):
+                signal.disconnect(slot)
+
+    def toggle_viewer_text_overlay(self, checked: bool):
+        """Change the visibility of the text overlay"""
+
+        self.viewer.text_overlay.visible = checked
+
+    def toggle_ortho_views(self, checked: bool):
+        """Show or hide the ortho views, creating them the first time."""
+
+        if self.viewer in _VIEWER_MANAGERS:
+            manager = _VIEWER_MANAGERS[self.viewer]
+        else:
+            manager = initialize_ortho_views(self.viewer)
+            self._follow_ortho_checkbox(manager)
+
+        if checked:
+            manager.show()
+        else:
+            manager.hide()
+            manager.set_splitter_sizes(0.0, 0.0)  # minimal size for right and bottom
+
+    def _follow_ortho_checkbox(self, manager) -> None:
+        """Keep our checkbox in sync with the ortho views' own checkbox.
+
+        This is a Qt-to-Qt connection, so Qt drops it when either checkbox is
+        deleted and nothing needs to be disconnected by hand.
+        """
+
+        manager.main_controls_widget.show_checkbox.toggled.connect(
+            self.show_ortho_views.setChecked
+        )
+
+    def _update_mode(self, mode: str) -> None:
+        """Update the display mode on the Tracksviewer"""
+
+        self.tracks_viewer.set_display_mode(mode)
+        self._update_widget_availability()
+
+    def _update_widget_availability(self):
+        """Update the radio buttons, show/hide the contour checkboxes when changing
+        between contour and normal mode. Disable the background widget when the display
+        mode is 'All', as there are no background labels in that case."""
+
+        # ensure the correct radio button is checked
+        mode = self.tracks_viewer.mode
+        with QSignalBlocker(self.mode_widget.radio_group):
+            self.mode_widget.button_for_mode(self.tracks_viewer.mode).setChecked(True)
+        if self.tracks_viewer.tracking_layers.seg_layer is not None:
+            self.highlight_widget.setVisible(True)
+            self.foreground_widget.setVisible(True)
+            self.background_widget.setVisible(True)
+
+            self.background_widget.setEnabled(mode != "all")
+
+            show_contour = (
+                self.tracks_viewer.tracking_layers.seg_layer.contour > 0
+                and mode != "all"
+            )
+
+            for w in (self.highlight_widget, self.foreground_widget):
+                w.contour.setVisible(show_contour)
+                w.contour.setEnabled(show_contour)
+
+            self._update_visualization()
+
+        else:
+            self.highlight_widget.setVisible(False)
+            self.foreground_widget.setVisible(False)
+            self.background_widget.setVisible(False)
+
+    def _update_visualization(self):
+        """Apply the values from the widget and send an update signal.
+
+        Returns without touching the layer when the widgets already agree with
+        it. This runs on every `mode_updated`, which includes pressing Q - and
+        there only the *enabled* state of these widgets changes, never their
+        values. Applying them anyway triggers a second `update_selection`, and
+        each one re-slices the whole displayed volume: 6 s in 3D on a
+        1.7e9-voxel timepoint, for a result identical to the refresh
+        `set_display_mode` has already done.
+        """
+
+        layer = self.tracks_viewer.tracking_layers.seg_layer
+
+        if layer is None:
+            return
+
+        wanted = (
+            self.highlight_widget.opacity.value(),
+            self.foreground_widget.opacity.value(),
+            self.background_widget.opacity.value(),
+            not self.highlight_widget.contour.isChecked(),
+            not self.foreground_widget.contour.isChecked(),
+        )
+        current = (
+            layer.highlight_opacity,
+            layer.foreground_opacity,
+            layer.background_opacity,
+            layer.highlight_contour,
+            layer.foreground_contour,
+        )
+        if wanted == current:
+            return
+
+        (
+            layer.highlight_opacity,
+            layer.foreground_opacity,
+            layer.background_opacity,
+            layer.highlight_contour,
+            layer.foreground_contour,
+        ) = wanted
+        self.tracks_viewer.update_selection(set_view=False)

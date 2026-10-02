@@ -1,11 +1,12 @@
 """Integration test for CSV and GEFF import workflow.
-Tests the full round-trip: export tracks using motile_tracker's method,
+Tests the full round-trip: export tracks using napari_track_edit's method,
 then import them back through the import dialog.
 Also test for the visibility of various widgets based on 2D/3D and
 segmentation inclusion.
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -20,9 +21,10 @@ from funtracks.import_export import (
     has_embedded_segmentation,
 )
 
-from motile_tracker.import_export.menus.import_dialog import ImportDialog
-from motile_tracker.motile.backend.motile_run import MotileRun
-from motile_tracker.motile.backend.solver_params import SolverParams
+from napari_track_edit.import_export.menus.import_dialog import ImportDialog
+from napari_track_edit.import_export.menus.prop_map_widget import StandardFieldMapWidget
+from napari_track_edit.motile.backend.motile_run import MotileRun
+from napari_track_edit.motile.backend.solver_params import SolverParams
 
 
 def _remove_geff_shape(root):
@@ -56,11 +58,11 @@ def mock_qmessagebox(monkeypatch):
 
     mock_msgbox.critical.side_effect = critical_side_effect
     monkeypatch.setattr(
-        "motile_tracker.import_export.menus.import_dialog.QMessageBox",
+        "napari_track_edit.import_export.menus.import_dialog.QMessageBox",
         mock_msgbox,
     )
     monkeypatch.setattr(
-        "motile_tracker.import_export.menus.geff_import_widget.QMessageBox",
+        "napari_track_edit.import_export.menus.geff_import_widget.QMessageBox",
         mock_msgbox,
     )
     return mock_msgbox
@@ -130,6 +132,93 @@ def test_import_dialog_csv(qtbot, small_csv, dim_3d, include_seg):
             assert optional["area"]["recompute"].isEnabled() is True
         else:
             assert optional["area"]["recompute"].isEnabled() is False
+
+
+class TestInitialFieldMapping:
+    """Guessing which column is which, before the user corrects it."""
+
+    PROPS = [
+        "parent_id",
+        "area",
+        "solution",
+        "z",
+        "mask",
+        "t",
+        "frontier",
+        "bbox",
+        "y",
+        "x",
+    ]
+
+    # What the CSV importer asks for, which the geff one does not: an id column
+    # per node and a parent pointer to build edges from.
+    CSV_FIELDS = [
+        "id",
+        "parent_id",
+        "time",
+        "y",
+        "x",
+        "tracklet_id",
+        "lineage_id",
+        "seg_id",
+    ]
+
+    def _mapping(
+        self, props: list[str], standard_fields: list[str] | None = None
+    ) -> dict[str, str]:
+        """Call the guesser without building a widget (it needs no Qt)."""
+        state = SimpleNamespace(
+            node_attrs=props,
+            metadata={},
+            standard_fields=standard_fields
+            or [
+                "time",
+                "z",
+                "y",
+                "x",
+                "seg_id",
+                "tracklet_id",
+                "lineage_id",
+            ],
+        )
+        return StandardFieldMapWidget._get_initial_mapping(state)
+
+    def test_time_is_taken_from_t(self):
+        """ "t" is what every funtracks graph calls time, and fuzzy matching misses it.
+
+        "time" scores 0.50 against "frontier" and only 0.40 against "t", so
+        without the alias the guess lands on an unrelated float column and the
+        import fails on the -1.0 values in it.
+        """
+        assert self._mapping(self.PROPS)["time"] == "t"
+
+    def test_parent_id_is_not_guessed_as_a_track_id(self):
+        """It points at another node, but scores 0.60 against "tracklet_id"."""
+        mapping = self._mapping(self.PROPS)
+
+        assert mapping["tracklet_id"] == "None"
+        assert mapping["lineage_id"] == "None"
+
+    def test_a_reserved_column_still_fills_its_own_field(self):
+        """Keeping "id" away from other fields must not keep it from "id".
+
+        A CSV writing its columns in capitals is ordinary, and the exact pass is
+        case-sensitive, so this is the common way an id column arrives.
+        """
+        mapping = self._mapping(["ID", "PARENT_ID", "TIME", "Y", "X"], self.CSV_FIELDS)
+
+        assert mapping["id"] == "ID"
+        assert mapping["parent_id"] == "PARENT_ID"
+        assert mapping["time"] == "TIME"
+
+    def test_node_id_fills_the_id_field(self):
+        mapping = self._mapping(["node_id", "t", "y", "x"], self.CSV_FIELDS)
+
+        assert mapping["id"] == "node_id"
+        assert mapping["time"] == "t"
+
+    def test_a_real_track_id_is_still_found(self):
+        assert self._mapping([*self.PROPS, "track_id"])["tracklet_id"] == "track_id"
 
 
 class TestPropMapWidgetKeys:
@@ -240,7 +329,7 @@ def test_csv_import_2d_with_segmentation(
     # Mock _resize_dialog to avoid screen access in headless CI
     monkeypatch.setattr(ImportDialog, "_resize_dialog", lambda self: None)
 
-    # Create tracks and export to CSV (as motile_tracker does in tracks_list.py:208)
+    # Create tracks and export to CSV (as napari_track_edit does in tracks_list.py:208)
     tracks = solution_tracks_2d
     csv_path = tmp_path / "test_tracks.csv"
     export_to_csv(tracks, csv_path)
@@ -287,14 +376,20 @@ def test_csv_import_2d_with_segmentation(
     # Verify tracks were imported successfully
     assert hasattr(dialog, "tracks"), "Dialog should have tracks attribute after import"
     assert dialog.tracks is not None, "Tracks should not be None"
-    assert dialog.tracks.graph.num_nodes() == solution_tracks_2d.graph.num_nodes()
-    assert dialog.tracks.graph.num_edges() == solution_tracks_2d.graph.num_edges()
+    assert (
+        dialog.tracks.graph_solution.num_nodes()
+        == solution_tracks_2d.graph_solution.num_nodes()
+    )
+    assert (
+        dialog.tracks.graph_solution.num_edges()
+        == solution_tracks_2d.graph_solution.num_edges()
+    )
     assert dialog.tracks.ndim == 3
 
     # Area should be enabled and computed even though it was not in the CSV
     assert "area" in dialog.tracks.features
-    for node_id in dialog.tracks.graph.node_ids():
-        assert dialog.tracks.graph.nodes[node_id]["area"] > 0
+    for node_id in dialog.tracks.graph_solution.node_ids():
+        assert dialog.tracks.graph_solution.nodes[node_id]["area"] > 0
 
 
 def test_csv_import_3d_with_segmentation(
@@ -306,7 +401,7 @@ def test_csv_import_3d_with_segmentation(
     # Mock _resize_dialog to avoid screen access in headless CI
     monkeypatch.setattr(ImportDialog, "_resize_dialog", lambda self: None)
 
-    # Create tracks and export to CSV (as motile_tracker does in tracks_list.py:208)
+    # Create tracks and export to CSV (as napari_track_edit does in tracks_list.py:208)
     tracks = solution_tracks_3d
     csv_path = tmp_path / "test_tracks.csv"
     export_to_csv(tracks, csv_path)
@@ -357,8 +452,14 @@ def test_csv_import_3d_with_segmentation(
     # Verify tracks were imported successfully
     assert hasattr(dialog, "tracks"), "Dialog should have tracks attribute after import"
     assert dialog.tracks is not None, "Tracks should not be None"
-    assert dialog.tracks.graph.num_nodes() == solution_tracks_3d.graph.num_nodes()
-    assert dialog.tracks.graph.num_edges() == solution_tracks_3d.graph.num_edges()
+    assert (
+        dialog.tracks.graph_solution.num_nodes()
+        == solution_tracks_3d.graph_solution.num_nodes()
+    )
+    assert (
+        dialog.tracks.graph_solution.num_edges()
+        == solution_tracks_3d.graph_solution.num_edges()
+    )
     assert dialog.tracks.ndim == 4
 
 
@@ -369,7 +470,7 @@ def test_csv_import_without_segmentation(
     # Mock _resize_dialog to avoid screen access in headless CI
     monkeypatch.setattr(ImportDialog, "_resize_dialog", lambda self: None)
 
-    # Create tracks and export to CSV (as motile_tracker does in tracks_list.py:208)
+    # Create tracks and export to CSV (as napari_track_edit does in tracks_list.py:208)
     tracks = solution_tracks_2d_without_segmentation
     csv_path = tmp_path / "test_tracks.csv"
     export_to_csv(tracks, csv_path)
@@ -402,12 +503,12 @@ def test_csv_import_without_segmentation(
     assert hasattr(dialog, "tracks"), "Dialog should have tracks attribute after import"
     assert dialog.tracks is not None, "Tracks should not be None"
     assert (
-        dialog.tracks.graph.num_nodes()
-        == solution_tracks_2d_without_segmentation.graph.num_nodes()
+        dialog.tracks.graph_solution.num_nodes()
+        == solution_tracks_2d_without_segmentation.graph_solution.num_nodes()
     )
     assert (
-        dialog.tracks.graph.num_edges()
-        == solution_tracks_2d_without_segmentation.graph.num_edges()
+        dialog.tracks.graph_solution.num_edges()
+        == solution_tracks_2d_without_segmentation.graph_solution.num_edges()
     )
     assert dialog.tracks.ndim == 3
 
@@ -431,7 +532,7 @@ def test_geff_import_with_segmentation(
     # Mock _resize_dialog to avoid screen access in headless CI
     monkeypatch.setattr(ImportDialog, "_resize_dialog", lambda self: None)
 
-    # Create tracks and export to GEFF (as motile_tracker does in tracks_list.py:237)
+    # Create tracks and export to GEFF (as napari_track_edit does in tracks_list.py:237)
     tracks = Tracks(graph, ndim=ndim, time_attr="t", tracklet_attr="track_id")
     geff_path = tmp_path / "test_tracks.zarr"
     export_to_geff(tracks, geff_path)
@@ -470,16 +571,16 @@ def test_geff_import_with_segmentation(
     # Verify tracks were imported successfully
     assert hasattr(dialog, "tracks"), "Dialog should have tracks attribute after import"
     assert dialog.tracks is not None, "Tracks should not be None"
-    assert dialog.tracks.graph.num_nodes() == graph.num_nodes()
-    assert dialog.tracks.graph.num_edges() == graph.num_edges()
+    assert dialog.tracks.graph_solution.num_nodes() == graph.num_nodes()
+    assert dialog.tracks.graph_solution.num_edges() == graph.num_edges()
     assert dialog.tracks.ndim == ndim
-    for node_id in dialog.tracks.graph.node_ids():
+    for node_id in dialog.tracks.graph_solution.node_ids():
         dialog.tracks.get_time(node_id)
 
     # Area should be enabled and computed when segmentation is present
     assert "area" in dialog.tracks.features
-    for node_id in dialog.tracks.graph.node_ids():
-        assert dialog.tracks.graph.nodes[node_id]["area"] > 0
+    for node_id in dialog.tracks.graph_solution.node_ids():
+        assert dialog.tracks.graph_solution.nodes[node_id]["area"] > 0
 
 
 def test_geff_import_source_path_is_geff_group_not_container(
@@ -560,12 +661,15 @@ def test_geff_import_without_area_computes_area(
     dialog._finish()
 
     assert dialog.tracks is not None
-    assert dialog.tracks.graph.num_nodes() == graph_2d_without_segmentation.num_nodes()
+    assert (
+        dialog.tracks.graph_solution.num_nodes()
+        == graph_2d_without_segmentation.num_nodes()
+    )
 
     # Area must be in features and computed (positive values, not defaults)
     assert "area" in dialog.tracks.features
-    for node_id in dialog.tracks.graph.node_ids():
-        assert dialog.tracks.graph.nodes[node_id]["area"] > 0
+    for node_id in dialog.tracks.graph_solution.node_ids():
+        assert dialog.tracks.graph_solution.nodes[node_id]["area"] > 0
 
 
 def test_geff_import_without_segmentation(
@@ -608,9 +712,9 @@ def test_geff_import_without_segmentation(
     # Verify tracks were imported successfully
     assert hasattr(dialog, "tracks"), "Dialog should have tracks attribute after import"
     assert dialog.tracks is not None, "Tracks should not be None"
-    assert dialog.tracks.graph.num_nodes() == tracks.graph.num_nodes()
-    assert dialog.tracks.graph.num_edges() == tracks.graph.num_edges()
-    for node_id in dialog.tracks.graph.node_ids():
+    assert dialog.tracks.graph_solution.num_nodes() == tracks.graph_solution.num_nodes()
+    assert dialog.tracks.graph_solution.num_edges() == tracks.graph_solution.num_edges()
+    for node_id in dialog.tracks.graph_solution.node_ids():
         dialog.tracks.get_time(node_id)
 
 
@@ -674,15 +778,21 @@ def test_geff_import_without_axes_metadata(
     # Verify tracks were imported successfully
     assert hasattr(dialog, "tracks"), "Dialog should have tracks attribute after import"
     assert dialog.tracks is not None, "Tracks should not be None"
-    assert dialog.tracks.graph.num_nodes() == graph_2d_without_segmentation.num_nodes()
-    assert dialog.tracks.graph.num_edges() == graph_2d_without_segmentation.num_edges()
+    assert (
+        dialog.tracks.graph_solution.num_nodes()
+        == graph_2d_without_segmentation.num_nodes()
+    )
+    assert (
+        dialog.tracks.graph_solution.num_edges()
+        == graph_2d_without_segmentation.num_edges()
+    )
     assert dialog.tracks.ndim == 3
 
     # Verify axes metadata was generated
     final_metadata = dict(dialog.import_widget.root.attrs.get("geff", {}))
     assert "axes" in final_metadata, "Axes should have been generated"
     assert len(final_metadata["axes"]) == 3, "Should have 3 axes for 2D+time"
-    for node_id in dialog.tracks.graph.node_ids():
+    for node_id in dialog.tracks.graph_solution.node_ids():
         dialog.tracks.get_time(node_id)
 
 
@@ -738,8 +848,8 @@ def test_geff_import_embedded_segmentation(qtbot, tmp_path, graph_2d, monkeypatc
     assert dialog.tracks.segmentation is not None, (
         "Segmentation should be reconstructed from embedded mask/bbox data"
     )
-    assert dialog.tracks.graph.num_nodes() == graph_2d.num_nodes()
-    assert dialog.tracks.graph.num_edges() == graph_2d.num_edges()
+    assert dialog.tracks.graph_solution.num_nodes() == graph_2d.num_nodes()
+    assert dialog.tracks.graph_solution.num_edges() == graph_2d.num_edges()
 
 
 def test_geff_import_old_geff_warning(qtbot, tmp_path, graph_2d, monkeypatch):
@@ -775,8 +885,8 @@ def test_geff_import_old_geff_warning(qtbot, tmp_path, graph_2d, monkeypatch):
     dialog._finish()
 
     assert dialog.tracks is not None
-    assert dialog.tracks.graph.num_nodes() == graph_2d.num_nodes()
-    assert dialog.tracks.graph.num_edges() == graph_2d.num_edges()
+    assert dialog.tracks.graph_solution.num_nodes() == graph_2d.num_nodes()
+    assert dialog.tracks.graph_solution.num_edges() == graph_2d.num_edges()
 
 
 def test_geff_import_with_related_data(qtbot, tmp_path, graph_2d, monkeypatch):
@@ -844,8 +954,8 @@ def test_geff_import_with_related_data(qtbot, tmp_path, graph_2d, monkeypatch):
 
     assert dialog.tracks is not None
     assert dialog.tracks.segmentation is not None
-    assert dialog.tracks.graph.num_nodes() == graph_2d.num_nodes()
-    assert dialog.tracks.graph.num_edges() == graph_2d.num_edges()
+    assert dialog.tracks.graph_solution.num_nodes() == graph_2d.num_nodes()
+    assert dialog.tracks.graph_solution.num_edges() == graph_2d.num_edges()
 
 
 def test_geff_import_no_mask_with_segmentation_shape(
@@ -887,8 +997,14 @@ def test_geff_import_no_mask_with_segmentation_shape(
 
     assert dialog.tracks is not None
     assert dialog.tracks.segmentation is None
-    assert dialog.tracks.graph.num_nodes() == graph_2d_without_segmentation.num_nodes()
-    assert dialog.tracks.graph.num_edges() == graph_2d_without_segmentation.num_edges()
+    assert (
+        dialog.tracks.graph_solution.num_nodes()
+        == graph_2d_without_segmentation.num_nodes()
+    )
+    assert (
+        dialog.tracks.graph_solution.num_edges()
+        == graph_2d_without_segmentation.num_edges()
+    )
 
 
 def test_motile_run_save_load(tmp_path, graph_2d):
@@ -909,8 +1025,8 @@ def test_motile_run_save_load(tmp_path, graph_2d):
 
     loaded = MotileRun.load(run_dir)
     assert loaded.run_name == run.run_name
-    assert loaded.graph.num_nodes() == graph_2d.num_nodes()
-    assert loaded.graph.num_edges() == graph_2d.num_edges()
+    assert loaded.graph_solution.num_nodes() == graph_2d.num_nodes()
+    assert loaded.graph_solution.num_edges() == graph_2d.num_edges()
     assert loaded.solver_params is not None
 
 
@@ -936,8 +1052,8 @@ def test_motile_run_load_backward_compat(tmp_path, graph_2d):
 
     loaded = MotileRun.load(run_dir)
     assert loaded.run_name == "old_run"
-    assert loaded.graph.num_nodes() == graph_2d.num_nodes()
-    assert loaded.graph.num_edges() == graph_2d.num_edges()
+    assert loaded.graph_solution.num_nodes() == graph_2d.num_nodes()
+    assert loaded.graph_solution.num_edges() == graph_2d.num_edges()
 
 
 # --- legacy (non-bool) mask conversion -------------------------------------

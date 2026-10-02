@@ -1,4 +1,4 @@
-from motile_tracker.import_export.menus.scale_widget import (
+from napari_track_edit.import_export.menus.scale_widget import (
     ScaleWidget,
 )
 

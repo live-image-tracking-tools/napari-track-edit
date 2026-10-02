@@ -3,7 +3,7 @@
 import time
 from unittest.mock import MagicMock
 
-from motile_tracker.data_views.views.layers.click_utils import (
+from napari_track_edit.data_views.views.layers.click_utils import (
     detect_click,
     get_click_value,
 )

@@ -21,6 +21,11 @@ import sys
 import pandas as pd
 
 REGRESSION_THRESHOLD = 50  # percent
+# Benchmarks with a median below this floor are dominated by timer resolution and OS
+# scheduling jitter rather than the code being measured, so a "regression" on them is
+# noise, not signal: skip the gate (still shown in the report) unless the benchmark is
+# slow on at least one side, which means it should have been caught by the floor already.
+NOISE_FLOOR_SECONDS = 0.02
 
 
 def load_stats(path):
@@ -89,6 +94,13 @@ def make_report(old_path, new_path, out_file, header=None):
         100 * (merged["median_new"] - merged["median_old"]) / merged["median_old"]
     )
 
+    # A benchmark below the floor on both sides is dominated by timer resolution and OS
+    # scheduling jitter rather than the code being measured, so a "regression" on it is
+    # noise, not signal: exclude it from the gate (still shown in the report).
+    above_floor = (merged["median_old"] >= NOISE_FLOOR_SECONDS) | (
+        merged["median_new"] >= NOISE_FLOOR_SECONDS
+    )
+
     # Median columns first: they drive the gate, so "Median Change" is verifiable
     # straight from them. Mean ± SD follows as a noise indicator (a wide SD or a mean
     # far from the median flags a spiky benchmark whose median we're rightly trusting).
@@ -117,8 +129,8 @@ def make_report(old_path, new_path, out_file, header=None):
         report = f"## {header}\n\n{report}"
     _write(out_file, report)
 
-    # Fail if any benchmark's median regressed beyond threshold
-    if (pct_change > REGRESSION_THRESHOLD).any():
+    # Fail if any benchmark above the noise floor regressed beyond threshold
+    if (above_floor & (pct_change > REGRESSION_THRESHOLD)).any():
         print(  # noqa: T201
             f"\nFAILED: median regression exceeds {REGRESSION_THRESHOLD}% threshold"
         )
