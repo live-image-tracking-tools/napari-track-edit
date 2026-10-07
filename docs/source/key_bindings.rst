@@ -1,4 +1,4 @@
-Key bindings and Mouse Functions
+Key bindings and mouse functions
 ================================
 
 Configurable key bindings
@@ -98,3 +98,5 @@ Tree view key and mouse functions
      - | Select the child node (vertical view of all
        | lineages) or the previous adjacent lineage
        | (horizontal view of selected lineage)
+
+See :doc:`editing` for a detailed description of each editing action.

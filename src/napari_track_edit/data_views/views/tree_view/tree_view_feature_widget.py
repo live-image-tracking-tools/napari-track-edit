@@ -43,6 +43,7 @@ class TreeViewFeatureWidget(QWidget):
         display_box = QGroupBox()
         bind_shortcut_label(display_box, "toggle_feature_mode", "Plot")
         display_layout = QHBoxLayout()
+        display_layout.setContentsMargins(6, 8, 6, 4)
         button_group = QButtonGroup()
         self.show_tree_radio = QRadioButton("Lineage Tree")
         self.show_tree_radio.setChecked(True)
@@ -67,9 +68,9 @@ class TreeViewFeatureWidget(QWidget):
 
         display_box.setLayout(display_layout)
         display_box.setMaximumWidth(400)
-        display_box.setMaximumHeight(60)
 
         layout = QVBoxLayout()
+        layout.setContentsMargins(5, 0, 2, 0)
         layout.addWidget(display_box)
 
         self.setLayout(layout)

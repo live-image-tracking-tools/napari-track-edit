@@ -1,7 +1,8 @@
 import logging
 import shutil
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import NamedTuple
 from urllib.request import urlretrieve
@@ -26,6 +27,10 @@ CTC_URL_TEMPLATE = (
 # Region of Fluo-N2DL-HeLa used for the crop: (y, x) slices
 HELA_CROP = (slice(90, 300), slice(700, 1040))
 
+# Arrays the converted dataset zarrs must contain
+ZENODO_ARRAYS = ("01_membrane", "01_labels")
+CTC_ARRAYS = ("01", "01_ST")
+
 # Signature of the `urlretrieve` report hook: (block number, block size, total size)
 ReportHook = Callable[[int, int, int], None]
 
@@ -39,19 +44,29 @@ def user_data_dir() -> Path:
     return data_dir
 
 
-def _ensure_dataset(ds_name: str, data_dir: Path, download: Callable[[], None]) -> Path:
+def _ensure_dataset(
+    ds_name: str,
+    data_dir: Path,
+    download: Callable[[], None],
+    arrays: tuple[str, ...],
+) -> Path:
     """Return the path to a dataset's zarr, downloading the dataset first if it
-    is not there yet.
+    is not there yet. A zarr missing any of the expected arrays (left behind by an
+    interrupted download in older versions) is deleted and downloaded again.
 
     Args:
         ds_name (str): Dataset name, the zarr is named after it
         data_dir (Path): The directory the dataset is cached in
         download (Callable[[], None]): Fetches and converts the dataset
+        arrays (tuple[str, ...]): Names of the arrays the zarr must contain
 
     Returns:
         Path: Path to the zarr holding the dataset
     """
     ds_zarr = data_dir / (ds_name + ".zarr")
+    if ds_zarr.exists() and not all((ds_zarr / name).is_dir() for name in arrays):
+        logger.warning("Incomplete %s found, downloading it again", ds_zarr)
+        shutil.rmtree(ds_zarr)
     if not ds_zarr.exists():
         logger.info("Downloading %s", ds_name)
         download()
@@ -60,7 +75,7 @@ def _ensure_dataset(ds_name: str, data_dir: Path, download: Callable[[], None]) 
 
 def _zenodo_raw_layer(ds_zarr: Path) -> LayerData:
     """The membrane intensity layer of a zenodo dataset zarr."""
-    raw_data = zarr.open(store=ds_zarr, path="01_membrane", dimension_separator="/")[:]
+    raw_data = zarr.open_array(store=ds_zarr, path="01_membrane", mode="r")[:]
     return (raw_data, {"name": "01_membrane"}, "image")
 
 
@@ -130,9 +145,10 @@ def read_zenodo_dataset(
         ds_name,
         data_dir,
         lambda: download_zenodo_dataset(ds_name, raw_name, label_name, data_dir),
+        ZENODO_ARRAYS,
     )
     raw_layer_data = _zenodo_raw_layer(ds_zarr)
-    seg_data = zarr.open(ds_zarr, path="01_labels", dimension_separator="/")[:]
+    seg_data = zarr.open_array(store=ds_zarr, path="01_labels", mode="r")[:]
     seg_layer_data = (seg_data, {"name": "01_labels"}, "labels")
     return [raw_layer_data, seg_layer_data]
 
@@ -152,7 +168,10 @@ def read_ctc_dataset(
             layer of 01 training silver truth labels
     """
     ds_zarr = _ensure_dataset(
-        ds_name, data_dir, lambda: download_ctc_dataset(ds_name, data_dir)
+        ds_name,
+        data_dir,
+        lambda: download_ctc_dataset(ds_name, data_dir),
+        CTC_ARRAYS,
     )
     zarr_store = zarr.open(store=ds_zarr, mode="a")  # Open in append mode ('a')
     raw_layer_data = _ctc_raw_layer(ds_zarr, crop_region)
@@ -194,6 +213,21 @@ def read_ctc_dataset(
     return [raw_layer_data, seg_layer_data, points_layer_data]
 
 
+@contextmanager
+def _download_dir(output: Path) -> Iterator[Path]:
+    """A fresh scratch directory next to the output, deleted afterwards. Downloads
+    are unpacked and converted there and only moved to the output once complete,
+    so an interrupted download is not mistaken for existing data.
+    """
+    tmp_dir = output.with_name(output.name + ".download")
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    tmp_dir.mkdir()
+    try:
+        yield tmp_dir
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def download_zenodo_dataset(
     ds_name: str,
     raw_name: str,
@@ -211,29 +245,24 @@ def download_zenodo_dataset(
         data_dir (Path): The directory in which to store the data.
         reporthook (ReportHook | None): Called with the download progress.
     """
-    ds_file_raw = data_dir / raw_name
-    ds_file_labels = data_dir / label_name
     ds_zarr = data_dir / (ds_name + ".zarr")
-    url_raw = ZENODO_RAW_URL
-    url_labels = ZENODO_LABELS_URL
-    zip_filename_raw = data_dir / "imaging.zip"
-    zip_filename_labels = data_dir / "segmentation.zip"
+    with _download_dir(ds_zarr) as tmp_dir:
+        zip_filename_raw = tmp_dir / "imaging.zip"
+        zip_filename_labels = tmp_dir / "segmentation.zip"
+        urlretrieve(ZENODO_RAW_URL, filename=zip_filename_raw, reporthook=reporthook)
+        urlretrieve(
+            ZENODO_LABELS_URL, filename=zip_filename_labels, reporthook=reporthook
+        )
 
-    if not zip_filename_raw.is_file():
-        urlretrieve(url_raw, filename=zip_filename_raw, reporthook=reporthook)
-    if not zip_filename_labels.is_file():
-        urlretrieve(url_labels, filename=zip_filename_labels, reporthook=reporthook)
+        with zipfile.ZipFile(zip_filename_raw, "r") as zip_ref:
+            zip_ref.extractall(tmp_dir)
+        with zipfile.ZipFile(zip_filename_labels, "r") as zip_ref:
+            zip_ref.extractall(tmp_dir)
 
-    with zipfile.ZipFile(zip_filename_raw, "r") as zip_ref:
-        zip_ref.extractall(data_dir)
-    with zipfile.ZipFile(zip_filename_labels, "r") as zip_ref:
-        zip_ref.extractall(data_dir)
-
-    zip_filename_raw.unlink()
-    zip_filename_labels.unlink()
-
-    convert_4d_arr_to_zarr(ds_file_raw, ds_zarr, "01_membrane")
-    convert_4d_arr_to_zarr(ds_file_labels, ds_zarr, "01_labels")
+        tmp_zarr = tmp_dir / ds_zarr.name
+        convert_4d_arr_to_zarr(tmp_dir / raw_name, tmp_zarr, "01_membrane")
+        convert_4d_arr_to_zarr(tmp_dir / label_name, tmp_zarr, "01_labels")
+        tmp_zarr.rename(ds_zarr)
 
 
 def download_ctc_dataset(
@@ -248,19 +277,19 @@ def download_ctc_dataset(
         data_dir (Path): The directory in which to store the data.
         reporthook (ReportHook | None): Called with the download progress.
     """
-    ds_dir = data_dir / ds_name
     ds_zarr = data_dir / (ds_name + ".zarr")
     ctc_url = CTC_URL_TEMPLATE.format(ds_name=ds_name)
-    zip_filename = data_dir / f"{ds_name}.zip"
-    if not zip_filename.is_file():
+    with _download_dir(ds_zarr) as tmp_dir:
+        zip_filename = tmp_dir / f"{ds_name}.zip"
         urlretrieve(ctc_url, filename=zip_filename, reporthook=reporthook)
-    with zipfile.ZipFile(zip_filename, "r") as zip_ref:
-        zip_ref.extractall(data_dir)
-    zip_filename.unlink()
+        with zipfile.ZipFile(zip_filename, "r") as zip_ref:
+            zip_ref.extractall(tmp_dir)
 
-    convert_to_zarr(ds_dir / "01", ds_zarr, "01")
-    convert_to_zarr(ds_dir / "01_ST" / "SEG", ds_zarr, "01_ST", relabel=True)
-    shutil.rmtree(ds_dir)
+        ds_dir = tmp_dir / ds_name
+        tmp_zarr = tmp_dir / ds_zarr.name
+        convert_to_zarr(ds_dir / "01", tmp_zarr, "01")
+        convert_to_zarr(ds_dir / "01_ST" / "SEG", tmp_zarr, "01_ST", relabel=True)
+        tmp_zarr.rename(ds_zarr)
 
 
 def convert_4d_arr_to_zarr(
@@ -358,6 +387,7 @@ def Fluo_N2DL_HeLa_crop_raw(reporthook: ReportHook | None = None) -> LayerData:
         ds_name,
         data_dir,
         lambda: download_ctc_dataset(ds_name, data_dir, reporthook),
+        CTC_ARRAYS,
     )
     return _ctc_raw_layer(ds_zarr, crop_region=True)
 
@@ -380,6 +410,7 @@ def Mouse_Embryo_Membrane_raw(reporthook: ReportHook | None = None) -> LayerData
         lambda: download_zenodo_dataset(
             ds_name, "imaging.tif", "segmentation.tif", data_dir, reporthook
         ),
+        ZENODO_ARRAYS,
     )
     return _zenodo_raw_layer(ds_zarr)
 
@@ -473,10 +504,7 @@ def download_zipped_store(
             with the same name.
         reporthook (ReportHook | None): Called with the download progress.
     """
-    tmp_dir = output.with_name(output.name + ".download")
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-    tmp_dir.mkdir()
-    try:
+    with _download_dir(output) as tmp_dir:
         zip_path = tmp_dir / "download.zip"
         urlretrieve(url, filename=zip_path, reporthook=reporthook)  # noqa: S310
         if not zipfile.is_zipfile(zip_path):
@@ -489,5 +517,3 @@ def download_zipped_store(
         if not store.is_dir():
             raise RuntimeError(f"{url} does not contain {output.name}")
         store.rename(output)
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)

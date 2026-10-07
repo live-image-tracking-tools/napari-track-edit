@@ -1,6 +1,8 @@
 """Tests for the sample tracks shown as examples in the welcome widget."""
 
+import io
 import re
+import shutil
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,6 +11,7 @@ from urllib.request import Request, urlopen
 
 import numpy as np
 import pytest
+import tifffile
 from qtpy.QtCore import QUrl
 from qtpy.QtWidgets import QMessageBox, QProgressDialog, QTextBrowser, QWidget
 
@@ -47,6 +50,7 @@ DOWNLOAD_SOURCES = {
 }
 
 
+@pytest.mark.network
 @pytest.mark.parametrize("name", list(DOWNLOAD_SOURCES))
 def test_download_sources_are_reachable(name):
     """Everything the app downloads is still available. Fetches the first byte
@@ -330,3 +334,62 @@ def test_raw_download_is_confirmed_first(welcome_widget, monkeypatch, answer, lo
     calls = welcome_widget.calls
     assert calls.add_image.called is loaded
     assert calls.tracks_list.load_sample_tracks.called is loaded
+
+
+def _tiff_bytes(data: np.ndarray) -> bytes:
+    buffer = io.BytesIO()
+    tifffile.imwrite(buffer, data)
+    return buffer.getvalue()
+
+
+@pytest.fixture
+def fake_zenodo(monkeypatch) -> list[str]:
+    """Serve the zenodo zips as small 4D tiffs, recording the downloaded urls."""
+    downloads = []
+    files = {
+        ZENODO_RAW_URL: ("imaging.tif", np.ones((2, 3, 4, 4), dtype=np.uint8)),
+        ZENODO_LABELS_URL: ("segmentation.tif", np.ones((2, 3, 4, 4), np.uint16)),
+    }
+
+    def urlretrieve(url, filename, reporthook=None):
+        downloads.append(url)
+        name, data = files[url]
+        with zipfile.ZipFile(filename, "w") as zip_ref:
+            zip_ref.writestr(name, _tiff_bytes(data))
+
+    monkeypatch.setattr(example_data, "urlretrieve", urlretrieve)
+    return downloads
+
+
+def test_mouse_embryo_sample_data(user_data_dir, fake_zenodo):
+    """The sample data downloads, converts and loads both layers, leaving only
+    the zarr behind."""
+    raw, seg = example_data.Mouse_Embryo_Membrane()
+    assert raw[1]["name"] == "01_membrane"
+    assert seg[1]["name"] == "01_labels"
+    assert seg[0].shape == (2, 3, 4, 4)
+    assert [p.name for p in user_data_dir.iterdir()] == ["Mouse_Embryo_Membrane.zarr"]
+
+    example_data.Mouse_Embryo_Membrane()  # second call uses the cached zarr
+    assert len(fake_zenodo) == 2
+
+
+def test_incomplete_sample_data_is_downloaded_again(user_data_dir, fake_zenodo):
+    """A zarr missing the labels (from an interrupted download) is replaced,
+    instead of failing to open the labels (#544)."""
+    example_data.Mouse_Embryo_Membrane()
+    shutil.rmtree(user_data_dir / "Mouse_Embryo_Membrane.zarr" / "01_labels")
+
+    _, seg = example_data.Mouse_Embryo_Membrane()
+    assert seg[0].shape == (2, 3, 4, 4)
+    assert len(fake_zenodo) == 4
+
+
+def test_interrupted_sample_data_download_leaves_no_data(user_data_dir, monkeypatch):
+    def urlretrieve(url, filename, reporthook=None):
+        raise DownloadCancelled
+
+    monkeypatch.setattr(example_data, "urlretrieve", urlretrieve)
+    with pytest.raises(DownloadCancelled):
+        example_data.Mouse_Embryo_Membrane()
+    assert list(user_data_dir.iterdir()) == []

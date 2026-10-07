@@ -42,6 +42,7 @@ class NavigationWidget(QWidget):
 
         navigation_box = QGroupBox("Navigation [\u2b05 \u27a1 \u2b06 \u2b07]")
         navigation_layout = QHBoxLayout()
+        navigation_layout.setContentsMargins(6, 8, 6, 4)
         left_button = QPushButton("\u2b05")
         right_button = QPushButton("\u27a1")
         up_button = QPushButton("\u2b06")
@@ -57,10 +58,11 @@ class NavigationWidget(QWidget):
         navigation_layout.addWidget(up_button)
         navigation_layout.addWidget(down_button)
         navigation_box.setLayout(navigation_layout)
+        navigation_box.setMinimumWidth(170)
         navigation_box.setMaximumWidth(250)
-        navigation_box.setMaximumHeight(60)
 
         layout = QHBoxLayout()
+        layout.setContentsMargins(5, 0, 2, 0)
         layout.addWidget(navigation_box)
 
         self.setLayout(layout)
@@ -89,25 +91,23 @@ class NavigationWidget(QWidget):
                 next_node = self.get_successor(node_id)
             else:
                 next_node = self.get_next_track_node(self.track_df, node_id)
-        elif direction == "up":
+        elif direction in ("up", "down"):
             if self.view_direction == "horizontal":
-                next_node = self.get_next_track_node(self.lineage_df, node_id)
-                if next_node is None:
-                    next_node = self.get_next_track_node(self.track_df, node_id)
-            else:
-                next_node = self.get_predecessor(node_id)
-        elif direction == "down":
-            if self.view_direction == "horizontal":
+                # feature values increase upward, but tree lanes are drawn top to
+                # bottom (negated x_axis_pos), so 'up' means a lower lane in tree mode
+                forward = (direction == "up") == (self.plot_type == "feature")
                 # try navigation within the current lineage_df first
                 next_node = self.get_next_track_node(
-                    self.lineage_df, node_id, forward=False
+                    self.lineage_df, node_id, forward=forward
                 )
                 # if not found, look in the whole dataframe
                 # to enable jumping to the next node outside the current tree view content
                 if next_node is None:
                     next_node = self.get_next_track_node(
-                        self.track_df, node_id, forward=False
+                        self.track_df, node_id, forward=forward
                     )
+            elif direction == "up":
+                next_node = self.get_predecessor(node_id)
             else:
                 next_node = self.get_successor(node_id)
         else:

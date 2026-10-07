@@ -94,3 +94,6 @@ venv/
 claude.md
 .claude
 TESTING_STRATEGY.md
+
+# Tutorial PDF (generated locally from docs/source/napari-track-edit_tutorial.md)
+napari-track-edit_tutorial.pdf

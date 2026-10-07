@@ -326,13 +326,13 @@ def test_keybindings_is_a_link_that_opens_the_panel(qtbot):
     welcome = WelcomeWidget(None)
     qtbot.addWidget(welcome)
 
-    assert KEYBINDINGS_LINK in welcome.links.toHtml()
-    assert not welcome.links.openLinks()
+    assert KEYBINDINGS_LINK in welcome.content.toHtml()
+    assert not welcome.content.openLinks()
 
     welcome._on_link_clicked(QUrl(KEYBINDINGS_LINK))
 
     assert isinstance(welcome._track_edit_keybindings_panel, KeybindingsWidget)
-    assert KEYBINDINGS_LINK in welcome.links.toHtml()  # still showing the links
+    assert KEYBINDINGS_LINK in welcome.content.toHtml()  # still showing the links
 
 
 def test_other_links_still_open_in_a_browser(qtbot):
