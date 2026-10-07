@@ -210,7 +210,7 @@ class FollowWidget(QWidget):
         self.tracks_viewer = tracks_viewer
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
-        self.checkbox = QCheckBox("Follow detections")
+        self.checkbox = QCheckBox("Auto adjust sliders")
         self.checkbox.setToolTip(
             "Auto-adjust the sliders based on the global shift and scaling of all detections in the graph"
         )
@@ -219,7 +219,7 @@ class FollowWidget(QWidget):
         self.recompute_btn = QPushButton("Recompute")
         self.recompute_btn.setToolTip(
             "The tracks were edited since the motion was computed. If you added/removed "
-            "many detections, recompute the shift from the current graph."
+            "many detections, recompute the global shift and scaling from the current graph."
         )
         self.recompute_btn.clicked.connect(self.tracks_viewer.recompute_follow)
 
