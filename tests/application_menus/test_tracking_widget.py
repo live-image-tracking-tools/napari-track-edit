@@ -1,33 +1,52 @@
-"""Tests for TrackingWidget - the tab widget holding the two ways of making tracks."""
+"""Tests for TrackingWidget - the tab widget holding the ways of making tracks."""
 
-import numpy as np
-from funtracks.utils.tracksdata_utils import create_empty_graph
-from qtpy.QtWidgets import QGroupBox
+from qtpy.QtWidgets import QGroupBox, QWidget
 
 from napari_track_edit.application_menus.tracking_from_scratch_widget import (
     TrackingFromScratch,
 )
-from napari_track_edit.application_menus.tracking_widget import TrackingWidget
-from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
-from napari_track_edit.motile.backend import MotileRun, SolverParams
-from napari_track_edit.motile.menus.motile_widget import MotileWidget
+from napari_track_edit.application_menus.tracking_widget import (
+    TrackingWidget,
+    register_tracking_tab,
+)
 
 
 def test_tabs(make_napari_viewer):
-    """Both tracking menus are tabs of this widget, motile first."""
+    """Track from Scratch is the built-in tab."""
 
     viewer = make_napari_viewer()
     widget = TrackingWidget(viewer)
 
-    assert widget.count() == 2
-    assert widget.widget(0) is widget.motile_widget
-    assert widget.widget(1) is widget.tracking_from_scratch
-    assert isinstance(widget.motile_widget, MotileWidget)
-    assert isinstance(widget.tracking_from_scratch, TrackingFromScratch)
-    assert widget.tabText(0) == "Track with Motile"
-    assert widget.tabText(1) == "Track from Scratch"
-    # the motile run editor is what the user sees when the menu opens
-    assert widget.currentIndex() == 0
+    assert widget.count() == 1
+    assert widget.widget(0) is widget.tabs["Track from Scratch"]
+    assert isinstance(widget.tabs["Track from Scratch"], TrackingFromScratch)
+    assert widget.tabText(0) == "Track from Scratch"
+
+
+def test_register_tracking_tab_adds_tab(make_napari_viewer):
+    """A registered tab appears in every subsequently created TrackingWidget."""
+
+    class DummyWidget(QWidget):
+        def __init__(self, viewer):
+            super().__init__()
+            self.viewer = viewer
+
+    register_tracking_tab("Dummy", DummyWidget)
+    try:
+        viewer = make_napari_viewer()
+        widget = TrackingWidget(viewer)
+
+        assert widget.count() == 2
+        assert widget.tabText(1) == "Dummy"
+        assert isinstance(widget.tabs["Dummy"], DummyWidget)
+    finally:
+        from napari_track_edit.application_menus.tracking_widget import (
+            _TRACKING_TABS,
+        )
+
+        _TRACKING_TABS[:] = [
+            (name, cls) for name, cls in _TRACKING_TABS if name != "Dummy"
+        ]
 
 
 def test_from_scratch_tab_does_not_stretch(make_napari_viewer, qtbot):
@@ -38,44 +57,13 @@ def test_from_scratch_tab_does_not_stretch(make_napari_viewer, qtbot):
     viewer = make_napari_viewer()
     widget = TrackingWidget(viewer)
     qtbot.addWidget(widget)
-    widget.setCurrentIndex(1)
     widget.resize(300, 900)
     widget.show()
     qtbot.waitExposed(widget)
 
-    box = widget.tracking_from_scratch.findChild(QGroupBox)
+    tracking_from_scratch = widget.tabs["Track from Scratch"]
+    box = tracking_from_scratch.findChild(QGroupBox)
     assert box is not None
     # a couple of pixels of slack for layout spacing/margins
     assert box.height() <= box.sizeHint().height() + 2
-    assert box.height() < widget.tracking_from_scratch.height() / 2
-
-
-def test_motile_settings_stay_visible_for_manual_tracks(make_napari_viewer, qtbot):
-    """Selecting manual tracks after a motile run must bring the run editor back:
-    there is no run to view, but the solver settings still have to be reachable."""
-
-    viewer = make_napari_viewer()
-    viewer.add_image(np.zeros((5, 10, 10), dtype=np.uint16), name="img")
-    widget = TrackingWidget(viewer)
-    qtbot.addWidget(widget)
-    widget.show()
-    motile_widget = widget.motile_widget
-
-    tracks_viewer = TracksViewer.get_instance(viewer)
-    tracks_viewer.tracks_list.add_tracks(
-        MotileRun(
-            graph=create_empty_graph(),
-            run_name="run",
-            solver_params=SolverParams(),
-            ndim=3,
-        ),
-        "run",
-    )
-    assert motile_widget.view_run_widget.isVisible()
-    assert not motile_widget.edit_run_widget.isVisible()
-
-    widget.tracking_from_scratch.size_layer_dropdown.setCurrentText("img")
-    widget.tracking_from_scratch._start_tracking("points")
-
-    assert not motile_widget.view_run_widget.isVisible()
-    assert motile_widget.edit_run_widget.isVisible()
+    assert box.height() < tracking_from_scratch.height() / 2

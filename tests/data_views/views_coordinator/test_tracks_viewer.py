@@ -16,7 +16,6 @@ from napari_track_edit.data_views.views_coordinator.tracks_viewer import (
     BASE_TEXT,
     TracksViewer,
 )
-from napari_track_edit.motile.backend.motile_run import MotileRun
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +31,7 @@ def tracks_viewer_setup(viewer, graph_2d):
 
     Returns tuple of (viewer, tracks_viewer, tracks) for reuse across tests.
     """
-    tracks = MotileRun(graph=graph_2d, run_name="test", ndim=3, time_attr="t")
+    tracks = Tracks(graph=graph_2d, ndim=3, time_attr="t")
     tracks_viewer = TracksViewer.get_instance(viewer)
     tracks_viewer.update_tracks(tracks=tracks, name="test")
     return viewer, tracks_viewer, tracks
@@ -151,9 +150,9 @@ class TestEdgeOperations:
 
         Uses graph_2d (with segmentation) so click_node goes through TrackLabels,
         which returns np.int64 node IDs — matching the real UI path.
-        Uses MotileRun so edge attributes like 'iou' are registered in features.
+        graph_2d already has an 'iou' edge attribute, so it is registered in features.
         """
-        tracks = MotileRun(graph=graph_2d, run_name="test", ndim=3, time_attr="t")
+        tracks = Tracks(graph=graph_2d, ndim=3, time_attr="t")
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
 
@@ -172,9 +171,9 @@ class TestEdgeOperations:
 
         Uses graph_2d (with segmentation) so click_node goes through TrackLabels,
         which returns np.int64 node IDs — matching the real UI path.
-        Uses MotileRun so edge attributes like 'iou' are registered in features.
+        graph_2d already has an 'iou' edge attribute, so it is registered in features.
         """
-        tracks = MotileRun(graph=graph_2d, run_name="test", ndim=3, time_attr="t")
+        tracks = Tracks(graph=graph_2d, ndim=3, time_attr="t")
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
 
@@ -545,7 +544,7 @@ class TestEdgeOperations:
         Node 4 (t2) already has daughter 5 (t4), node 6 (t4) is unconnected, so the
         first call completes the division and the second call breaks it.
         """
-        tracks = MotileRun(graph=graph_2d, run_name="test", ndim=3, time_attr="t")
+        tracks = Tracks(graph=graph_2d, ndim=3, time_attr="t")
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
 
@@ -569,7 +568,7 @@ class TestEdgeOperations:
 
     def test_set_division_invalid_selection_warns(self, viewer, graph_2d, click_node):
         """Test set_division shows a warning instead of raising on a bad selection."""
-        tracks = MotileRun(graph=graph_2d, run_name="test", ndim=3, time_attr="t")
+        tracks = Tracks(graph=graph_2d, ndim=3, time_attr="t")
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
 
@@ -594,7 +593,7 @@ class TestEdgeOperations:
         Unlike the button, the [Y] keybinding is active whatever the selection is, so
         set_division must cope with a selection that is not a trio.
         """
-        tracks = MotileRun(graph=graph_2d, run_name="test", ndim=3, time_attr="t")
+        tracks = Tracks(graph=graph_2d, ndim=3, time_attr="t")
         tracks_viewer = TracksViewer.get_instance(viewer)
         tracks_viewer.update_tracks(tracks=tracks, name="test")
 
@@ -853,9 +852,8 @@ class TestPickTrackId:
 
     def test_without_segmentation(self, viewer, graph_2d_without_segmentation):
         """Without a seg layer the track id is set directly and the signal fires."""
-        tracks = MotileRun(
+        tracks = Tracks(
             graph=graph_2d_without_segmentation,
-            run_name="test",
             ndim=3,
             time_attr="t",
         )
@@ -1051,31 +1049,6 @@ class TestLayerCreation:
         assert isinstance(layers_by_name["test_tracks"], TrackGraph)
         assert isinstance(layers_by_name["test_seg"], TrackLabels)
 
-    def test_layers_present_after_solve(self, viewer, segmentation_2d):
-        """End-to-end test: solve on a segmentation, wrap result in MotileRun,
-        load into TracksViewer, and verify all three layer types are present."""
-        from napari_track_edit.motile.backend import MotileRun, SolverParams, solve
-
-        segmentation = segmentation_2d
-        params = SolverParams()
-        params.appear_cost = None
-        solution_graph = solve(params, segmentation)
-
-        run = MotileRun(
-            graph=solution_graph,
-            run_name="solve_test",
-            input_segmentation=segmentation,
-            ndim=3,
-        )
-
-        tracks_viewer = TracksViewer.get_instance(viewer)
-        tracks_viewer.update_tracks(tracks=run, name="solve_test")
-
-        layer_names = [layer.name for layer in viewer.layers]
-        assert "solve_test_points" in layer_names
-        assert "solve_test_tracks" in layer_names
-        assert "solve_test_seg" in layer_names
-
 
 class TestClearTracks:
     """Tests that emptying the results list empties every view with it."""
@@ -1130,7 +1103,7 @@ class TestClearTracks:
     ):
         """Deleting a row while another remains must not clear anything: Qt selects
         the neighbouring row, which re-emits view_tracks."""
-        second = MotileRun(graph=graph_2d, run_name="second", ndim=3, time_attr="t")
+        second = Tracks(graph=graph_2d, ndim=3, time_attr="t")
         tracks_viewer = self._load(viewer, solution_tracks_2d, "first")
         tracks_viewer.tracks_list.add_tracks(second, "second", select=True)
 

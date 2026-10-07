@@ -41,8 +41,6 @@ from napari_track_edit.import_export.sql_io import (
     sql_database_path,
     tracks_from_sql,
 )
-from napari_track_edit.motile.backend.motile_run import MotileRun
-
 GEFF_SUFFIX = ".geff"
 
 SQL_LOAD_OPTION = "SQL database"
@@ -127,9 +125,8 @@ class TracksList(QGroupBox):
     tracks_saved listener is found here. It is never a container a geff merely
     happened to be found inside.
 
-    The exceptions are a CSV import, which reports the .csv file, and a v1 motile
-    run directory, which reports the directory holding the networkx graph json. Listeners
-    should tolerate a file as well as a directory."""
+    The exception is a CSV import, which reports the .csv file. Listeners should
+    tolerate a file as well as a directory."""
 
     def __init__(self):
         super().__init__(title="Results List")
@@ -184,7 +181,6 @@ class TracksList(QGroupBox):
             [
                 "Tracks (geff)",
                 SQL_LOAD_OPTION,
-                "Motile Run",
                 "External tracks from CSV",
                 "External tracks from geff",
             ]
@@ -316,7 +312,7 @@ class TracksList(QGroupBox):
         """Add tracks to the list and optionally select them. Will make a new
         row in the list UI representing the given tracks.
 
-        Accepts any Tracks object directly (including MotileRun).
+        Accepts any Tracks object directly.
 
         Note: selecting the tracks will also emit the selection changed event on
         the list.
@@ -389,8 +385,7 @@ class TracksList(QGroupBox):
         represents the tracks, not the tracks object itself.
 
         Writes a geff store at the path shown in the save fields above the
-        list, confirming first if something is already there. A MotileRun
-        additionally stores its solver params inside that store.
+        list, confirming first if something is already there.
 
         After saving, emits the tracks_saved signal with the geff store that
         was written, so that downstream code can save additional data inside
@@ -413,10 +408,7 @@ class TracksList(QGroupBox):
         widget: TracksButton = self.tracks_list.itemWidget(item)
         tracks: Tracks = widget.tracks
         saved_path.parent.mkdir(parents=True, exist_ok=True)
-        if isinstance(tracks, MotileRun):
-            tracks.save(saved_path)
-        else:
-            write_geff_over(tracks, saved_path)
+        write_geff_over(tracks, saved_path)
         self.tracks_saved.emit(tracks, saved_path)
 
     def remove_tracks(self, item: QListWidgetItem):
@@ -449,8 +441,6 @@ class TracksList(QGroupBox):
             result = self.load_internal_tracks()
         elif selection == SQL_LOAD_OPTION:
             result = self.load_sql_tracks()
-        elif selection == "Motile Run":
-            result = self.load_motile_run()
         elif selection == "External tracks from CSV":
             result = self._load_tracks(import_type="csv")
         elif selection == "External tracks from geff":
@@ -546,9 +536,3 @@ class TracksList(QGroupBox):
             warn(f"Could not load tracks from {path}: {e}", stacklevel=2)
             return None
         return tracks, path.stem, path
-
-    def load_motile_run(self) -> tuple[Tracks, str, Path] | None:
-        """Load a MotileRun from disk. The user selects the directory created
-        by MotileRun.save(), and the geff store inside it is reported.
-        """
-        return self._load_from_dialog(MotileRun.load, geff_path=MotileRun.geff_path)

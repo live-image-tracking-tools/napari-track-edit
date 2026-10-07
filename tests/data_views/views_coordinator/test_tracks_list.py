@@ -1,7 +1,6 @@
 """Tests for TracksList and TracksButton.
 
-Covers add/remove/select tracks, save/load/export dialogs, signal emission,
-and the load_motile_run bug fix (must call MotileRun.load, not Tracks.load).
+Covers add/remove/select tracks, save/load/export dialogs, and signal emission.
 """
 
 import warnings
@@ -27,18 +26,12 @@ from napari_track_edit.import_export.sql_io import (
     tracks_from_sql,
     write_tracks_to_sql,
 )
-from napari_track_edit.motile.backend.motile_run import MotileRun, SolverParams
 
 
 @pytest.fixture(autouse=True)
 def clear_viewer_layers(viewer):
     yield
     viewer.layers.clear()
-
-
-@pytest.fixture
-def motile_run(graph_2d):
-    return MotileRun(graph=graph_2d, run_name="test", solver_params=SolverParams())
 
 
 @pytest.fixture
@@ -52,13 +45,13 @@ def tracks_list():
 
 
 class TestTracksButton:
-    def test_init_stores_tracks_and_name(self, motile_run):
-        btn = TracksButton(motile_run, "my_run")
-        assert btn.tracks is motile_run
+    def test_init_stores_tracks_and_name(self, solution_tracks_2d):
+        btn = TracksButton(solution_tracks_2d, "my_run")
+        assert btn.tracks is solution_tracks_2d
         assert btn.name.text() == "my_run"
 
-    def test_size_hint_height(self, motile_run):
-        btn = TracksButton(motile_run, "my_run")
+    def test_size_hint_height(self, solution_tracks_2d):
+        btn = TracksButton(solution_tracks_2d, "my_run")
         assert btn.sizeHint().height() == 30
 
 
@@ -68,55 +61,49 @@ class TestTracksButton:
 
 
 class TestTracksListAddRemove:
-    def test_add_tracks_appends_item(self, tracks_list, motile_run):
-        tracks_list.add_tracks(motile_run, "run1", select=False)
+    def test_add_tracks_appends_item(self, tracks_list, solution_tracks_2d):
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=False)
         assert tracks_list.tracks_list.count() == 1
 
-    def test_add_tracks_with_select(self, tracks_list, motile_run):
-        tracks_list.add_tracks(motile_run, "run1", select=True)
+    def test_add_tracks_with_select(self, tracks_list, solution_tracks_2d):
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=True)
         assert tracks_list.tracks_list.currentRow() == 0
 
-    def test_add_multiple_tracks(self, tracks_list, motile_run):
-        tracks_list.add_tracks(motile_run, "run1", select=False)
-        tracks_list.add_tracks(motile_run, "run2", select=False)
+    def test_add_multiple_tracks(self, tracks_list, solution_tracks_2d):
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=False)
+        tracks_list.add_tracks(solution_tracks_2d, "run2", select=False)
         assert tracks_list.tracks_list.count() == 2
 
-    def test_remove_tracks(self, tracks_list, motile_run):
-        tracks_list.add_tracks(motile_run, "run1", select=False)
+    def test_remove_tracks(self, tracks_list, solution_tracks_2d):
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=False)
         item = tracks_list.tracks_list.item(0)
         tracks_list.remove_tracks(item)
         assert tracks_list.tracks_list.count() == 0
 
-    def test_remove_last_tracks_emits_cleared(self, tracks_list, motile_run):
+    def test_remove_last_tracks_emits_cleared(self, tracks_list, solution_tracks_2d):
         emitted = []
         tracks_list.tracks_cleared.connect(lambda: emitted.append(True))
-        tracks_list.add_tracks(motile_run, "run1", select=False)
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=False)
         tracks_list.remove_tracks(tracks_list.tracks_list.item(0))
         assert emitted == [True]
 
-    def test_remove_one_of_two_does_not_emit_cleared(self, tracks_list, motile_run):
+    def test_remove_one_of_two_does_not_emit_cleared(
+        self, tracks_list, solution_tracks_2d
+    ):
         emitted = []
         tracks_list.tracks_cleared.connect(lambda: emitted.append(True))
-        tracks_list.add_tracks(motile_run, "run1", select=False)
-        tracks_list.add_tracks(motile_run, "run2", select=False)
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=False)
+        tracks_list.add_tracks(solution_tracks_2d, "run2", select=False)
         tracks_list.remove_tracks(tracks_list.tracks_list.item(0))
         assert emitted == []
 
-    def test_selection_changed_emits_signal(self, tracks_list, motile_run):
+    def test_selection_changed_emits_signal(self, tracks_list, solution_tracks_2d):
         emitted = []
         tracks_list.view_tracks.connect(lambda t, n: emitted.append((t, n)))
-        tracks_list.add_tracks(motile_run, "run1", select=True)
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=True)
         # Selecting the row triggers _selection_changed
         assert len(emitted) == 1
         assert emitted[0][1] == "run1"
-
-    def test_add_tracks_not_wrapped(self, tracks_list, solution_tracks_2d):
-        """Tracks added to the list should NOT be wrapped in MotileRun."""
-        tracks_list.add_tracks(solution_tracks_2d, "imported", select=False)
-        item = tracks_list.tracks_list.item(0)
-        widget = tracks_list.tracks_list.itemWidget(item)
-        assert widget.tracks is solution_tracks_2d
-        assert not isinstance(widget.tracks, MotileRun)
 
     def test_view_tracks_emits_the_stored_object(self, tracks_list, graph_2d):
         """view_tracks must emit the very object the list holds.
@@ -193,17 +180,6 @@ class TestTracksListAddRemove:
 
         assert not (np.asarray(viewed.segmentation[time]) == node).any()
 
-    def test_view_tracks_passes_through_motile_run(self, tracks_list, motile_run):
-        """A MotileRun is already a Tracks, so it must be emitted unchanged
-        rather than rebuilt (which would drop its solver params).
-        """
-        emitted = []
-        tracks_list.view_tracks.connect(lambda t, n: emitted.append((t, n)))
-        tracks_list.add_tracks(motile_run, "run1", select=True)
-
-        assert len(emitted) == 1
-        assert emitted[0][0] is motile_run
-
 
 # ---------------------------------------------------------------------------
 # TracksList — save path fields
@@ -219,40 +195,42 @@ class TestTracksListSavePathFields:
     def test_save_name_empty_before_any_selection(self, tracks_list):
         assert tracks_list.save_name_line.text() == ""
 
-    def test_selecting_tracks_fills_save_name(self, tracks_list, motile_run):
+    def test_selecting_tracks_fills_save_name(self, tracks_list, solution_tracks_2d):
         """The field holds the bare name; .geff is a fixed label in the UI."""
-        tracks_list.add_tracks(motile_run, "run1", select=True)
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=True)
         assert tracks_list.save_name_line.text() == "run1"
 
-    def test_save_name_follows_selection(self, tracks_list, motile_run):
-        tracks_list.add_tracks(motile_run, "run1", select=True)
-        tracks_list.add_tracks(motile_run, "run2", select=True)
+    def test_save_name_follows_selection(self, tracks_list, solution_tracks_2d):
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=True)
+        tracks_list.add_tracks(solution_tracks_2d, "run2", select=True)
         assert tracks_list.save_name_line.text() == "run2"
 
     def test_save_name_strips_geff_suffix_from_tracks_name(
-        self, tracks_list, motile_run
+        self, tracks_list, solution_tracks_2d
     ):
         """Tracks loaded from a geff are named after the store, so the suffix
         must not be doubled up."""
-        tracks_list.add_tracks(motile_run, "loaded.geff", select=True)
+        tracks_list.add_tracks(solution_tracks_2d, "loaded.geff", select=True)
         assert tracks_list.save_name_line.text() == "loaded"
         assert tracks_list.save_path().name == "loaded.geff"
 
-    def test_user_edit_stops_autofill(self, tracks_list, motile_run):
+    def test_user_edit_stops_autofill(self, tracks_list, solution_tracks_2d):
         """Once the user types their own name, selecting another row must not
         overwrite it."""
-        tracks_list.add_tracks(motile_run, "run1", select=True)
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=True)
 
         # textEdited only fires on real user input, so simulate it directly
         tracks_list.save_name_line.setText("my_own_name")
         tracks_list.save_name_line.textEdited.emit("my_own_name")
 
-        tracks_list.add_tracks(motile_run, "run2", select=True)
+        tracks_list.add_tracks(solution_tracks_2d, "run2", select=True)
 
         assert tracks_list.save_name_line.text() == "my_own_name"
 
-    def test_save_path_combines_dir_and_name(self, tracks_list, motile_run, tmp_path):
-        tracks_list.add_tracks(motile_run, "run1", select=True)
+    def test_save_path_combines_dir_and_name(
+        self, tracks_list, solution_tracks_2d, tmp_path
+    ):
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=True)
         tracks_list.save_dir_line.setText(str(tmp_path))
 
         assert tracks_list.save_path() == tmp_path / "run1.geff"
@@ -263,8 +241,8 @@ class TestTracksListSavePathFields:
 
         assert tracks_list.save_path() is None
 
-    def test_save_path_none_when_dir_blank(self, tracks_list, motile_run):
-        tracks_list.add_tracks(motile_run, "run1", select=True)
+    def test_save_path_none_when_dir_blank(self, tracks_list, solution_tracks_2d):
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=True)
         tracks_list.save_dir_line.setText("   ")
 
         assert tracks_list.save_path() is None
@@ -277,11 +255,11 @@ class TestTracksListSavePathFields:
         assert tracks_list.save_path() == tmp_path / "mine.geff"
 
     def test_programmatic_fill_does_not_count_as_user_edit(
-        self, tracks_list, motile_run
+        self, tracks_list, solution_tracks_2d
     ):
         """Auto-filling the field must not mark it as user-edited, or the
         first selection would freeze the name forever."""
-        tracks_list.add_tracks(motile_run, "run1", select=True)
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=True)
         assert tracks_list._save_name_edited is False
 
     def test_browse_sets_save_dir(self, tracks_list, tmp_path, monkeypatch):
@@ -310,59 +288,11 @@ class TestTracksListSavePathFields:
 
 
 class TestTracksListSave:
-    def test_save_motile_run_writes_geff_at_save_path(
-        self, tracks_list, motile_run, tmp_path
-    ):
-        """The run is written at exactly the path shown in the save fields,
-        with no intervening subdirectory."""
-        tracks_list.add_tracks(motile_run, "run1", select=True)
-        tracks_list.save_dir_line.setText(str(tmp_path))
-        item = tracks_list.tracks_list.item(0)
-
-        tracks_list.save_tracks(item)
-
-        save_path = tmp_path / "run1.geff"
-        assert (save_path / "nodes").exists()
-        assert list(tmp_path.iterdir()) == [save_path]
-
-    def test_save_emits_tracks_saved_signal(self, tracks_list, motile_run, tmp_path):
-        tracks_list.add_tracks(motile_run, "run1", select=True)
-        tracks_list.save_dir_line.setText(str(tmp_path))
-        item = tracks_list.tracks_list.item(0)
-
-        emitted = []
-        tracks_list.tracks_saved.connect(lambda t, p: emitted.append((t, p)))
-
-        tracks_list.save_tracks(item)
-
-        assert len(emitted) == 1
-        assert emitted[0][0] is motile_run
-        assert emitted[0][1] == tmp_path / "run1.geff"
-
-    def test_save_motile_run_emits_geff_path_with_params_inside(
-        self, tracks_list, motile_run, tmp_path
-    ):
-        """tracks_saved names the geff store, and the solver params live
-        inside it rather than beside it.
-        """
-        tracks_list.add_tracks(motile_run, "run1", select=True)
-        tracks_list.save_dir_line.setText(str(tmp_path))
-        item = tracks_list.tracks_list.item(0)
-
-        emitted = []
-        tracks_list.tracks_saved.connect(lambda t, p: emitted.append((t, p)))
-
-        tracks_list.save_tracks(item)
-
-        path = emitted[0][1]
-        assert path.exists()
-        assert (path / "solver_params.json").exists()
-
     def test_save_does_nothing_without_a_filename(
-        self, tracks_list, motile_run, tmp_path
+        self, tracks_list, solution_tracks_2d, tmp_path
     ):
         """With no name there is nowhere to save, so warn rather than raise."""
-        tracks_list.add_tracks(motile_run, "run1", select=True)
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=True)
         tracks_list.save_dir_line.setText(str(tmp_path))
         tracks_list.save_name_line.setText("")
         item = tracks_list.tracks_list.item(0)
@@ -379,10 +309,10 @@ class TestTracksListSave:
         assert len(emitted) == 0
 
     def test_save_creates_missing_save_directory(
-        self, tracks_list, motile_run, tmp_path
+        self, tracks_list, solution_tracks_2d, tmp_path
     ):
         """The default save directory may not exist yet on a fresh install."""
-        tracks_list.add_tracks(motile_run, "run1", select=True)
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=True)
         missing = tmp_path / "does" / "not" / "exist"
         tracks_list.save_dir_line.setText(str(missing))
         item = tracks_list.tracks_list.item(0)
@@ -393,7 +323,7 @@ class TestTracksListSave:
 
 
 # ---------------------------------------------------------------------------
-# TracksList — save Tracks directly (not wrapped in MotileRun)
+# TracksList — save Tracks
 # ---------------------------------------------------------------------------
 
 
@@ -401,8 +331,7 @@ class TestTracksListSaveTracks:
     def test_solution_tracks_saved_directly_to_path(
         self, tracks_list, solution_tracks_2d, tmp_path
     ):
-        """Tracks are written with write_to_geff at the save path,
-        not wrapped in a MotileRun."""
+        """Tracks are written with write_to_geff at the save path."""
         tracks_list.add_tracks(solution_tracks_2d, "imported", select=True)
         tracks_list.save_dir_line.setText(str(tmp_path))
         item = tracks_list.tracks_list.item(0)
@@ -498,56 +427,6 @@ class TestTracksListOverwrite:
 
 
 # ---------------------------------------------------------------------------
-# TracksList — load_motile_run (bug fix: must use MotileRun.load)
-# ---------------------------------------------------------------------------
-
-
-class TestTracksListLoadMotileRun:
-    def test_load_motile_run_success(self, tracks_list, motile_run, tmp_path):
-        save_dir = motile_run.save(tmp_path / "run1.geff")
-
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=True)
-        tracks_list.file_dialog.selectedFiles = MagicMock(return_value=[str(save_dir)])
-
-        tracks, name, path = tracks_list.load_motile_run()
-
-        assert isinstance(tracks, MotileRun)
-        assert name == save_dir.stem
-        # the run dir is itself the geff store, so loading and saving name the
-        # same thing
-        assert path == save_dir
-
-    def test_load_motile_run_adds_to_list_via_load_tracks(
-        self, tracks_list, motile_run, tmp_path
-    ):
-        save_dir = motile_run.save(tmp_path)
-
-        tracks_list.dropdown_menu.setCurrentText("Motile Run")
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=True)
-        tracks_list.file_dialog.selectedFiles = MagicMock(return_value=[str(save_dir)])
-
-        tracks_list.load_tracks()
-
-        assert tracks_list.tracks_list.count() == 1
-
-    def test_load_motile_run_bad_path_warns(self, tracks_list, tmp_path):
-        bad_path = tmp_path / "nonexistent_run"
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=True)
-        tracks_list.file_dialog.selectedFiles = MagicMock(return_value=[str(bad_path)])
-
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            result = tracks_list.load_motile_run()
-
-        assert len(caught) == 1
-        assert result is None
-
-    def test_load_motile_run_dialog_cancelled(self, tracks_list):
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=False)
-        assert tracks_list.load_motile_run() is None
-
-
-# ---------------------------------------------------------------------------
 # TracksList — load_internal_tracks
 # ---------------------------------------------------------------------------
 
@@ -623,12 +502,6 @@ class TestTracksListLoadDispatch:
             tracks_list.load_tracks()
             mock.assert_called_once()
 
-    def test_load_tracks_dispatches_motile_run(self, tracks_list):
-        tracks_list.dropdown_menu.setCurrentText("Motile Run")
-        with patch.object(tracks_list, "load_motile_run", return_value=None) as mock:
-            tracks_list.load_tracks()
-            mock.assert_called_once()
-
     def test_load_tracks_dispatches_csv(self, tracks_list):
         tracks_list.dropdown_menu.setCurrentText("External tracks from CSV")
         with patch.object(tracks_list, "_load_tracks", return_value=None) as mock:
@@ -648,10 +521,12 @@ class TestTracksListLoadDispatch:
 
 
 class TestTracksListLoadExternal:
-    def test_load_tracks_accepted_adds_tracks(self, tracks_list, motile_run, tmp_path):
+    def test_load_tracks_accepted_adds_tracks(
+        self, tracks_list, solution_tracks_2d, tmp_path
+    ):
         mock_dialog = MagicMock()
         mock_dialog.exec_.return_value = QDialog.Accepted
-        mock_dialog.tracks = motile_run
+        mock_dialog.tracks = solution_tracks_2d
         mock_dialog.name = "imported"
         mock_dialog.source_path = tmp_path / "test.csv"
 
@@ -696,8 +571,8 @@ class TestTracksListLoadExternal:
 
 
 class TestTracksListExport:
-    def test_show_export_dialog_called(self, tracks_list, motile_run):
-        tracks_list.add_tracks(motile_run, "run1", select=False)
+    def test_show_export_dialog_called(self, tracks_list, solution_tracks_2d):
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=False)
         item = tracks_list.tracks_list.item(0)
 
         with patch(
@@ -706,8 +581,10 @@ class TestTracksListExport:
             tracks_list.show_export_dialog(item)
             mock_export.assert_called_once()
 
-    def test_show_export_dialog_emits_request_colormap(self, tracks_list, motile_run):
-        tracks_list.add_tracks(motile_run, "run1", select=False)
+    def test_show_export_dialog_emits_request_colormap(
+        self, tracks_list, solution_tracks_2d
+    ):
+        tracks_list.add_tracks(solution_tracks_2d, "run1", select=False)
         item = tracks_list.tracks_list.item(0)
 
         emitted = []
