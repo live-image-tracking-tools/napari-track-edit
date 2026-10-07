@@ -43,6 +43,9 @@ from napari_track_edit.data_views.views.tree_view.tree_widget_utils import (
 from napari_track_edit.data_views.views_coordinator.groups import (
     CollectionWidget,
 )
+from napari_track_edit.data_views.views_coordinator.motion_compensation import (
+    DetectionMotion,
+)
 from napari_track_edit.data_views.views_coordinator.node_selection_history import (
     NodeSelectionHistory,
 )
@@ -75,7 +78,8 @@ class TracksViewer:
 
     tracks_updated = Signal(Optional[bool])  # noqa: UP007 UP045
     update_track_id = Signal()
-    reference_track_updated = Signal()
+    # emitted when following is switched on or off, or its motion goes stale
+    follow_updated = Signal()
     mode_updated = Signal()
     colormap_updated = Signal()
     center_node = Signal(int)  # emitted when any component wants to center on a node
@@ -144,11 +148,11 @@ class TracksViewer:
         # viewer_interaction and TracksLayerGroup.center_view)
         self.interacting_with_canvas = False
 
-        # Reference track: when set, stepping through time with the napari slider
-        # shifts the view along with this track
-        self.reference_track: int | None = None
-        self.reference_track_color = [0, 0, 0, 0]
-        self._reference_shift_blocked = False
+        # Following: when on, stepping through time with the napari slider moves the z,y,x
+        # sliders with the global shift and scaling of the detections.
+        self._motion: DetectionMotion | None = None
+        self.follow_stale = False
+        self._follow_shift_blocked = False
         self._last_dims_state: tuple[float, tuple[int, ...]] | None = None
 
         self.collection_widget = None
@@ -284,55 +288,83 @@ class TracksViewer:
             else [0, 0, 0, 0]
         )
 
-    def set_reference_track(self, track_id: int | None) -> None:
-        """Set (or clear, when track_id is None) the track that the view follows when
-        stepping through time with the napari slider. Also updates the color used to
-        mark the reference track in the UI."""
+    @property
+    def follow_enabled(self) -> bool:
+        """Whether the view follows the detections when stepping through time."""
 
-        if track_id is not None and (
-            self.tracks is None or track_id not in self.tracks.track_id_to_node
-        ):
-            track_id = None
+        return self._motion is not None
 
-        self.reference_track = track_id
-        self.reference_track_color = (
-            [0, 0, 0, 0] if track_id is None else self.colormap.map(track_id)
-        )
-        self.reference_track_updated.emit()
+    def set_follow(self, enabled: bool) -> None:
+        """Switch following the detections on or off. Switching it on computes their
+        motion from the current tracks."""
+
+        if enabled and self.tracks is None:
+            enabled = False
+        if enabled == self.follow_enabled:
+            return
+        self._motion = DetectionMotion(self.tracks) if enabled else None
+        self.follow_stale = False
+        self.follow_updated.emit()
+
+    def recompute_follow(self) -> None:
+        """Recompute the motion of the detections from the current tracks, after it
+        went stale."""
+
+        if self.follow_enabled:
+            self._motion = DetectionMotion(self.tracks)
+            self.follow_stale = False
+            self.follow_updated.emit()
+
+    def _mark_follow_stale(self) -> None:
+        """The tracks changed since the motion was computed. It is kept in use until
+        the user asks to recompute it, because recomputing at every edit would slow
+        down editing."""
+
+        if self.follow_enabled and not self.follow_stale:
+            self.follow_stale = True
+            self.follow_updated.emit()
 
     @contextmanager
-    def block_reference_shift(self):
-        """Set a mark to block the reference shift when the viewer dims changes because of
-        any other dims changing events that do not originate from the user moving the
-         viewer slider."""
+    def block_follow_shift(self):
+        """Set a mark to block following the data when the viewer dims changes because
+        of anything else than the user moving the time slider, such as centering on a
+        selected node."""
 
-        previous = self._reference_shift_blocked
-        self._reference_shift_blocked = True
+        previous = self._follow_shift_blocked
+        self._follow_shift_blocked = True
         try:
             yield
         finally:
-            self._reference_shift_blocked = previous
+            self._follow_shift_blocked = previous
 
-    def _dims_state(self) -> tuple[float, tuple[int, ...]]:
+    def _dims_state(self) -> tuple[float, tuple[int, ...]] | None:
         """The time point of the viewer plus the slider positions of the other
-        dimensions."""
+        dimensions, or None when there are no tracks (yet) shown in the viewer to take
+        the time axis from."""
 
         dims = self.viewer.dims
-        return (dims.point[0], tuple(dims.current_step[1:]))
+        if self.tracks is None or dims.ndim < self.tracks.ndim:
+            return None
+        time_axis = self.tracks_dims.time_axis
+        sliders = tuple(
+            step for axis, step in enumerate(dims.current_step) if axis != time_axis
+        )
+        return (dims.point[time_axis], sliders)
 
     def _on_dims_point_changed(self, event=None) -> None:
-        """Shift the view along with the reference track when the user steps to another
+        """Move the view along with the detections when the user steps to another
         time point with the napari slider. Skip if the dims change was triggered by
-        something else.
+        something else, such as centering on a node, which blocks the shift and
+        usually moves several sliders at once.
         """
 
         state = self._dims_state()
         previous = self._last_dims_state
         self._last_dims_state = state
 
-        if self._reference_shift_blocked or self.reference_track is None:
+        if self._follow_shift_blocked or self._motion is None:
             return
-        if previous is None or self.viewer.dims.ndim < 2:
+        if previous is None or state is None:
             return
 
         previous_time, previous_sliders = previous
@@ -340,42 +372,30 @@ class TracksViewer:
         if previous_sliders != new_sliders or previous_time == new_time:
             return
 
-        self._shift_view_along_reference(
-            int(round(previous_time)), int(round(new_time))
-        )
+        self._shift_view_along_motion(int(round(previous_time)), int(round(new_time)))
 
-    def _shift_view_along_reference(self, previous_time: int, new_time: int) -> None:
-        """Move the viewer along by the displacement of the reference track between the
-        two time points.
+    def _shift_view_along_motion(self, previous_time: int, new_time: int) -> None:
+        """Move the viewer along with the shift and scaling of the detections between
+        the two time points. Does nothing if there are no detections at one of them.
 
-        Every spatial dimension of dims.point is shifted, the displayed ones included so
-        that the ortho views can also follow.
-
-        Does nothing if the reference track has no node at one of the two time points.
+        Every spatial dimension of the tracks in dims.point is moved, the displayed
+        ones included so that the ortho views can also follow.
         """
 
-        nodes = {
-            int(time): node
-            for time, node in self.tracks.get_track_node_times(self.reference_track)
-        }
-        if previous_time not in nodes or new_time not in nodes:
-            return
-
-        start = np.asarray(self.tracks.get_position(nodes[previous_time]), dtype=float)
-        end = np.asarray(self.tracks.get_position(nodes[new_time]), dtype=float)
-
-        shift = end - start
         dims = self.viewer.dims
-        if len(shift) != dims.ndim - 1:
+        first_spatial = self.tracks_dims.time_axis + 1
+        moved = self._motion.map_position(
+            dims.point[first_spatial:], previous_time, new_time
+        )
+        if moved is None:
             return
 
         point = list(dims.point)
-        for axis, offset in enumerate(shift, start=1):
-            point[axis] += offset
-        if tuple(point) == tuple(dims.point):
+        point[first_spatial:] = moved.tolist()
+        if np.allclose(point, dims.point):
             return
 
-        with self.block_reference_shift():
+        with self.block_follow_shift():
             dims.point = point
         self._last_dims_state = self._dims_state()
 
@@ -449,10 +469,6 @@ class TracksViewer:
 
         self.update_track_df(initialization=False, refresh_view=refresh_view)
 
-        # the reference track may have been edited or removed; revalidate and rebuild
-        # its cached positions
-        self.set_reference_track(self.reference_track)
-
         self.tracks_updated.emit(refresh_view)
 
         # if a new node was added, we would like to select this one now (call this after
@@ -488,7 +504,7 @@ class TracksViewer:
             name (str): The name of the tracks to display in the layer names
         """
 
-        self.set_reference_track(None)
+        self.set_follow(False)
         # clear rather than reset: the selection history belongs to the outgoing
         # tracks, and restoring one of its node ids against a different graph is
         # meaningless. This drops deleted_items with it.
@@ -519,7 +535,8 @@ class TracksViewer:
             self.collection_widget.retrieve_existing_groups()
 
         self.set_display_mode("all")
-        self.tracking_layers.set_tracks(tracks, name)
+        with self.block_follow_shift():
+            self.tracking_layers.set_tracks(tracks, name)
         self.set_axis_labels()  # the layers are in, so the viewer's dims have settled
         self.selected_nodes.reset()
 
@@ -719,6 +736,9 @@ class TracksViewer:
         Args:
             action: The action that was applied (from funtracks)
         """
+
+        # any change can affect the detections the view follows
+        self._mark_follow_stale()
 
         if isinstance(action, DeleteNode):
             self.selected_nodes.deleted_items.add(action.node)

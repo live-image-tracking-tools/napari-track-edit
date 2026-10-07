@@ -198,79 +198,49 @@ class ModeWidget(QWidget):
             self.update_mode.emit(button.property("mode"))
 
 
-class ReferenceTrackWidget(QWidget):
-    """Button that toggles the active tracklet ID as reference track.
-
-    While a reference track is set, stepping to another time point with the napari
-    slider shifts the view by the displacement of that track between the two time
-    points. The button shows the reference track ID and carries a border in its color.
+class FollowWidget(QWidget):
+    """A checkbox to adjust the napari sliders based on the global shift and scaling of
+    all detections. The motion is computed when switched on, and goes stale when the
+    tracks are edited, until it is recomputed.
     """
 
     def __init__(self, tracks_viewer: TracksViewer):
         super().__init__()
 
         self.tracks_viewer = tracks_viewer
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
-        self.reference_btn = QPushButton()
-        self.reference_btn.setToolTip(
-            "Follow the active tracklet when stepping through time with the slider: "
-            "the view moves along with the cell. Click again with the same tracklet "
-            "active to stop following it."
+        self.checkbox = QCheckBox("Follow detections")
+        self.checkbox.setToolTip(
+            "Auto-adjust the sliders based on the global shift and scaling of all detections in the graph"
         )
-        self.reference_btn.clicked.connect(self._toggle_reference)
+        self.checkbox.toggled.connect(self.tracks_viewer.set_follow)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(6)
-        layout.addWidget(self.reference_btn)
-        self.tracks_viewer.update_track_id.connect(
-            lambda: self.reference_btn.setEnabled(
-                self.tracks_viewer.selected_track is not None
-            )
+        self.recompute_btn = QPushButton("Recompute")
+        self.recompute_btn.setToolTip(
+            "The tracks were edited since the motion was computed. If you added/removed "
+            "many detections, recompute the shift from the current graph."
         )
-        self.tracks_viewer.reference_track_updated.connect(self._update_display)
-        self._update_display()
+        self.recompute_btn.clicked.connect(self.tracks_viewer.recompute_follow)
 
-    def _toggle_reference(self) -> None:
-        """Make the active tracklet the reference track, or clear the reference when it
-        already is the reference track."""
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 0, 8, 0)
+        layout.setSpacing(8)
+        layout.addWidget(self.checkbox, stretch=1)
+        layout.addWidget(self.recompute_btn)
 
-        selected = self.tracks_viewer.selected_track
-        if selected is not None and selected == self.tracks_viewer.reference_track:
-            selected = None
-        self.tracks_viewer.set_reference_track(selected)
+        self.tracks_viewer.tracks_updated.connect(self._update)
+        self.tracks_viewer.follow_updated.connect(self._update)
+        self._update()
 
-    def _update_display(self) -> None:
-        """Show the reference track ID on the button and mark it with its color"""
+    def _update(self, *_args) -> None:
+        """Show whether the view follows, and enable the recompute button when the
+        motion is out of date."""
 
-        reference = self.tracks_viewer.reference_track
-        self.reference_btn.setText(f"Reference Track: {reference}")
-
-        if reference is None:
-            self.reference_btn.setStyleSheet(
-                """
-            QPushButton {
-                border: 2px solid rgba(0,0,0,0);
-                border-radius: 3px;
-                padding: 5px;
-            }
-            """
-            )
-            return
-
-        color = self.tracks_viewer.reference_track_color
-        r, g, b, a = [int(c * 255) if i < 3 else c for i, c in enumerate(color)]
-        css_color = f"rgba({r}, {g}, {b}, {a})"
-        self.reference_btn.setStyleSheet(
-            f"""
-            QPushButton {{
-                border: 2px solid {css_color};
-                border-radius: 3px;
-                padding: 5px;
-            }}
-            """
-        )
+        with QSignalBlocker(self.checkbox):
+            self.checkbox.setChecked(self.tracks_viewer.follow_enabled)
+        self.checkbox.setEnabled(self.tracks_viewer.tracks is not None)
+        self.recompute_btn.setEnabled(self.tracks_viewer.follow_stale)
 
 
 class VisualizationWidget(QWidget):
@@ -309,14 +279,14 @@ class VisualizationWidget(QWidget):
 
         self.background_widget.setEnabled(False)  # initially disabled
 
-        self.reference_track_widget = ReferenceTrackWidget(self.tracks_viewer)
+        self.follow_widget = FollowWidget(self.tracks_viewer)
         self.color_by_widget = ColorByWidget(self.tracks_viewer)
 
         main_layout.addWidget(self.mode_widget)
         main_layout.addWidget(self.highlight_widget)
         main_layout.addWidget(self.foreground_widget)
         main_layout.addWidget(self.background_widget)
-        main_layout.addWidget(self.reference_track_widget)
+        main_layout.addWidget(self.follow_widget)
         main_layout.addWidget(self.color_by_widget)
 
         self.show_ortho_views = QCheckBox("Orthogonal views")
