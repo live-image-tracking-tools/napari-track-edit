@@ -303,6 +303,8 @@ class TracksViewer:
         if enabled == self.follow_enabled:
             return
         self._motion = DetectionMotion(self.tracks) if enabled else None
+        # the dims are only tracked while following, so start from where they are now
+        self._last_dims_state = self._dims_state() if enabled else None
         self.follow_stale = False
         self.follow_updated.emit()
 
@@ -355,16 +357,17 @@ class TracksViewer:
         """Move the view along with the detections when the user steps to another
         time point with the napari slider. Skip if the dims change was triggered by
         something else, such as centering on a node, which blocks the shift and
-        usually moves several sliders at once.
+        usually moves several sliders at once. Does nothing at all while not following.
         """
+
+        if self._motion is None:
+            return
 
         state = self._dims_state()
         previous = self._last_dims_state
         self._last_dims_state = state
 
-        if self._follow_shift_blocked or self._motion is None:
-            return
-        if previous is None or state is None:
+        if self._follow_shift_blocked or previous is None or state is None:
             return
 
         previous_time, previous_sliders = previous
