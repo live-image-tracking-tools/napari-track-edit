@@ -12,13 +12,20 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from napari_track_edit.application_menus.keybindings_widget import (
+    open_keybindings_panel,
+)
+from napari_track_edit.data_views.keybindings_config import shortcut_text
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 from napari_track_edit.download_progress import DownloadCancelled, download_progress
 from napari_track_edit.example_data import SAMPLE_TRACKS, raw_data_is_downloaded
 
 DOCS_URL = "https://liveimagetrackingtools.org/napari-track-edit"
-KEYBINDINGS_URL = f"{DOCS_URL}/key_bindings.html"
+KEYBINDINGS_LINK = "napari-track-edit:keybindings"  # Not a real address, used to keep the formatting consistent
 TUTORIAL_URL = f"{DOCS_URL}/napari-track-edit_tutorial.html"
+DOCS_ICON = "\U0001f4d6"  # open book
+KEYBINDINGS_ICON = "\u2328\ufe0f"  # keyboard
+TUTORIAL_ICON = "\U0001f393"  # graduation cap
 
 # Links use this scheme to load an example instead of navigating to a page.
 EXAMPLE_SCHEME = "load-example"
@@ -58,9 +65,9 @@ class WelcomeWidget(QWidget):
         )
         content_html = f"""
         <p style="margin: 8px 0; line-height: 1.8;">
-            <a href="{DOCS_URL}"><b>📖 Documentation</b></a>&nbsp;&nbsp;
-            <a href="{KEYBINDINGS_URL}"><b>🖱️ Keybindings</b></a>&nbsp;&nbsp;
-            <a href="{TUTORIAL_URL}"><b>🎓 Tutorial</b></a>
+            <a href="{DOCS_URL}"><b>{DOCS_ICON} Documentation</b></a>&nbsp;&nbsp;
+            <a href="{KEYBINDINGS_LINK}"><b>{KEYBINDINGS_ICON} Keybindings</b></a>&nbsp;&nbsp;
+            <a href="{TUTORIAL_URL}"><b>{TUTORIAL_ICON} Tutorial</b></a>
         </p>
         <p style="margin: 8px 0; line-height: 1.8;">
             <b>Example data:</b>&nbsp;&nbsp;{example_links}
@@ -79,20 +86,22 @@ class WelcomeWidget(QWidget):
         <h3>Tips</h3>
         <ul>
             <li>Right-click on the 'eye' icon (middle) at the top of the docked widgets to set menu visibility.</li>
-            <li>Toggle panels with the <code>/</code> key to maximize viewing space.</li>
-            <li>View individual lineages by changing the display mode in Visualization tab and in the Lineage View (press [Q])</li>
-            <li>If you have segmentation data, you can view additional features (e.g. area/volume) in the Lineage View (press [W])</li>
+            <li>Toggle panels with the <code>{shortcut_text("hide_panels")}</code> key to maximize viewing space.</li>
+            <li>View individual lineages by changing the display mode in Visualization tab and in the Lineage View (press [{shortcut_text("toggle_display_mode")}])</li>
+            <li>If you have segmentation data, you can view additional features (e.g. area/volume) in the Lineage View (press [{shortcut_text("toggle_feature_mode")}])</li>
             <li>Assign objects to custom groups to keep track of different cell populations or conditions ('Groups' menu).</li>
             <li>Import data from external tracks from CSV or GEFF in the Tracks List menu.</li>
         </ul>
         """
-        content = QTextBrowser()
-        content.setOpenLinks(False)  # handled in _on_link_clicked
-        content.anchorClicked.connect(self._on_link_clicked)
-        content.setHtml(content_html)
-        content.setStyleSheet("QTextBrowser { border: none; background: transparent; }")
-        content.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        layout.addWidget(content)
+        self.content = QTextBrowser()
+        self.content.setOpenLinks(False)  # handled in _on_link_clicked
+        self.content.anchorClicked.connect(self._on_link_clicked)
+        self.content.setHtml(content_html)
+        self.content.setStyleSheet(
+            "QTextBrowser { border: none; background: transparent; }"
+        )
+        self.content.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        layout.addWidget(self.content)
 
     def _logo_label(self) -> QLabel:
         """A label showing the plugin logo, scaled to LOGO_HEIGHT and kept sharp on
@@ -110,7 +119,10 @@ class WelcomeWidget(QWidget):
 
     def _on_link_clicked(self, url: QUrl) -> None:
         """Open documentation links in a browser, load examples in the app."""
-        if url.scheme() == EXAMPLE_SCHEME:
+
+        if url.toString() == KEYBINDINGS_LINK:
+            open_keybindings_panel(self)
+        elif url.scheme() == EXAMPLE_SCHEME:
             self._load_example(url.path())
         else:
             QDesktopServices.openUrl(url)

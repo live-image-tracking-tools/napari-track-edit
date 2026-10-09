@@ -1,8 +1,13 @@
 """Tests for the shared napari key bindings defined in keybindings_config."""
 
 import pytest
-from napari.utils.key_bindings import coerce_keybinding
+from napari.utils.action_manager import action_manager
+from napari.utils.key_bindings import KeymapHandler, coerce_keybinding
 
+from napari_track_edit.data_views.keybindings_config import (
+    blocked_napari_binding,
+    set_shortcut,
+)
 from napari_track_edit.data_views.views.layers.contour_labels import ContourLabels
 from napari_track_edit.data_views.views.layers.track_labels import TrackLabels
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
@@ -42,11 +47,13 @@ def test_m_is_not_naparis_new_label(viewer, solution_tracks_3d_with_division):
     not be reachable on the labels layers, neither from the class keymaps nor from
     the instance keymap of a layer that is showing tracks."""
 
-    assert ContourLabels.class_keymap[M] is Ellipsis  # blocks napari's Labels binding
     assert M not in TrackLabels.class_keymap
 
     tracks_viewer = TracksViewer.get_instance(viewer)
     tracks_viewer.update_tracks(tracks=solution_tracks_3d_with_division, name="test")
+
+    # blocks napari's Labels binding, for a ContourLabels with no tracks on it
+    assert ContourLabels.class_keymap[M] is blocked_napari_binding
     seg_layer = tracks_viewer.tracking_layers.seg_layer
 
     seg_layer.selected_label = 2  # an existing label, so track 1 is the current track
@@ -80,3 +87,45 @@ def test_m_without_segmentation_only_starts_a_new_track_id(
     points_layer.keymap[M](points_layer)
 
     assert tracks_viewer.selected_track not in tracks_viewer.tracks.track_id_to_node
+
+
+def test_blocking_napari_does_not_break_key_presses(
+    viewer, solution_tracks_3d_with_division
+):
+    """The block must not put an `Ellipsis` in the keymap chain.
+
+    Regression test: `Ellipsis` is napari's documented way to block a key, but
+    napari 0.6's `on_key_press` passes the raw chain to
+    `action_manager._get_repeatable_shortcuts`, which reads `__name__` off every
+    value - so every canvas key press raised AttributeError. It only surfaced
+    once the user rebound [M], because until then our own instance binding for
+    [M] shadowed the blocked entry in the ChainMap.
+    """
+
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_3d_with_division, name="test")
+
+    handler = KeymapHandler()
+    handler.keymap_providers = [tracks_viewer.tracking_layers.seg_layer, viewer]
+
+    set_shortcut("request_new_track", "j")
+
+    assert Ellipsis not in handler.keymap_chain.values()
+    # what napari does on every key press in the canvas
+    action_manager._get_repeatable_shortcuts(handler.keymap_chain)
+
+
+def test_block_follows_the_rebound_key(viewer, solution_tracks_3d_with_division):
+    """After a rebind, napari's new_label must be blocked on the new key and
+    reachable again on the old one - otherwise [M] silently hands out a label
+    with no track id behind it."""
+
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.update_tracks(tracks=solution_tracks_3d_with_division, name="test")
+
+    assert ContourLabels.class_keymap[M] is blocked_napari_binding
+
+    set_shortcut("request_new_track", "j")
+
+    assert ContourLabels.class_keymap[coerce_keybinding("j")] is blocked_napari_binding
+    assert ContourLabels.class_keymap.get(M) is not blocked_napari_binding

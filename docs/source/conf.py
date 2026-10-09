@@ -31,6 +31,23 @@ html_css_files = ["custom.css"]
 html_logo = "images/logo_transparent.png"
 
 
+# -- Generated keybindings table ---------------------------------------------
+# The plugin's shortcuts are defined once, in
+# napari_track_edit.data_views.keybindings_config.KEYBINDINGS, and the table
+# included by key_bindings.rst is rendered from it so the two cannot drift.
+KEYBINDINGS_TABLE = "_generated/keybinding_defaults.rst"
+
+
+def _write_keybindings_table(app=None):
+    from pathlib import Path
+
+    from napari_track_edit.data_views.keybindings_config import keybindings_rst
+
+    out = Path(__file__).parent / KEYBINDINGS_TABLE
+    out.parent.mkdir(exist_ok=True)
+    out.write_text(keybindings_rst().rstrip("\n") + "\n")
+
+
 # -- Tutorial images ---------------------------------------------------------
 # The tutorial (napari-track-edit_tutorial.md) is also exported to PDF, so it lays out
 # its figures with raw HTML <img src="images/...">. Sphinx only copies images that are
@@ -70,5 +87,6 @@ def _expand_markdown_includes(app, docname, source):
 
 
 def setup(app):
+    app.connect("builder-inited", _write_keybindings_table)
     app.connect("source-read", _expand_markdown_includes)
     app.connect("build-finished", _copy_tutorial_images)

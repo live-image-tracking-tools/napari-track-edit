@@ -11,6 +11,8 @@ from qtpy.QtWidgets import (
     QVBoxLayout,
 )
 
+from napari_track_edit.data_views.keybindings_config import shortcut_label
+
 
 def confirm_force_operation(message: str) -> tuple[bool, bool]:
     """
@@ -66,8 +68,13 @@ def ask_connect_mode() -> bool | None:
     )
     msg.setIconPixmap(QIcon.fromTheme("dialog-question").pixmap(64, 64))
 
-    divisions_button = msg.addButton("With divisions [C]", QMessageBox.YesRole)
-    linear_button = msg.addButton("Linear [Shift+C]", QMessageBox.AcceptRole)
+    divisions_button = msg.addButton(
+        shortcut_label("connect_nodes_with_divisions", "With divisions"),
+        QMessageBox.YesRole,
+    )
+    linear_button = msg.addButton(
+        shortcut_label("connect_nodes_linearly", "Linear"), QMessageBox.AcceptRole
+    )
     msg.addButton("Cancel", QMessageBox.RejectRole)
 
     msg.setDefaultButton(divisions_button)

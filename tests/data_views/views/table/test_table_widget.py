@@ -216,7 +216,7 @@ def test_table_widget_keybinds(colored_table_widget, qtbot):
     - Shift+C: connect_nodes_linearly
     - S: swap_nodes
     - Z: undo
-    - R: redo
+    - R / Ctrl+Shift+Z: redo
     - Escape: deselect
     - E: restore_selection
     """
@@ -284,6 +284,15 @@ def test_table_widget_keybinds(colored_table_widget, qtbot):
 
     # Test R key calls redo
     qtbot.keyPress(table_widget, Qt.Key_R)
+    redo_mock.assert_called_once()
+
+    # Test Ctrl+Shift+Z also calls redo
+    redo_mock.reset_mock()
+    qtbot.keyPress(
+        table_widget,
+        Qt.Key_Z,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+    )
     redo_mock.assert_called_once()
 
     # Test Escape key calls deselect

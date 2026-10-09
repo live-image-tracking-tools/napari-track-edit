@@ -1,6 +1,8 @@
 from psygnal import Signal
 from qtpy.QtWidgets import QGroupBox, QPushButton, QVBoxLayout, QWidget
 
+from napari_track_edit.data_views.keybindings_config import bind_shortcut_label
+
 
 class FlipTreeWidget(QWidget):
     """Widget to flip the axis of the tree view"""
@@ -12,7 +14,8 @@ class FlipTreeWidget(QWidget):
 
         flip_layout = QVBoxLayout()
         flip_layout.setContentsMargins(6, 8, 6, 4)
-        display_box = QGroupBox("Plot axes [F]")
+        display_box = QGroupBox()
+        bind_shortcut_label(display_box, "flip_axes", "Plot axes")
         flip_button = QPushButton("Flip")
         flip_button.clicked.connect(self.flip)
         flip_layout.addWidget(flip_button)

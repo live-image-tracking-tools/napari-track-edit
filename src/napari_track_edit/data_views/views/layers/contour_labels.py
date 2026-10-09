@@ -14,7 +14,6 @@ from napari.utils._indexing import elements_in_slice, index_in_slice
 from napari.utils.events import Event
 from scipy import ndimage as ndi
 
-from napari_track_edit.data_views.keybindings_config import KEYBINDINGS
 from napari_track_edit.data_views.lazy_array_wrapper import LazyArrayWrapper
 
 
@@ -370,9 +369,3 @@ class ContourLabels(napari.layers.Labels):
         """
         if hasattr(self.data, "__setitem__"):
             super().redo()
-
-
-# Block napari's default new label shortcut on the key(s) that start a new track,
-# getting a new label goes through TracksViewer.request_new_track instead.
-for _key in KEYBINDINGS["request_new_track"]["napari_keys"]:
-    ContourLabels.bind_key(_key, ..., overwrite=True)
