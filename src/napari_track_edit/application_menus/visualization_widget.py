@@ -11,6 +11,7 @@ from qtpy.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QRadioButton,
     QSizePolicy,
     QVBoxLayout,
@@ -197,6 +198,51 @@ class ModeWidget(QWidget):
             self.update_mode.emit(button.property("mode"))
 
 
+class FollowWidget(QWidget):
+    """A checkbox to adjust the napari sliders based on the global shift and scaling of
+    all detections. The motion is computed when switched on, and goes stale when the
+    tracks are edited, until it is recomputed.
+    """
+
+    def __init__(self, tracks_viewer: TracksViewer):
+        super().__init__()
+
+        self.tracks_viewer = tracks_viewer
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+
+        self.checkbox = QCheckBox("Auto adjust sliders")
+        self.checkbox.setToolTip(
+            "Auto-adjust the sliders based on the global shift and scaling of all detections in the graph"
+        )
+        self.checkbox.toggled.connect(self.tracks_viewer.set_follow)
+
+        self.recompute_btn = QPushButton("Recompute")
+        self.recompute_btn.setToolTip(
+            "The tracks were edited since the motion was computed. If you added/removed "
+            "many detections, recompute the global shift and scaling from the current graph."
+        )
+        self.recompute_btn.clicked.connect(self.tracks_viewer.recompute_follow)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 0, 8, 0)
+        layout.setSpacing(8)
+        layout.addWidget(self.checkbox, stretch=1)
+        layout.addWidget(self.recompute_btn)
+
+        self.tracks_viewer.tracks_updated.connect(self._update)
+        self.tracks_viewer.follow_updated.connect(self._update)
+        self._update()
+
+    def _update(self, *_args) -> None:
+        """Show whether the view follows, and enable the recompute button when the
+        motion is out of date."""
+
+        with QSignalBlocker(self.checkbox):
+            self.checkbox.setChecked(self.tracks_viewer.follow_enabled)
+        self.checkbox.setEnabled(self.tracks_viewer.tracks is not None)
+        self.recompute_btn.setEnabled(self.tracks_viewer.follow_stale)
+
+
 class VisualizationWidget(QWidget):
     """Widget to adjust opacity and contour display in different TrackLabels layer display modes."""
 
@@ -233,13 +279,14 @@ class VisualizationWidget(QWidget):
 
         self.background_widget.setEnabled(False)  # initially disabled
 
+        self.follow_widget = FollowWidget(self.tracks_viewer)
         self.color_by_widget = ColorByWidget(self.tracks_viewer)
 
         main_layout.addWidget(self.mode_widget)
         main_layout.addWidget(self.highlight_widget)
         main_layout.addWidget(self.foreground_widget)
         main_layout.addWidget(self.background_widget)
-
+        main_layout.addWidget(self.follow_widget)
         main_layout.addWidget(self.color_by_widget)
 
         self.show_ortho_views = QCheckBox("Orthogonal views")
