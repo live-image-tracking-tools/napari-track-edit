@@ -192,22 +192,15 @@ class FeatureWidget(QWidget):
         """
 
         tracks = self.tracks_viewer.tracks
+        features = tracks.get_available_features()
 
-        if tracks.segmentation is not None:
-            features = RegionpropsAnnotator.get_available_features(ndim=tracks.ndim)
-            features.pop(DEFAULT_POS_KEY, None)
-            features.pop(DEFAULT_INTENSITY_KEY, None)
-            self.label.setText(
-                "*Activating the checkboxes will compute the selected feature. \n"
-                "You can see these measurements in the Lineage View (choose Plot > Feature) \n"
-                "and in the Table widget.*"
-            )
-
-        else:
-            features = {}
-            self.label.setText(
-                "*Feature measurements are only supported if you are using a segmentation layer.*"
-            )
+        features.pop(DEFAULT_POS_KEY, None)
+        features.pop(DEFAULT_INTENSITY_KEY, None)
+        self.label.setText(
+            "*Activating the checkboxes will compute the selected feature. \n"
+            "You can see these measurements in the Lineage View (choose Plot > Feature) \n"
+            "and in the Table widget.*"
+        )
 
         return features
 
