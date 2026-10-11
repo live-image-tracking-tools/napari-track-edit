@@ -91,25 +91,23 @@ class NavigationWidget(QWidget):
                 next_node = self.get_successor(node_id)
             else:
                 next_node = self.get_next_track_node(self.track_df, node_id)
-        elif direction == "up":
+        elif direction in ("up", "down"):
             if self.view_direction == "horizontal":
-                next_node = self.get_next_track_node(self.lineage_df, node_id)
-                if next_node is None:
-                    next_node = self.get_next_track_node(self.track_df, node_id)
-            else:
-                next_node = self.get_predecessor(node_id)
-        elif direction == "down":
-            if self.view_direction == "horizontal":
+                # feature values increase upward, but tree lanes are drawn top to
+                # bottom (negated x_axis_pos), so 'up' means a lower lane in tree mode
+                forward = (direction == "up") == (self.plot_type == "feature")
                 # try navigation within the current lineage_df first
                 next_node = self.get_next_track_node(
-                    self.lineage_df, node_id, forward=False
+                    self.lineage_df, node_id, forward=forward
                 )
                 # if not found, look in the whole dataframe
                 # to enable jumping to the next node outside the current tree view content
                 if next_node is None:
                     next_node = self.get_next_track_node(
-                        self.track_df, node_id, forward=False
+                        self.track_df, node_id, forward=forward
                     )
+            elif direction == "up":
+                next_node = self.get_predecessor(node_id)
             else:
                 next_node = self.get_successor(node_id)
         else:
