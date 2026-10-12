@@ -311,7 +311,10 @@ class FeatureWidget(QWidget):
 
         if layers:
             tracks.set_intensity_images(
-                [layer.data for layer in layers],
+                # A multiscale layer's .data is the list of pyramid levels, not a
+                # single array; level 0 is full resolution, matching the
+                # segmentation's own (single-scale) resolution.
+                [layer.data[0] if layer.multiscale else layer.data for layer in layers],
                 channel_names=[layer.name for layer in layers],
             )
             if DEFAULT_INTENSITY_KEY not in tracks.features:
