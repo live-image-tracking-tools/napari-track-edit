@@ -110,6 +110,8 @@ class FeatureWidget(QWidget):
         # watching, since the dialog reads the layer list each time it opens.
         self.viewer.layers.events.removed.connect(self._on_layer_removed)
 
+        self._update_checkboxes()
+
     def _update_checkboxes(self):
         """Update the list of available checkboxes."""
 
