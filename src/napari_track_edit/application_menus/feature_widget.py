@@ -5,7 +5,6 @@ from fonticon_fa6 import FA6S
 from funtracks.annotators._regionprops_annotator import (
     DEFAULT_INTENSITY_KEY,
     DEFAULT_POS_KEY,
-    RegionpropsAnnotator,
 )
 from funtracks.features._feature import Feature
 from qtpy.QtCore import Qt
@@ -189,15 +188,25 @@ class FeatureWidget(QWidget):
     def _discover_features(self) -> dict[str, Feature]:
         """Find all features available for the current tracks.
 
-        Excludes position (always computed) and intensity (which has its own row, since
-        it also needs the layers to measure).
+        Excludes core position and track IDs, which the app always maintains,
+        and intensity, which has its own row to choose the layers to measure.
         """
 
         tracks = self.tracks_viewer.tracks
         features = tracks.get_available_features()
 
-        features.pop(DEFAULT_POS_KEY, None)
-        features.pop(DEFAULT_INTENSITY_KEY, None)
+        position_key = tracks.features.position_key
+        position_keys = (
+            position_key if isinstance(position_key, list) else [position_key]
+        )
+        for key in (
+            DEFAULT_POS_KEY,
+            *position_keys,
+            tracks.features.tracklet_key,
+            tracks.features.lineage_key,
+            DEFAULT_INTENSITY_KEY,
+        ):
+            features.pop(key, None)
         self.label.setText(
             "*Activating the checkboxes will compute the selected feature. \n"
             "You can see these measurements in the Lineage View (choose Plot > Feature) \n"
