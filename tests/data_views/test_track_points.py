@@ -55,10 +55,12 @@ def test_initialization(viewer, solution_tracks_2d):
     # Verify default size was set
     assert points_layer.default_size == 5
 
-    # Verify properties hold node_id, and nothing else: node ids are what the
-    # layer looks up (selection, colors), and nothing reads a track id off it
-    assert set(points_layer.properties) == {"node_id"}
+    # Verify properties/features include node_id (used by the layer for lookups
+    # like selection and colors) in the same order as points_layer.nodes, plus
+    # the tracks' other node features.
+    assert "node_id" in points_layer.properties
     assert len(points_layer.properties["node_id"]) == len(points_layer.nodes)
+    assert list(points_layer.properties["node_id"]) == list(points_layer.nodes)
 
     # Verify type string
     assert points_layer._type_string == "points"
