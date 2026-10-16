@@ -388,7 +388,9 @@ class ColoredTableWidget(QWidget):
         """Update the displayed data based on the tracks_df on TracksViewer"""
 
         columns_to_display = ["node_id"] + get_features_from_tracks(
-            self.tracks_viewer.tracks, features_to_ignore=["Bounding box"]
+            self.tracks_viewer.tracks,
+            features_to_ignore=["Bounding box"],
+            only_plottable=False,
         )
         self.set_data(self.tracks_viewer.track_df, columns_to_display)
 

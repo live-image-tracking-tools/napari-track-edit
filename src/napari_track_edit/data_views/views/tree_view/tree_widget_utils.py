@@ -386,15 +386,22 @@ def extract_lineage_tree(graph: td.GraphView, node_id: str) -> list[str]:
 
 
 def get_features_from_tracks(
-    tracks: Tracks | None = None, features_to_ignore: list[str] | None = None
+    tracks: Tracks | None = None,
+    features_to_ignore: list[str] | None = None,
+    only_plottable: bool = True,
 ) -> list[str]:
-    """Extract the regionprops feature display names currently activated on Tracks.
+    """Extract node feature display names from Tracks.
 
     Args:
         tracks (Tracks | None): the Tracks instance to extract features from
+        features_to_ignore (list[str] | None): substrings; features containing any of
+            them are excluded from the result
+        only_plottable (bool): if True (default), only include numeric (float/int)
+            features, since non-numeric features cannot be plotted. Set to False to
+            include all node features, e.g. for display in a table.
 
     Returns:
-        features_to_plot (list[str]): list of the feature names to plot, or an empty list
+        features_to_plot (list[str]): list of the feature names, or an empty list
         if tracks is None
     """
 
@@ -407,7 +414,7 @@ def get_features_from_tracks(
             if feature["feature_type"] == "edge":
                 continue
             name = feature.get("display_name", key)
-            if feature["value_type"] in ("float", "int"):
+            if not only_plottable or feature["value_type"] in ("float", "int"):
                 if feature["num_values"] > 1:
                     value_names = feature.get("value_names", None)
                     for i in range(feature["num_values"]):
