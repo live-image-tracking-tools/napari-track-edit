@@ -5,12 +5,17 @@ This module defines all keybindings in a unified way, specifying:
 - Keys for napari layers (string format)
 - Keys for Qt widgets (Qt.Key constants)
 - Optionally the Qt modifier that must be held ("qt_modifiers", default: none)
-- The target(s) for the action: "tracks_viewer", "tree_widget", or both
+- The target(s) for the action: "tracks_viewer", "tree_widget", "app", or a
+  combination
 
 An action can target multiple objects. It will be available in the following ways:
 - napari layers: if "tracks_viewer" is in targets
 - Qt table_widget: if "tracks_viewer" is in targets
 - Qt tree_widget: if "tree_widget" is in targets
+- NTEApp, as a Qt.ApplicationShortcut (fires regardless of focus): if "app" is in
+  targets. "app"-targeted actions are not per-TracksViewer, so they are excluded
+  from KEYMAP/TRACKS_VIEWER_KEY_ACTIONS/TREE_WIDGET_SPECIFIC_ACTIONS; NTEApp reads
+  their key directly out of KEYBINDINGS instead (see _nte_app.py).
 """
 
 from __future__ import annotations
@@ -111,7 +116,7 @@ KEYBINDINGS = {
     "hide_panels": {
         "napari_keys": ["/"],
         "qt_keys": [Qt.Key_Slash],
-        "targets": ["tracks_viewer"],
+        "targets": ["app"],
     },
     "select_previous": {
         "napari_keys": ["p"],  # Previous: Navigate backwards in selection history
@@ -165,13 +170,13 @@ KEYMAP = {
     if config["napari_keys"] and "tracks_viewer" in config["targets"]
 }
 
-# Qt General Key Actions: (Qt key constant, shift held) -> tracks_viewer method names
-GENERAL_KEY_ACTIONS = {}
+# Qt TracksViewer Key Actions: (Qt key constant, shift held) -> tracks_viewer method names
+TRACKS_VIEWER_KEY_ACTIONS = {}
 for action, config in KEYBINDINGS.items():
     if "tracks_viewer" in config["targets"] and config["qt_keys"]:
         shift = bool(config.get("qt_modifiers", Qt.NoModifier) & Qt.ShiftModifier)
         for key in config["qt_keys"]:
-            GENERAL_KEY_ACTIONS[key, shift] = action
+            TRACKS_VIEWER_KEY_ACTIONS[key, shift] = action
 
 # Qt Tree-Widget Specific Actions: (key, shift held) -> tree_widget method names
 TREE_WIDGET_SPECIFIC_ACTIONS = {}

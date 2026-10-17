@@ -1,7 +1,6 @@
 import contextlib
 
 import napari
-from napari_orthogonal_views.ortho_view_manager import _VIEWER_MANAGERS
 from psygnal import Signal
 from qtpy.QtCore import QSignalBlocker
 from qtpy.QtWidgets import (
@@ -22,7 +21,7 @@ from napari_track_edit.data_views.colormap import (
     categorical_feature_keys,
     feature_display_name,
 )
-from napari_track_edit.data_views.views.ortho_views import initialize_ortho_views
+from napari_track_edit._nte_app import NTEApp
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
@@ -204,7 +203,9 @@ class VisualizationWidget(QWidget):
         super().__init__()
 
         self.viewer = viewer
-        self.tracks_viewer = TracksViewer.get_instance(viewer)
+        self.app = NTEApp.get_instance(viewer)
+        self.config = self.app.config
+        self.tracks_viewer = self.app.tracks_viewer
 
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
 
@@ -246,13 +247,10 @@ class VisualizationWidget(QWidget):
         self.show_ortho_views.toggled.connect(self.toggle_ortho_views)
         self.show_ortho_views.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         # the ortho views outlive this widget, so pick them up again when it is reopened
-        if self.viewer in _VIEWER_MANAGERS:
-            manager = _VIEWER_MANAGERS[self.viewer]
-            self.show_ortho_views.setChecked(manager.is_shown())
-            self._follow_ortho_checkbox(manager)
+        self.show_ortho_views.setChecked(self.config.orthoviews_enabled)
 
         self.show_viewer_overlay = QCheckBox("Display keybinds on canvas")
-        self.show_viewer_overlay.setChecked(self.viewer.text_overlay.visible)
+        self.show_viewer_overlay.setChecked(self.config.text_overlay_visible)
         self.show_viewer_overlay.toggled.connect(self.toggle_viewer_text_overlay)
 
         main_layout.addWidget(self.show_ortho_views)
@@ -276,33 +274,12 @@ class VisualizationWidget(QWidget):
     def toggle_viewer_text_overlay(self, checked: bool):
         """Change the visibility of the text overlay"""
 
-        self.viewer.text_overlay.visible = checked
+        self.config.text_overlay_visible = checked
 
     def toggle_ortho_views(self, checked: bool):
         """Show or hide the ortho views, creating them the first time."""
 
-        if self.viewer in _VIEWER_MANAGERS:
-            manager = _VIEWER_MANAGERS[self.viewer]
-        else:
-            manager = initialize_ortho_views(self.viewer)
-            self._follow_ortho_checkbox(manager)
-
-        if checked:
-            manager.show()
-        else:
-            manager.hide()
-            manager.set_splitter_sizes(0.0, 0.0)  # minimal size for right and bottom
-
-    def _follow_ortho_checkbox(self, manager) -> None:
-        """Keep our checkbox in sync with the ortho views' own checkbox.
-
-        This is a Qt-to-Qt connection, so Qt drops it when either checkbox is
-        deleted and nothing needs to be disconnected by hand.
-        """
-
-        manager.main_controls_widget.show_checkbox.toggled.connect(
-            self.show_ortho_views.setChecked
-        )
+        self.config.orthoviews_enabled = checked
 
     def _update_mode(self, mode: str) -> None:
         """Update the display mode on the Tracksviewer"""

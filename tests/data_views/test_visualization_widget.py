@@ -289,18 +289,17 @@ class TestOrthoViewsIntegration:
         widget.show_ortho_views.setChecked(False)
         assert not ortho.is_shown()
 
-    def test_follows_the_ortho_views_checkbox(self, visualization_widget, manager):
+    def test_ortho_manager_checkbox_is_hidden(self, visualization_widget, manager):
+        """napari_track_edit's own checkbox is the only user-facing control for
+        orthogonal views: the ortho view manager's built-in checkbox (on its
+        separate Controls tab) is hidden rather than kept in sync with it."""
         widget, _ = visualization_widget
         widget.show_ortho_views.setChecked(True)
         ortho_checkbox = _VIEWER_MANAGERS[
             widget.viewer
         ].main_controls_widget.show_checkbox
 
-        ortho_checkbox.setChecked(False)
-        assert not widget.show_ortho_views.isChecked()
-
-        ortho_checkbox.setChecked(True)
-        assert widget.show_ortho_views.isChecked()
+        assert not ortho_checkbox.isVisible()
 
     def test_ortho_views_survive_closing_the_widget(
         self, visualization_widget, manager, qtbot
@@ -329,8 +328,6 @@ class TestOrthoViewsIntegration:
         new_widget = VisualizationWidget(viewer)
         qtbot.addWidget(new_widget)
         assert new_widget.show_ortho_views.isChecked()
-        ortho.main_controls_widget.show_checkbox.setChecked(False)
-        assert not new_widget.show_ortho_views.isChecked()
 
 
 class TestColorByWidget:

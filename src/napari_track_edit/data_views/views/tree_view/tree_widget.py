@@ -16,7 +16,7 @@ from qtpy.QtWidgets import (
 from superqt import QCollapsible
 
 from napari_track_edit.data_views.keybindings_config import (
-    GENERAL_KEY_ACTIONS,
+    TRACKS_VIEWER_KEY_ACTIONS,
     TREE_WIDGET_MODIFIER_ACTIONS,
     TREE_WIDGET_NAVIGATION_KEYS,
     TREE_WIDGET_SPECIFIC_ACTIONS,
@@ -222,7 +222,7 @@ class TreeWidget(QWidget):
             return
 
         # Try general keybinds (these also work in table widget)
-        action_name = resolve_key_action(GENERAL_KEY_ACTIONS, event)
+        action_name = resolve_key_action(TRACKS_VIEWER_KEY_ACTIONS, event)
         if action_name:
             method = getattr(self.tracks_viewer, action_name, None)
             if method:
@@ -320,7 +320,7 @@ class TreeWidget(QWidget):
         if scrolled:
             return
 
-        action_name = resolve_key_action(GENERAL_KEY_ACTIONS, ev)
+        action_name = resolve_key_action(TRACKS_VIEWER_KEY_ACTIONS, ev)
         if action_name:
             method = getattr(self.tracks_viewer, action_name, None)
             if method:

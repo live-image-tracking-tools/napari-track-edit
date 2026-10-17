@@ -7,9 +7,6 @@ import napari
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QDockWidget, QScrollArea, QTabBar, QTabWidget, QWidget
 
-from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
-
-
 class MenuManager:
     """Initializes and manages the menu widgets, including show/hide functionality and
     tracking active widgets."""
@@ -18,8 +15,6 @@ class MenuManager:
         super().__init__()
 
         self.viewer = viewer
-        self.tracks_viewer = TracksViewer.get_instance(viewer)
-        self.tracks_viewer.menu_manager = self
 
         # Track the active menu widgets for show/hide operations
         self.hidden = False

@@ -499,4 +499,10 @@ def initialize_ortho_views(viewer: Viewer) -> OrthoViewManager:
     orth_view_manager.set_sync_filters(sync_filters)
     orth_view_manager.activate_checkboxes = True
 
+    # napari_track_edit's own Visualization menu is the only place users should
+    # toggle orthogonal views from, so hide the manager's built-in checkbox (its
+    # separate Controls tab) rather than keeping two controls for the same thing
+    # in sync.
+    orth_view_manager.main_controls_widget.show_checkbox.setVisible(False)
+
     return orth_view_manager
