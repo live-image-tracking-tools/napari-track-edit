@@ -204,7 +204,6 @@ class VisualizationWidget(QWidget):
 
         self.viewer = viewer
         self.app = NTEApp.get_instance(viewer)
-        self.config = self.app.config
         self.tracks_viewer = self.app.tracks_viewer
 
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
@@ -247,10 +246,10 @@ class VisualizationWidget(QWidget):
         self.show_ortho_views.toggled.connect(self.toggle_ortho_views)
         self.show_ortho_views.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         # the ortho views outlive this widget, so pick them up again when it is reopened
-        self.show_ortho_views.setChecked(self.config.orthoviews_enabled)
+        self.show_ortho_views.setChecked(self.app.config.orthoviews_enabled)
 
         self.show_viewer_overlay = QCheckBox("Display keybinds on canvas")
-        self.show_viewer_overlay.setChecked(self.config.text_overlay_visible)
+        self.show_viewer_overlay.setChecked(self.app.text_overlay_visible)
         self.show_viewer_overlay.toggled.connect(self.toggle_viewer_text_overlay)
 
         main_layout.addWidget(self.show_ortho_views)
@@ -274,12 +273,18 @@ class VisualizationWidget(QWidget):
     def toggle_viewer_text_overlay(self, checked: bool):
         """Change the visibility of the text overlay"""
 
-        self.config.text_overlay_visible = checked
+        self.app.text_overlay_visible = checked
 
     def toggle_ortho_views(self, checked: bool):
         """Show or hide the ortho views, creating them the first time."""
 
-        self.config.orthoviews_enabled = checked
+        if not checked and self.app.config.orthoviews_enabled is False:
+            return  # never shown yet, nothing to hide
+
+        if checked:
+            self.app.ortho_views.show()
+        else:
+            self.app.ortho_views.hide()
 
     def _update_mode(self, mode: str) -> None:
         """Update the display mode on the Tracksviewer"""

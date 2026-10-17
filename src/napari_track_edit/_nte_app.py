@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypedDict
 
 import napari
-from napari_orthogonal_views.ortho_view_manager import OrthoViewManager
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QShortcut
 from qtpy.QtWidgets import QWidget
@@ -12,6 +12,7 @@ from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksV
 
 if TYPE_CHECKING:
     from napari_track_edit.application_menus.menu_manager import MenuManager
+    from napari_track_edit.data_views.views.ortho_views import OrthoViewsController
     from napari_track_edit.data_views.views_coordinator.tracks_list import TracksList
 
 
@@ -22,59 +23,16 @@ class MenuWidgetConfig(TypedDict):
     location: Literal["left", "right", "top", "bottom"]
 
 
+@dataclass
 class NTEAppConfig:
-    """How this app instance is currently set up: which widgets are open,
-    whether orthogonal views and the canvas text overlay are on.
+    """How this app instance is currently set up: whether orthogonal views and
+    the canvas text overlay are on.
 
-    Currently just reads/writes the live objects that already track each of
-    these (MenuManager, OrthoViewManager, the napari Viewer's text overlay) -
-    nothing here is persisted to disk yet. The point of grouping them here
-    rather than leaving them scattered is to give future persistence (saving
-    this on close, restoring it on the next launch) a single place to read
-    from and write to.
+    Will likely become an evented model like napari.settings for serialization
     """
 
-    def __init__(self, app: NTEApp):
-        self._app = app
-
-    @property
-    def open_widgets(self) -> set[str]:
-        """Names of the menu widgets currently initialized (open at least once,
-        whether or not they are presently visible)."""
-        return set(self._app.menu_manager.initialized_menu_widgets)
-
-    @property
-    def orthoviews_enabled(self) -> bool:
-        manager = self._app.ortho_view_manager
-        return manager is not None and manager.is_shown()
-
-    @orthoviews_enabled.setter
-    def orthoviews_enabled(self, value: bool) -> None:
-        manager = self._app.ortho_view_manager
-        if manager is None:
-            if not value:
-                return
-            # Created on demand, independent of which menu widgets happen to be
-            # open: this only needs the viewer's Qt window to exist (not any
-            # layers), so nothing requires waiting for VisualizationWidget.
-            from napari_track_edit.data_views.views.ortho_views import (
-                initialize_ortho_views,
-            )
-
-            manager = initialize_ortho_views(self._app.viewer)
-
-        if value:
-            manager.show()
-        else:
-            manager.hide()
-
-    @property
-    def text_overlay_visible(self) -> bool:
-        return self._app.viewer.text_overlay.visible
-
-    @text_overlay_visible.setter
-    def text_overlay_visible(self, value: bool) -> None:
-        self._app.viewer.text_overlay.visible = value
+    orthoviews_enabled: bool = False
+    text_overlay_visible: bool = True
 
 
 class NTEApp:
@@ -93,7 +51,8 @@ class NTEApp:
     def __init__(self, viewer: napari.Viewer):
         self.viewer = viewer
         self._menu_manager: MenuManager | None = None
-        self.config = NTEAppConfig(self)
+        self._ortho_views: OrthoViewsController | None = None
+        self.config = NTEAppConfig()
         self._shortcuts: list[QShortcut] = []
         self._bind_app_keymap()
 
@@ -138,19 +97,31 @@ class NTEApp:
         return self._menu_manager
 
     @property
-    def ortho_view_manager(self) -> OrthoViewManager | None:
-        """The OrthoViewManager already set up for this viewer, or None if
-        orthogonal views have not been turned on yet.
+    def ortho_views(self) -> OrthoViewsController:
+        """The OrthoViewsController for this viewer, created on first access.
 
-        Unlike `initialize_ortho_views`, this never creates one: that function
-        both creates the manager *and* (re-)registers every layer hook/sync
-        filter, so it should only be called once, the first time the user asks
-        for orthogonal views - callers that only want to check or use an
-        existing manager should use this property instead.
+        Created on demand, independent of which menu widgets happen to be open:
+        this only needs the viewer's Qt window to exist (not any layers), so
+        nothing requires waiting for VisualizationWidget.
         """
-        from napari_orthogonal_views.ortho_view_manager import _VIEWER_MANAGERS
+        if self._ortho_views is None:
+            from napari_track_edit.data_views.views.ortho_views import (
+                OrthoViewsController,
+                initialize_ortho_views,
+            )
 
-        return _VIEWER_MANAGERS.get(self.viewer)
+            manager = initialize_ortho_views(self.viewer)
+            self._ortho_views = OrthoViewsController(manager, self.config)
+        return self._ortho_views
+
+    @property
+    def text_overlay_visible(self) -> bool:
+        return self.viewer.text_overlay.visible
+
+    @text_overlay_visible.setter
+    def text_overlay_visible(self, value: bool) -> None:
+        self.viewer.text_overlay.visible = value
+        self.config.text_overlay_visible = value
 
     def hide_panels(self) -> None:
         """Show/hide menu and tree view panels without destroying them."""

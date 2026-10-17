@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import inspect
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from napari import Viewer
@@ -26,6 +28,9 @@ from napari_track_edit.data_views.views.layers.out_of_slice_points import ZOnlyP
 from napari_track_edit.data_views.views.layers.track_graph import TrackGraph
 from napari_track_edit.data_views.views.layers.track_labels import TrackLabels
 from napari_track_edit.data_views.views.layers.track_points import TrackPoints
+
+if TYPE_CHECKING:
+    from napari_track_edit._nte_app import NTEAppConfig
 
 
 # How the tracking layers are copied into the orthogonal views. Installed with
@@ -506,3 +511,25 @@ def initialize_ortho_views(viewer: Viewer) -> OrthoViewManager:
     orth_view_manager.main_controls_widget.show_checkbox.setVisible(False)
 
     return orth_view_manager
+
+
+class OrthoViewsController:
+    """Thin wrapper linking an OrthoViewManager to the app's NTEAppConfig, so
+    that toggling orthoviews through this controller keeps config.orthoviews_enabled
+    in sync with whether the views are actually shown.
+    """
+
+    def __init__(self, manager: OrthoViewManager, config: NTEAppConfig):
+        self.manager = manager
+        self.config = config
+
+    def is_shown(self) -> bool:
+        return self.manager.is_shown()
+
+    def show(self) -> None:
+        self.manager.show()
+        self.config.orthoviews_enabled = True
+
+    def hide(self) -> None:
+        self.manager.hide()
+        self.config.orthoviews_enabled = False
