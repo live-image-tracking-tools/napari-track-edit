@@ -1,18 +1,57 @@
 # do not put the from __future__ import annotations as it breaks the injection
 
 import contextlib
+import logging
+import os
+import sys
 import weakref
 from typing import Any
 
-import fastplotlib as fpl
-import numpy as np
-import pandas as pd
-import pygfx as gfx
-from psygnal import Signal
-from pygfx.utils.enums import MarkerInt
-from qtpy.QtCore import QPoint, Qt
-from qtpy.QtGui import QCursor
-from qtpy.QtWidgets import QToolTip, QVBoxLayout, QWidget
+_wgpu_logger = logging.getLogger(__name__)
+
+
+def _configure_wgpu_backend() -> None:
+    """Restrict the wgpu instance to Vulkan on Linux.
+
+    wgpu probes every backend when requesting an adapter. On Linux the GLES/EGL probe
+    calls eglMakeCurrent, which returns BadAccess once napari's Qt/vispy OpenGL context
+    is current; wgpu-native then panics in non-unwinding FFI code and aborts the whole
+    process. Mesa ships the lavapipe ICD as a software fallback, so Vulkan-only is safe.
+
+    Set NAPARI_TRACK_EDIT_WGPU_BACKENDS (comma-separated, e.g. "All") to override.
+
+    Must run before fastplotlib/pygfx create a wgpu instance.
+    """
+    if sys.platform != "linux":
+        return
+    backends = [
+        b.strip()
+        for b in os.environ.get("NAPARI_TRACK_EDIT_WGPU_BACKENDS", "Vulkan").split(",")
+        if b.strip()
+    ]
+    try:
+        from wgpu.backends.wgpu_native.extras import set_instance_extras
+
+        set_instance_extras(backends=backends)
+    except (ImportError, KeyError, AttributeError):
+        _wgpu_logger.warning("Could not restrict the wgpu backend to %s", backends)
+
+
+_configure_wgpu_backend()
+
+# fastplotlib looks up ambiguous colormap names (e.g. 'coolwarm') on import, which makes
+# cmap log a harmless warning
+logging.getLogger("cmap").setLevel(logging.ERROR)
+
+import fastplotlib as fpl  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+import pygfx as gfx  # noqa: E402
+from psygnal import Signal  # noqa: E402
+from pygfx.utils.enums import MarkerInt  # noqa: E402
+from qtpy.QtCore import QPoint, Qt  # noqa: E402
+from qtpy.QtGui import QCursor  # noqa: E402
+from qtpy.QtWidgets import QToolTip, QVBoxLayout, QWidget  # noqa: E402
 
 _SELECT_COLOR = np.array(
     [0.0, 1.0, 1.0, 1.0], dtype=np.float32
