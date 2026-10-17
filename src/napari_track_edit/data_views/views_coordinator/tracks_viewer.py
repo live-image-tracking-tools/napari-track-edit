@@ -35,6 +35,9 @@ from napari_track_edit.data_views.node_type import NodeType
 from napari_track_edit.data_views.views.layers.tracks_layer_group import (
     TracksLayerGroup,
 )
+from napari_track_edit.data_views.views.layers.viewonly_tracks_group import (
+    ViewOnlyTracksGroup,
+)
 from napari_track_edit.data_views.views.tree_view.tree_widget_utils import (
     extract_lineage_tree,
     extract_sorted_tracks,
@@ -133,6 +136,12 @@ class TracksViewer:
         self.tracks_list.view_tracks.connect(self.update_tracks)
         self.tracks_list.tracks_cleared.connect(self.clear_tracks)
         self.tracks_list.request_colormap.connect(self.set_colormap_to_trackslist)
+
+        # View-only overlays: other Tracks objects shown as plain napari layers
+        # alongside self.tracks (the one editable tree/table/menu UI applies to).
+        # Keyed by the display name so a second call with the same name replaces
+        # rather than duplicates the overlay.
+        self.viewonly_tracks: dict[str, ViewOnlyTracksGroup] = {}
         self.selected_track = None
         self.track_id_color = [0, 0, 0, 0]
         self.force = False
@@ -397,9 +406,19 @@ class TracksViewer:
         # connect to action_applied signal to track deleted nodes
         self.tracks.action_applied.connect(self._on_action_applied)
 
-        # deactivate the input labels layer
+        # deactivate the input labels layer, but leave view-only overlay layers
+        # (other Tracks objects shown read-only alongside this one) alone
+        viewonly_layers = {
+            layer
+            for group in self.viewonly_tracks.values()
+            for layer in (group.seg_layer, group.points_layer, group.tracks_layer)
+            if layer is not None
+        }
         for layer in self.viewer.layers:
-            if isinstance(layer, (napari.layers.Labels | napari.layers.Points)):
+            if (
+                isinstance(layer, (napari.layers.Labels | napari.layers.Points))
+                and layer not in viewonly_layers
+            ):
                 layer.visible = False
 
         # retrieve existing groups
@@ -421,6 +440,37 @@ class TracksViewer:
 
         # Update visualization widget
         self.mode_updated.emit()
+
+    def add_viewonly_tracks(self, tracks: Tracks, name: str) -> None:
+        """Show a Tracks object as a read-only overlay, without disturbing the
+        currently active editable tracks (self.tracks).
+
+        Renders plain napari Labels/Points/Tracks layers (see
+        ViewOnlyTracksGroup) from the given tracks' segmentation and node
+        positions: no click handling, no tree/table/menu support, just
+        visibility alongside the editable tracks. Calling this again with the
+        same name replaces that overlay rather than adding a second one.
+
+        Args:
+            tracks: The tracks to show as a view-only overlay.
+            name: Display name for the overlay; layers are named
+                "{name} (view only)_seg" etc.
+        """
+        if name in self.viewonly_tracks:
+            self.viewonly_tracks[name].set_tracks(tracks, name)
+        else:
+            self.viewonly_tracks[name] = ViewOnlyTracksGroup(self.viewer, tracks, name)
+
+    def remove_viewonly_tracks(self, name: str) -> None:
+        """Stop showing the view-only overlay registered under `name`, if any."""
+        group = self.viewonly_tracks.pop(name, None)
+        if group is not None:
+            group.remove_napari_layers()
+
+    def clear_viewonly_tracks(self) -> None:
+        """Remove every view-only overlay currently shown."""
+        for name in list(self.viewonly_tracks):
+            self.remove_viewonly_tracks(name)
 
     def clear_tracks(self) -> None:
         """Stop displaying any tracks at all: the mirror of update_tracks.

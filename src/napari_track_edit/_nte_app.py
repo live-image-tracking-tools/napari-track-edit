@@ -126,3 +126,18 @@ class NTEApp:
     def hide_panels(self) -> None:
         """Show/hide menu and tree view panels without destroying them."""
         self.menu_manager.toggle_menu_panel_visibility()
+
+    def add_viewonly_tracks(self, tracks, name: str) -> None:
+        """Show a Tracks object as a read-only overlay alongside the tracks
+        currently being edited, without disturbing the editable session.
+
+        Convenience wrapper around TracksViewer.add_viewonly_tracks - see there
+        for details. Typical use from a notebook/script:
+
+            NTEApp.get_instance(viewer).add_viewonly_tracks(other_tracks, "reference")
+        """
+        self.tracks_viewer.add_viewonly_tracks(tracks, name)
+
+    def remove_viewonly_tracks(self, name: str) -> None:
+        """Stop showing the view-only overlay registered under `name`, if any."""
+        self.tracks_viewer.remove_viewonly_tracks(name)
