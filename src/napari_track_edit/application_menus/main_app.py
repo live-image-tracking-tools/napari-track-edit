@@ -21,9 +21,9 @@ from napari_track_edit.data_views.views.table.custom_table_widget import (
     ColoredTableWidget,
 )
 from napari_track_edit.data_views.views.tree_view.tree_widget import TreeWidget
-from napari_track_edit._nte_app import NTEApp
+from napari_track_edit._nte_app import MenuWidgetConfig, NTEApp
 
-MENU_WIDGETS = {
+MENU_WIDGETS: dict[str, MenuWidgetConfig] = {
     "Getting Started": {"widget": WelcomeWidget, "location": "right"},
     "Tracking": {"widget": TrackingWidget, "location": "right"},
     "Tracks List": {"widget": TrackListWidget, "location": "right"},

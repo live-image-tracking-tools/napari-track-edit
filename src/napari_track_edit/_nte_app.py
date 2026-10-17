@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Literal, TypedDict
 
 import napari
 from napari_orthogonal_views.ortho_view_manager import OrthoViewManager
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QShortcut
+from qtpy.QtWidgets import QWidget
 
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
@@ -14,34 +15,11 @@ if TYPE_CHECKING:
     from napari_track_edit.data_views.views_coordinator.tracks_list import TracksList
 
 
-# Menu display name -> the widget class to dock and which side of the viewer it
-# docks to. The single source of truth for "what menus does this app have"; the
-# napari.yaml manifest's widget commands must each name one of these by its
-# mangled display name (see main_app.py's per-menu launcher classes) since npe2
-# requires a real importable class per command - this registry is what those
-# launcher classes and StartupWidget both read from.
-MENU_WIDGETS: dict[str, dict[str, Any]] = {}
+class MenuWidgetConfig(TypedDict):
+    """A menu widget's class and which side of the viewer it docks to."""
 
-# Named subsets of MENU_WIDGETS shown together by the grouped launcher widgets
-# (MainAppWidget, TrackingGroupWidget, EditingGroupWidget), and which tab should
-# be active when that subset opens.
-MENU_MODES: dict[str, tuple[list[str], str]] = {
-    "tracking": (
-        ["Tracking", "Tracks List", "Visualization", "Lineage View"],
-        "Tracking",
-    ),
-    "editing": (
-        [
-            "Tracks List",
-            "Editing && Selection",
-            "Visualization",
-            "Features",
-            "Groups",
-            "Lineage View",
-        ],
-        "Tracks List",
-    ),
-}
+    widget: type[QWidget]
+    location: Literal["left", "right", "top", "bottom"]
 
 
 class NTEAppConfig:
@@ -177,18 +155,3 @@ class NTEApp:
     def hide_panels(self) -> None:
         """Show/hide menu and tree view panels without destroying them."""
         self.menu_manager.toggle_menu_panel_visibility()
-
-    def widgets_for_mode(self, mode: str) -> tuple[dict[str, dict[str, Any]], str]:
-        """The menu widgets to open for `mode`, and which one should be active.
-
-        `mode` is either a MENU_MODES key (a named group), or a MENU_WIDGETS key
-        (a single menu), or "all" for every menu.
-        """
-        if mode == "all":
-            return MENU_WIDGETS, "Getting Started"
-        if mode in MENU_MODES:
-            names, active_tab = MENU_MODES[mode]
-            return {name: MENU_WIDGETS[name] for name in names}, active_tab
-        if mode in MENU_WIDGETS:
-            return {mode: MENU_WIDGETS[mode]}, mode
-        raise ValueError(f"Unknown menu mode or widget name: {mode!r}")
