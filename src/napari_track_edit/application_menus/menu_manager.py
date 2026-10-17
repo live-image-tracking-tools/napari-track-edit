@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import contextlib
-from typing import Any
+from typing import TYPE_CHECKING
 
 import napari
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QDockWidget, QScrollArea, QTabBar, QTabWidget, QWidget
 
-from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
+if TYPE_CHECKING:
+    from napari_track_edit._nte_app import MenuWidgetConfig
 
 
 class MenuManager:
@@ -18,8 +19,6 @@ class MenuManager:
         super().__init__()
 
         self.viewer = viewer
-        self.tracks_viewer = TracksViewer.get_instance(viewer)
-        self.tracks_viewer.menu_manager = self
 
         # Track the active menu widgets for show/hide operations
         self.hidden = False
@@ -31,7 +30,7 @@ class MenuManager:
         # name -> the scroll wrapper we docked, so we can destroy it again
         self.menu_widgets: dict[str, QScrollArea] = {}
 
-    def initialize_menu(self, menu: dict[str, dict[str, Any]]) -> None:
+    def initialize_menu(self, menu: dict[str, MenuWidgetConfig]) -> None:
         """Initialize the menu by creating and adding the specified widgets, with robust
         handling for closed/deleted dock widgets."""
 
