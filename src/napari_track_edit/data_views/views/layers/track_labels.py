@@ -197,6 +197,7 @@ class TrackLabels(ContourLabels):
         opacity: float,
         scale: tuple,
         tracks_viewer: TracksViewer,
+        bind_keys: bool = True,
     ):
         self.tracks_viewer = tracks_viewer
         # tracks_viewer.colormap is shared: tracks_viewer already called
@@ -220,7 +221,8 @@ class TrackLabels(ContourLabels):
         self.foreground_contour = False
 
         # Key bindings (should be specified both on the viewer (in tracks_viewer)
-        bind_keymap(self, KEYMAP, self.tracks_viewer)
+        if bind_keys:
+            bind_keymap(self, KEYMAP, self.tracks_viewer)
 
         # Listen to paint events and changing the selected label
         self.mouse_drag_callbacks.append(self.click)

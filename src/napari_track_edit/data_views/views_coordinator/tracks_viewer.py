@@ -101,9 +101,12 @@ class TracksViewer:
     def __init__(
         self,
         viewer: napari.Viewer,
+        bind_keys: bool = True,
     ):
         self.viewer = viewer
-        self.viewer.mouse_double_click_callbacks.clear()  # no double click to zoom
+        self.bind_keys = bind_keys
+        if self.bind_keys:
+            self.viewer.mouse_double_click_callbacks.clear()  # no double click to zoom
         self.tree_widget_present = False
         self.table_widget_present = False
 
@@ -124,7 +127,9 @@ class TracksViewer:
         self.mode = "all"
         self.tracks: Tracks | None = None
         self.visible: list | str = []
-        self.tracking_layers = TracksLayerGroup(self.viewer, self.tracks, "", self)
+        self.tracking_layers = TracksLayerGroup(
+            self.viewer, self.tracks, "", self, bind_keys=self.bind_keys
+        )
         self.center_node.connect(self.tracking_layers.center_view)
         self.selected_nodes = NodeSelectionHistory()
         self.selected_nodes.selection_updated.connect(self.update_selection)
@@ -241,7 +246,8 @@ class TracksViewer:
             self.set_color_feature(self.tracks.features.tracklet_key, refresh=False)
 
     def set_keybinds(self):
-        bind_keymap(self.viewer, KEYMAP, self)
+        if self.bind_keys:
+            bind_keymap(self.viewer, KEYMAP, self)
 
     def request_new_track(self, event=None) -> None:
         """Request a new track id (with new segmentation label if a seg layer is present)

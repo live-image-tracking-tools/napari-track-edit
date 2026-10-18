@@ -23,11 +23,13 @@ class TracksLayerGroup:
         tracks: Tracks,
         name: str,
         tracks_viewer: TracksViewer,
+        bind_keys: bool = True,
     ):
         self.viewer = viewer
         self.tracks_viewer = tracks_viewer
         self.tracks = tracks
         self.name = name
+        self.bind_keys = bind_keys
         self.tracks_layer: TrackGraph | None = None
         self.points_layer: TrackPoints | None = None
         self.seg_layer: TrackLabels | None = None
@@ -45,6 +47,7 @@ class TracksLayerGroup:
                 opacity=0.9,
                 scale=self.tracks.scale,
                 tracks_viewer=self.tracks_viewer,
+                bind_keys=self.bind_keys,
             )
         else:
             self.seg_layer = None
@@ -58,6 +61,7 @@ class TracksLayerGroup:
             self.points_layer = TrackPoints(
                 name=self.name + "_points",
                 tracks_viewer=self.tracks_viewer,
+                bind_keys=self.bind_keys,
             )
         else:
             self.tracks_layer = None

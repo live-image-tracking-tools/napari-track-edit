@@ -64,6 +64,7 @@ class TrackPoints(ZOnlyPoints):
         self,
         name: str,
         tracks_viewer: TracksViewer,
+        bind_keys: bool = True,
     ):
         self.tracks_viewer = tracks_viewer
         self.nodes = tracks_viewer.tracks.graph_solution.node_ids()
@@ -93,7 +94,8 @@ class TrackPoints(ZOnlyPoints):
         )
 
         # Key bindings (should be specified both on the viewer (in tracks_viewer)
-        bind_keymap(self, KEYMAP, self.tracks_viewer)
+        if bind_keys:
+            bind_keymap(self, KEYMAP, self.tracks_viewer)
 
         # Connect to click events to select nodes
         @self.mouse_drag_callbacks.append
