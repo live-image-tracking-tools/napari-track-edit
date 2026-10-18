@@ -46,7 +46,7 @@ from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksV
 class TreeWidget(QWidget):
     """fastplotlib-based widget for lineage tree visualization and navigation"""
 
-    def __init__(self, viewer: napari.Viewer):
+    def __init__(self, viewer: napari.Viewer, tracks_viewer: TracksViewer = None):
         super().__init__()
         self.lineage_df = pd.DataFrame()  # the currently viewed subset of lineages
         self.graph = None
@@ -54,7 +54,9 @@ class TreeWidget(QWidget):
         self.plot_type = "tree"  # options: "tree", "feature"
         self.view_direction = "vertical"  # options: "horizontal", "vertical"
 
-        self.tracks_viewer = TracksViewer.get_instance(viewer)
+        self.tracks_viewer = (
+            tracks_viewer if tracks_viewer is not None else TracksViewer.get_instance(viewer)
+        )
         self.tracks_viewer.update_track_df(
             initialization=True, refresh_view=True
         )  # make sure tracks_viewer initializes/updates the track df
