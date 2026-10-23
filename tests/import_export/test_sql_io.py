@@ -24,8 +24,6 @@ from napari_track_edit.import_export.sql_io import (
     tracks_from_sql,
     write_tracks_to_sql,
 )
-from napari_track_edit.motile.backend.motile_run import MotileRun
-from napari_track_edit.motile.backend.solver_params import SolverParams
 
 
 @pytest.fixture
@@ -521,25 +519,3 @@ class TestRebind:
         rebound = rebind_tracks_to_graph(tracks_2d, graph)
 
         assert len(rebound.action_history.undo_stack) == 0
-
-    def test_motile_run_keeps_its_run(self, graph_2d, tmp_path):
-        """A solved run rebinds to a run, so its solver params are not lost."""
-        params = SolverParams(max_edge_distance=42.0)
-        run = MotileRun(
-            graph_2d,
-            run_name="a run",
-            time_attr="t",
-            ndim=3,
-            solver_params=params,
-            gaps=[0.1],
-        )
-
-        graph = write_tracks_to_sql(run, tmp_path / "run.db")
-        rebound = rebind_tracks_to_graph(run, graph)
-
-        assert isinstance(rebound, MotileRun)
-        assert rebound.run_name == "a run"
-        assert rebound.solver_params.max_edge_distance == 42.0
-        assert rebound.gaps == [0.1]
-        assert rebound.time == run.time
-        assert is_sql_backed(rebound)

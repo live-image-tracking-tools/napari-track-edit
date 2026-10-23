@@ -42,9 +42,6 @@ contributions:
     - id: napari-track-edit.lineage_view
       python_name: napari_track_edit.application_menus.main_app:LineageView_LauncherWidget
       title: "Open Lineage View menu"
-    - id: napari-track-edit.solve
-      python_name: napari_track_edit.motile.backend.solve:solve
-      title: "Run motile tracking (backend only)"
     - id: napari-track-edit.Fluo_N2DL_HeLa
       python_name: napari_track_edit.example_data:Fluo_N2DL_HeLa
       title: "Load Fluo-N2DL-HeLa tracking dataset"
