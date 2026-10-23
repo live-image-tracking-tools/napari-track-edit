@@ -223,9 +223,11 @@ class TreeWidget(QWidget):
             event.accept()
             return
 
-        # Try general keybinds (these also work in table widget)
+        # Try general keybinds (these also work in table widget). Skipped for a
+        # tracks_viewer that opted out of keybinds (e.g. a view-only overlay): these
+        # all edit tracks_viewer.tracks, which is not what "view only" should allow.
         action_name = resolve_key_action(TRACKS_VIEWER_KEY_ACTIONS, event)
-        if action_name:
+        if action_name and self.tracks_viewer.bind_keys:
             method = getattr(self.tracks_viewer, action_name, None)
             if method:
                 method()
