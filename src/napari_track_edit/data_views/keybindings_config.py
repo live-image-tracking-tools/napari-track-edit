@@ -12,8 +12,8 @@ An action can target multiple objects. It will be available in the following way
 - napari layers: if "tracks_viewer" is in targets
 - Qt table_widget: if "tracks_viewer" is in targets
 - Qt tree_widget: if "tree_widget" is in targets
-- NTEApp, as a Qt.ApplicationShortcut (fires regardless of focus): if "app" is in
-  targets. "app"-targeted actions are not per-TracksViewer, so they are excluded
+- NTEApp, as a Qt.WindowShortcut (fires regardless of focus within the viewer's
+  window): if "app" is in targets. "app"-targeted actions are not per-TracksViewer, so they are excluded
   from KEYMAP/TRACKS_VIEWER_KEY_ACTIONS/TREE_WIDGET_SPECIFIC_ACTIONS; NTEApp reads
   their key directly out of KEYBINDINGS instead (see _nte_app.py).
 """

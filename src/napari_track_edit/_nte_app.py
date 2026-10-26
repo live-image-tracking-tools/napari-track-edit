@@ -57,9 +57,11 @@ class NTEApp:
         self._bind_app_keymap()
 
     def _bind_app_keymap(self) -> None:
-        """Bind every "app"-targeted KEYBINDINGS action as a Qt.ApplicationShortcut,
-        so it fires no matter what has focus - unlike "tracks_viewer"/"tree_widget"
-        actions, which only fire on the specific layer/widget they are bound to.
+        """Bind every "app"-targeted KEYBINDINGS action as a Qt.WindowShortcut,
+        so it fires no matter which widget in this viewer's window has focus -
+        unlike "tracks_viewer"/"tree_widget" actions, which only fire on the
+        specific layer/widget they are bound to. Window (not application) scope
+        keeps a second viewer's shortcut from stealing the key.
         """
         from napari_track_edit.data_views.keybindings_config import KEYBINDINGS
 
@@ -72,7 +74,7 @@ class NTEApp:
                 continue
             for key in config["napari_keys"]:
                 shortcut = QShortcut(key, qt_window)
-                shortcut.setContext(Qt.ApplicationShortcut)
+                shortcut.setContext(Qt.WindowShortcut)
                 shortcut.activated.connect(handler)
                 self._shortcuts.append(shortcut)
 
