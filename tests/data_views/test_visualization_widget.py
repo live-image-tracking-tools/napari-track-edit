@@ -299,7 +299,7 @@ class TestOrthoViewsIntegration:
             widget.viewer
         ].main_controls_widget.show_checkbox
 
-        assert not ortho_checkbox.isVisible()
+        assert ortho_checkbox.isHidden()
 
     def test_ortho_views_survive_closing_the_widget(
         self, visualization_widget, manager, qtbot
