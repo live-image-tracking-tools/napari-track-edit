@@ -128,3 +128,8 @@ class NTEApp:
     def hide_panels(self) -> None:
         """Show/hide menu and tree view panels without destroying them."""
         self.menu_manager.toggle_menu_panel_visibility()
+        if self.menu_manager.hidden:
+            # Hiding the panels can drop keyboard focus into a text field elsewhere
+            # in napari, which would then swallow the next "/" as typed text. Give
+            # focus to the canvas instead, so pressing "/" again shows the panels.
+            self.viewer.window._qt_viewer.canvas.native.setFocus()
