@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import math
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import napari
 import numpy as np
+import pandas as pd
 from funtracks.data_model import Tracks
 from funtracks.exceptions import InvalidActionError
 from funtracks.user_actions import UserAddNode, UserDeleteNodes, UserUpdateNodesAttrs
@@ -88,7 +89,7 @@ class TrackPoints(ZOnlyPoints):
             symbol=symbols,
             face_color=colors,
             size=self.default_size,
-            properties={"node_id": self.nodes},
+            features=self._get_features_df(self.nodes),
             border_color=[1, 1, 1, 1],
             blending="translucent",
         )
@@ -224,7 +225,7 @@ class TrackPoints(ZOnlyPoints):
             self.tracks_viewer.tracks, self.tracks_viewer.symbolmap
         )
         self.face_color = self._map_node_colors(self.nodes)
-        self.properties = {"node_id": self.nodes}
+        self.features = self._get_features_df(self.nodes)
         self.size = self.default_size
         self.border_color = [1, 1, 1, 1]
 
@@ -360,6 +361,52 @@ class TrackPoints(ZOnlyPoints):
         if len(nodes) == 0:
             return np.ones((1, 4))
         return self.tracks_viewer.colormap.get_colors(np.asarray(nodes))
+
+    def _get_features_df(self, nodes: list[int]) -> pd.DataFrame:
+        """Build a features DataFrame for the given nodes, in the given order.
+
+        Includes `node_id` plus every node feature on `tracks.features`, with the
+        same column names (and multi-value expansion, e.g. "Position_0") as
+        `get_features_from_tracks(only_plottable=False)` so the two stay consistent.
+        """
+
+        tracks = self.tracks_viewer.tracks
+        graph = tracks.graph_solution
+        node_feature_keys = [
+            key
+            for key, feature in tracks.features.items()
+            if feature.get("feature_type") != "edge"
+            and key in graph.node_attr_keys()
+        ]
+
+        columns: dict[str, Any] = {"node_id": list(nodes)}
+        if len(nodes) > 0 and len(node_feature_keys) > 0:
+            df_attrs = graph.filter(node_ids=nodes).node_attrs(
+                attr_keys=node_feature_keys
+            ).to_pandas()
+            for feature_key in node_feature_keys:
+                feature = tracks.features[feature_key]
+                display_name = feature.get("display_name", feature_key)
+                value_names = feature.get("value_names", None)
+                num_values = feature.get("num_values", 1)
+                values = df_attrs[feature_key].to_list()
+
+                if num_values > 1:
+                    for i in range(num_values):
+                        if isinstance(display_name, list | tuple):
+                            name = display_name[i]
+                        elif (
+                            isinstance(value_names, list)
+                            and len(value_names) == num_values
+                        ):
+                            name = f"{value_names[i]}"
+                        else:
+                            name = f"{display_name}_{i}"
+                        columns[name] = [v[i] for v in values]
+                else:
+                    columns[display_name] = values
+
+        return pd.DataFrame(columns)
 
     def get_symbols(self, tracks: Tracks, symbolmap: dict[NodeType, str]) -> list[str]:
         statemap = {
