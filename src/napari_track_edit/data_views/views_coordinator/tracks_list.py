@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
@@ -42,6 +43,8 @@ from napari_track_edit.import_export.sql_io import (
     tracks_from_sql,
 )
 from napari_track_edit.motile.backend.motile_run import MotileRun
+
+logger = logging.getLogger(__name__)
 
 GEFF_SUFFIX = ".geff"
 
@@ -205,13 +208,22 @@ class TracksList(QGroupBox):
         layout.addLayout(load_menu)
         self.setLayout(layout)
 
-    def _load_tracks(self, import_type: str) -> tuple[Tracks, str, Path | None] | None:
+    def _load_tracks(
+        self, import_type: str, path: Path | None = None
+    ) -> tuple[Tracks, str, Path | None] | None:
         """Load externally generated tracks (CSV or geff) via the import dialog.
+
+        Args:
+            import_type (str): either 'geff' or 'csv'
+            path (Path | None): For a geff, a path to fill into the dialog
+                instead of leaving the user to browse for it.
 
         Returns (tracks, name, path), where the path may be None because the
         import dialog does not always know the file the tracks came from.
         """
         dialog = ImportDialog(import_type)
+        if path is not None and import_type == "geff":
+            dialog.import_widget.set_path(path)
         if dialog.exec_() != QDialog.Accepted or dialog.tracks is None:
             return None
         return dialog.tracks, dialog.name, dialog.source_path
@@ -457,7 +469,40 @@ class TracksList(QGroupBox):
             result = self._load_tracks("geff")
         else:
             return
+        self._add_loaded(result)
 
+    def load_tracks_from_path(self, path: Path) -> None:
+        """Load tracks from a geff path without asking for it, as for a path
+        given on the command line.
+
+        The path may be a saved motile run, a geff store, or a directory holding
+        one. A geff that does not load as-is (no axes metadata, an external
+        segmentation, non-standard property names) opens the geff import dialog
+        with the path filled in, so the user can map it by hand.
+
+        Args:
+            path (Path): The run directory or geff store to load.
+        """
+        path = Path(path)
+        try:
+            if MotileRun.is_run_dir(path):
+                result = self._load_from_path(path, MotileRun.load, MotileRun.geff_path)
+            else:
+                result = self._load_from_path(path, import_from_geff)
+        except Exception as e:  # noqa: BLE001 - the import dialog can still map it
+            logger.info(
+                "Could not load %s directly (%s), opening import dialog", path, e
+            )
+            result = self._load_tracks("geff", path)
+        self._add_loaded(result)
+
+    def _add_loaded(self, result: tuple[Tracks, str, Path | None] | None) -> None:
+        """Add the result of a loader to the list and announce it.
+
+        Args:
+            result (tuple[Tracks, str, Path | None] | None): (tracks, name, path)
+                as returned by the loaders, or None if nothing was loaded.
+        """
         if result is None:
             return
         tracks, name, source_path = result
@@ -505,10 +550,22 @@ class TracksList(QGroupBox):
             return None
         directory = Path(self.file_dialog.selectedFiles()[0])
         try:
-            tracks = loader(directory)
+            return self._load_from_path(directory, loader, geff_path)
         except (ValueError, FileNotFoundError) as e:
             warn(f"Could not load tracks from {directory}: {e}", stacklevel=2)
             return None
+
+    @staticmethod
+    def _load_from_path(
+        directory: Path,
+        loader: Callable[[Path], Tracks],
+        geff_path: Callable[[Path], Path | None] | None = None,
+    ) -> tuple[Tracks, str, Path]:
+        """Load tracks from `directory` with `loader`, letting errors propagate.
+
+        Returns (tracks, name, path) as described in _load_from_dialog.
+        """
+        tracks = loader(directory)
         source = directory if geff_path is None else geff_path(directory)
         return tracks, directory.stem, source or directory
 
