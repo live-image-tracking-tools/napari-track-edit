@@ -19,8 +19,10 @@ from funtracks.import_export import (
     export_to_csv,
     export_to_geff,
     has_embedded_segmentation,
+    write_to_geff,
 )
 
+from napari_track_edit.import_export.menus.geff_import_utils import find_geff_paths
 from napari_track_edit.import_export.menus.import_dialog import ImportDialog
 from napari_track_edit.import_export.menus.prop_map_widget import StandardFieldMapWidget
 from napari_track_edit.motile.backend.motile_run import MotileRun
@@ -619,6 +621,78 @@ def test_geff_import_source_path_is_geff_group_not_container(
     assert (dialog.source_path / ".zattrs").exists() or (
         dialog.source_path / "zarr.json"
     ).exists()
+
+
+def _write_tracks_geff(graph, path, zarr_format=2):
+    tracks = Tracks(graph, ndim=3, time_attr="t", tracklet_attr="track_id")
+    write_to_geff(tracks, path, zarr_format=zarr_format)
+
+
+@pytest.mark.parametrize("zarr_format", [2, 3])
+def test_geff_import_finds_geff_in_plain_folder(
+    qtbot, tmp_path, graph_2d, monkeypatch, zarr_format
+):
+    """A plain (non-zarr) folder holding one geff resolves to that geff,
+    whatever its zarr format, and the folder is left untouched.
+
+    Searching through zarr missed a v2 geff here, and opening the folder as a
+    zarr group wrote a zarr.json into it.
+    """
+    monkeypatch.setattr(ImportDialog, "_resize_dialog", lambda self: None)
+    folder = tmp_path / "data"
+    folder.mkdir()
+    _write_tracks_geff(graph_2d, folder / "tracks.geff", zarr_format)
+    before = sorted(p.name for p in folder.iterdir())
+
+    dialog = ImportDialog(import_type="geff")
+    qtbot.addWidget(dialog)
+    dialog.import_widget._load_geff(folder)
+
+    assert dialog.import_widget.root is not None
+    assert dialog.import_widget.store_path == folder / "tracks.geff"
+    assert sorted(p.name for p in folder.iterdir()) == before
+
+
+def test_geff_import_multiple_geffs_in_folder_errors(
+    qtbot, tmp_path, graph_2d, monkeypatch, mock_qmessagebox
+):
+    """With several geffs in the folder, none is picked silently."""
+    mock_qmessagebox.critical.side_effect = None
+    monkeypatch.setattr(ImportDialog, "_resize_dialog", lambda self: None)
+    folder = tmp_path / "data"
+    folder.mkdir()
+    _write_tracks_geff(graph_2d, folder / "a.geff")
+    _write_tracks_geff(graph_2d, folder / "b.geff")
+
+    dialog = ImportDialog(import_type="geff")
+    qtbot.addWidget(dialog)
+    dialog.import_widget._load_geff(folder)
+
+    assert dialog.import_widget.root is None
+    assert dialog.import_widget.store_path is None
+    message = mock_qmessagebox.critical.call_args.args[2]
+    assert "a.geff" in message and "b.geff" in message
+
+
+def test_find_geff_paths_respects_depth(tmp_path, graph_2d):
+    deep = tmp_path / "a" / "b"
+    deep.mkdir(parents=True)
+    _write_tracks_geff(graph_2d, deep / "tracks.geff")
+
+    assert find_geff_paths(tmp_path, depth=2) == []
+    assert find_geff_paths(tmp_path, depth=3) == [deep / "tracks.geff"]
+
+
+def test_find_geff_paths_skips_unreadable_folders(tmp_path, graph_2d):
+    """One folder that cannot be read does not abort the whole search."""
+    _write_tracks_geff(graph_2d, tmp_path / "tracks.geff")
+    locked = tmp_path / "locked"
+    (locked / "sub").mkdir(parents=True)
+    locked.chmod(0)
+    try:
+        assert find_geff_paths(tmp_path) == [tmp_path / "tracks.geff"]
+    finally:
+        locked.chmod(0o755)
 
 
 def test_geff_import_without_area_computes_area(
