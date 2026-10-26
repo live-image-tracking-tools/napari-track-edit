@@ -17,11 +17,11 @@ from qtpy.QtWidgets import (
 )
 from superqt import QLabeledDoubleSlider
 
+from napari_track_edit._nte_app import NTEApp
 from napari_track_edit.data_views.colormap import (
     categorical_feature_keys,
     feature_display_name,
 )
-from napari_track_edit._nte_app import NTEApp
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 

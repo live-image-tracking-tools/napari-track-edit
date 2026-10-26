@@ -6,6 +6,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from napari_track_edit._nte_app import MenuWidgetConfig, NTEApp
 from napari_track_edit.application_menus.editing_selection_menu import (
     EditingSelectionWidget,
 )
@@ -21,7 +22,6 @@ from napari_track_edit.data_views.views.table.custom_table_widget import (
     ColoredTableWidget,
 )
 from napari_track_edit.data_views.views.tree_view.tree_widget import TreeWidget
-from napari_track_edit._nte_app import MenuWidgetConfig, NTEApp
 
 MENU_WIDGETS: dict[str, MenuWidgetConfig] = {
     "Getting Started": {"widget": WelcomeWidget, "location": "right"},
