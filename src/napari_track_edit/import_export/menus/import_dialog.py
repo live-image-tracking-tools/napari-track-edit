@@ -42,12 +42,14 @@ from napari_track_edit.import_export.menus.segmentation_widgets import (
 class ImportDialog(QDialog):
     """Dialog for importing external tracks from CSV or geff."""
 
-    def __init__(self, import_type: str = "csv") -> None:
+    def __init__(self, import_type: str = "csv", start_dir: str = "") -> None:
         """
         Construct import dialog depending on the data type.
 
         Args:
             import_type (str): either 'geff' or 'csv'
+            start_dir (str): folder the browse dialog opens in. Empty leaves
+                the choice to Qt.
         """
 
         super().__init__()
@@ -81,13 +83,13 @@ class ImportDialog(QDialog):
         self.scale_widget = ScaleWidget()
 
         if import_type == "geff":
-            self.import_widget = ImportGeffWidget()
+            self.import_widget = ImportGeffWidget(start_dir)
             self.import_widget.update_buttons.connect(self._update_segmentation_widget)
             self.segmentation_widget = GeffSegmentationWidget(
                 root=self.import_widget.root
             )
         else:
-            self.import_widget = ImportCSVWidget()
+            self.import_widget = ImportCSVWidget(start_dir)
             self.segmentation_widget = CSVSegmentationWidget()
             self.dimension_widget = DimensionWidget()
             self.dimension_widget.update_dims.connect(self._update_field_map_and_scale)

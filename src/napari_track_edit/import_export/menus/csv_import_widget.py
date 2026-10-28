@@ -21,9 +21,10 @@ class ImportCSVWidget(QWidget):
 
     update_buttons = Signal()
 
-    def __init__(self):
+    def __init__(self, start_dir: str = ""):
         super().__init__()
 
+        self.start_dir = start_dir  # folder the browse dialog opens in
         self.df = None
 
         # QlineEdit for csv file path and browse button
@@ -61,7 +62,7 @@ class ImportCSVWidget(QWidget):
         """Open File dialog to select CSV file"""
 
         csv_file, _ = QFileDialog.getOpenFileName(
-            self, "Select CSV File", "", "CSV Files (*.csv)"
+            self, "Select CSV File", self.start_dir, "CSV Files (*.csv)"
         )
         if csv_file:
             self._load_csv(csv_file)

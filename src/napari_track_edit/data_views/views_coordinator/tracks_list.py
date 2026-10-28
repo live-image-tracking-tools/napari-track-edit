@@ -138,6 +138,9 @@ class TracksList(QGroupBox):
         self.file_dialog = QFileDialog()
         self.file_dialog.setFileMode(QFileDialog.Directory)
         self.file_dialog.setOption(QFileDialog.ShowDirsOnly, True)
+        self._last_load_dir: Path | None = (
+            None  # explicit, because Ubuntu does not remember
+        )
 
         # Where the save button writes to. Auto-filled, but the user can point
         # it anywhere; edits last for the session. The label and browse button
@@ -211,10 +214,23 @@ class TracksList(QGroupBox):
         Returns (tracks, name, path), where the path may be None because the
         import dialog does not always know the file the tracks came from.
         """
-        dialog = ImportDialog(import_type)
+        dialog = ImportDialog(import_type, start_dir=self._load_start_dir())
         if dialog.exec_() != QDialog.Accepted or dialog.tracks is None:
             return None
+        # For geff, remember the store the user picked, not the group inside it
+        # that source_path points to.
+        picked = getattr(dialog.import_widget, "store_path", None) or dialog.source_path
+        if picked is not None:
+            self._last_load_dir = picked.parent
         return dialog.tracks, dialog.name, dialog.source_path
+
+    def _load_start_dir(self) -> str:
+        """Folder a load dialog opens in: where the last load came from, else
+        the save directory, else the default save directory."""
+        if self._last_load_dir is not None and self._last_load_dir.is_dir():
+            return str(self._last_load_dir)
+        save_dir = Path(self.save_dir_line.text())
+        return str(save_dir if save_dir.is_dir() else default_save_dir())
 
     def _browse_save_dir(self) -> None:
         """Let the user pick the directory that saved tracks are written to."""
@@ -501,9 +517,11 @@ class TracksList(QGroupBox):
         Returns (tracks, name, path), or None if the user cancelled or the
         directory did not contain loadable tracks.
         """
+        self.file_dialog.setDirectory(self._load_start_dir())
         if not self.file_dialog.exec_():
             return None
         directory = Path(self.file_dialog.selectedFiles()[0])
+        self._last_load_dir = directory.parent
         try:
             tracks = loader(directory)
         except (ValueError, FileNotFoundError) as e:
@@ -533,12 +551,13 @@ class TracksList(QGroupBox):
         path_str, _ = QFileDialog.getOpenFileName(
             self,
             "Open tracks database",
-            str(default_save_dir()),
+            self._load_start_dir(),
             f"SQLite database (*{SQL_SUFFIX});;All files (*)",
         )
         if not path_str:
             return None
         path = Path(path_str)
+        self._last_load_dir = path.parent
 
         try:
             tracks = tracks_from_sql(path)
