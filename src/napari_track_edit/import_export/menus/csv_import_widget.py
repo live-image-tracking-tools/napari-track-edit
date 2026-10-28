@@ -25,6 +25,8 @@ class ImportCSVWidget(QWidget):
         super().__init__()
 
         self.start_dir = start_dir  # folder the browse dialog opens in
+        # Last path picked with the browse dialog, whether or not it loaded
+        self.picked_path: Path | None = None
         self.df = None
 
         # QlineEdit for csv file path and browse button
@@ -65,6 +67,7 @@ class ImportCSVWidget(QWidget):
             self, "Select CSV File", self.start_dir, "CSV Files (*.csv)"
         )
         if csv_file:
+            self.picked_path = Path(csv_file)
             self._load_csv(csv_file)
         else:
             QMessageBox.warning(self, "Input Required", "Please select a CSV file.")

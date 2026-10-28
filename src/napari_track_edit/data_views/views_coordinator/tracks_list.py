@@ -215,13 +215,14 @@ class TracksList(QGroupBox):
         import dialog does not always know the file the tracks came from.
         """
         dialog = ImportDialog(import_type, start_dir=self._load_start_dir())
-        if dialog.exec_() != QDialog.Accepted or dialog.tracks is None:
-            return None
-        # For geff, remember the store the user picked, not the group inside it
-        # that source_path points to.
-        picked = getattr(dialog.import_widget, "store_path", None) or dialog.source_path
+        accepted = dialog.exec_() == QDialog.Accepted
+        # Remember where the user browsed to even if the import failed or was
+        # cancelled, like the other load routes do.
+        picked = dialog.import_widget.picked_path
         if picked is not None:
             self._last_load_dir = picked.parent
+        if not accepted or dialog.tracks is None:
+            return None
         return dialog.tracks, dialog.name, dialog.source_path
 
     def _load_start_dir(self) -> str:
