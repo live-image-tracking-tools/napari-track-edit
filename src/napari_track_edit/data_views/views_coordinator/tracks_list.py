@@ -32,6 +32,9 @@ from napari_track_edit.download_progress import DownloadCancelled, download_prog
 from napari_track_edit.example_data import sample_tracks_path, user_data_dir
 from napari_track_edit.import_export.geff_io import write_geff_over
 from napari_track_edit.import_export.menus.export_dialog import ExportDialog
+from napari_track_edit.import_export.menus.file_dialog_options import (
+    load_dialog_options,
+)
 from napari_track_edit.import_export.menus.import_dialog import (
     ImportDialog,
 )
@@ -518,7 +521,10 @@ class TracksList(QGroupBox):
         # A fresh dialog each time: a reused native dialog (seen on Ubuntu) opens
         # where it was pointed the previous time, ignoring setDirectory.
         dir_str = QFileDialog.getExistingDirectory(
-            self, "Select tracks directory", self._load_start_dir()
+            self,
+            "Select tracks directory",
+            self._load_start_dir(),
+            load_dialog_options(directories=True),
         )
         if not dir_str:
             return None
@@ -555,6 +561,7 @@ class TracksList(QGroupBox):
             "Open tracks database",
             self._load_start_dir(),
             f"SQLite database (*{SQL_SUFFIX});;All files (*)",
+            options=load_dialog_options(),
         )
         if not path_str:
             return None

@@ -16,6 +16,9 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from napari_track_edit.import_export.menus.file_dialog_options import (
+    load_dialog_options,
+)
 from napari_track_edit.import_export.menus.geff_import_utils import (
     find_geff_group,
 )
@@ -72,7 +75,10 @@ class ImportGeffWidget(QWidget):
         """Open File dialog to select geff folder"""
 
         folder = QFileDialog.getExistingDirectory(
-            self, "Select GEFF Zarr directory", self.start_dir
+            self,
+            "Select GEFF Zarr directory",
+            self.start_dir,
+            load_dialog_options(directories=True),
         )
         if folder:
             folder_path = Path(folder)

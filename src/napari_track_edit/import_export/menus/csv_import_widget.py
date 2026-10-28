@@ -15,6 +15,10 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from napari_track_edit.import_export.menus.file_dialog_options import (
+    load_dialog_options,
+)
+
 
 class ImportCSVWidget(QWidget):
     """QWidget for loading a CSV file as pandas dataframe."""
@@ -64,7 +68,11 @@ class ImportCSVWidget(QWidget):
         """Open File dialog to select CSV file"""
 
         csv_file, _ = QFileDialog.getOpenFileName(
-            self, "Select CSV File", self.start_dir, "CSV Files (*.csv)"
+            self,
+            "Select CSV File",
+            self.start_dir,
+            "CSV Files (*.csv)",
+            options=load_dialog_options(),
         )
         if csv_file:
             self.picked_path = Path(csv_file)
