@@ -135,9 +135,6 @@ class TracksList(QGroupBox):
         super().__init__(title="Results List")
 
         self.colormap = None
-        self.file_dialog = QFileDialog()
-        self.file_dialog.setFileMode(QFileDialog.Directory)
-        self.file_dialog.setOption(QFileDialog.ShowDirsOnly, True)
         self._last_load_dir: Path | None = (
             None  # explicit, because Ubuntu does not remember
         )
@@ -518,10 +515,14 @@ class TracksList(QGroupBox):
         Returns (tracks, name, path), or None if the user cancelled or the
         directory did not contain loadable tracks.
         """
-        self.file_dialog.setDirectory(self._load_start_dir())
-        if not self.file_dialog.exec_():
+        # A fresh dialog each time: a reused native dialog (seen on Ubuntu) opens
+        # where it was pointed the previous time, ignoring setDirectory.
+        dir_str = QFileDialog.getExistingDirectory(
+            self, "Select tracks directory", self._load_start_dir()
+        )
+        if not dir_str:
             return None
-        directory = Path(self.file_dialog.selectedFiles()[0])
+        directory = Path(dir_str)
         self._last_load_dir = directory.parent
         try:
             tracks = loader(directory)
