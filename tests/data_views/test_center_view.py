@@ -410,6 +410,9 @@ class TestCenterViewWithScale:
         )
 
         ortho_manager.cleanup()
+        # cleanup() uses deleteLater(); let the event loop run so the ortho QtViewers are
+        # actually deleted before napari's leak check (needed since PyQt6 6.12)
+        qtbot.wait(50)
 
 
 class TestExtraViewerDims:
@@ -533,6 +536,9 @@ class TestOrthoViewsWithExtraDims:
             qtbot.wait(50)
 
         ortho_manager.cleanup()
+        # cleanup() uses deleteLater(); let the event loop run so the ortho QtViewers are
+        # actually deleted before napari's leak check (needed since PyQt6 6.12)
+        qtbot.wait(50)
 
 
 class TestAxisLabels:
