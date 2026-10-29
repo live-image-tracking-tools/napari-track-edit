@@ -24,7 +24,7 @@ from qtpy.QtWidgets import (
 
 from napari_track_edit.data_views.colormap import TrackColormap
 from napari_track_edit.data_views.keybindings_config import (
-    GENERAL_KEY_ACTIONS,
+    TRACKS_VIEWER_KEY_ACTIONS,
     resolve_key_action,
 )
 from napari_track_edit.data_views.views.layers.click_utils import (
@@ -274,7 +274,7 @@ class CustomTableWidget(QTableView):
         tracks_viewer = parent.tracks_viewer
 
         # Get the action name from the general keybind mapping
-        action_name = resolve_key_action(GENERAL_KEY_ACTIONS, event)
+        action_name = resolve_key_action(TRACKS_VIEWER_KEY_ACTIONS, event)
         if action_name:
             method = getattr(tracks_viewer, action_name, None)
             if method:

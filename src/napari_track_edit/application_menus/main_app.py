@@ -6,12 +6,12 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from napari_track_edit._nte_app import MenuWidgetConfig, NTEApp
 from napari_track_edit.application_menus.editing_selection_menu import (
     EditingSelectionWidget,
 )
 from napari_track_edit.application_menus.feature_widget import FeatureWidget
 from napari_track_edit.application_menus.group_widget import GroupWidget
-from napari_track_edit.application_menus.menu_manager import MenuManager
 from napari_track_edit.application_menus.track_list_widget import TrackListWidget
 from napari_track_edit.application_menus.tracking_widget import TrackingWidget
 from napari_track_edit.application_menus.visualization_widget import (
@@ -22,9 +22,8 @@ from napari_track_edit.data_views.views.table.custom_table_widget import (
     ColoredTableWidget,
 )
 from napari_track_edit.data_views.views.tree_view.tree_widget import TreeWidget
-from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
-MENU_WIDGETS = {
+MENU_WIDGETS: dict[str, MenuWidgetConfig] = {
     "Getting Started": {"widget": WelcomeWidget, "location": "right"},
     "Tracking": {"widget": TrackingWidget, "location": "right"},
     "Tracks List": {"widget": TrackListWidget, "location": "right"},
@@ -51,11 +50,7 @@ class StartupWidget(QWidget):
         """
         super().__init__()
         self.viewer = napari_viewer
-        tracks_viewer = TracksViewer.get_instance(napari_viewer)
-        if tracks_viewer.menu_manager is not None:
-            self.menu_manager = tracks_viewer.menu_manager
-        else:
-            self.menu_manager = MenuManager(napari_viewer)
+        self.menu_manager = NTEApp.get_instance(napari_viewer).menu_manager
 
         widgets = MENU_WIDGETS
         active_tab = "Getting Started"
