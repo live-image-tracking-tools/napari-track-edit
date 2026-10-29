@@ -591,6 +591,38 @@ class TestTracksListLoadGeff:
         assert isinstance(emitted[0][0], Tracks)
         assert emitted[0][1] == geff_path
 
+    def test_load_internal_tracks_from_folder_holding_geff(
+        self, tracks_list, solution_tracks_2d, tmp_path
+    ):
+        """A plain folder holding one geff loads it, and reports the geff
+        itself as the source so listeners find data stored inside it."""
+        geff_path = tmp_path / "saved_tracks.geff"
+        write_to_geff(solution_tracks_2d, geff_path)
+
+        tracks_list.file_dialog.exec_ = MagicMock(return_value=True)
+        tracks_list.file_dialog.selectedFiles = MagicMock(return_value=[str(tmp_path)])
+
+        tracks, _, path = tracks_list.load_internal_tracks()
+
+        assert isinstance(tracks, Tracks)
+        assert path == geff_path
+
+    def test_load_internal_tracks_multiple_geffs_warns(
+        self, tracks_list, solution_tracks_2d, tmp_path
+    ):
+        write_to_geff(solution_tracks_2d, tmp_path / "a.geff")
+        write_to_geff(solution_tracks_2d, tmp_path / "b.geff")
+
+        tracks_list.file_dialog.exec_ = MagicMock(return_value=True)
+        tracks_list.file_dialog.selectedFiles = MagicMock(return_value=[str(tmp_path)])
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = tracks_list.load_internal_tracks()
+
+        assert result is None
+        assert any("Multiple GEFF groups" in str(w.message) for w in caught)
+
     def test_load_internal_tracks_bad_path_warns(self, tracks_list, tmp_path):
         bad_path = tmp_path / "nonexistent.geff"
         tracks_list.file_dialog.exec_ = MagicMock(return_value=True)

@@ -17,7 +17,7 @@ from qtpy.QtWidgets import (
 )
 
 from napari_track_edit.import_export.menus.geff_import_utils import (
-    find_geff_group,
+    find_single_geff,
 )
 
 
@@ -75,7 +75,11 @@ class ImportGeffWidget(QWidget):
             self._load_geff(folder_path)
 
     def _load_geff(self, folder_path: Path) -> None:
-        """Find the geff group in the selected folder_path and send update signal."""
+        """Find the geff in the selected folder_path and send update signal.
+
+        The folder may be a geff itself or hold exactly one, as a plain directory
+        or a zarr container. Nothing is written to it.
+        """
 
         self.root = None
         self.store_path = None
@@ -83,23 +87,25 @@ class ImportGeffWidget(QWidget):
             QMessageBox.critical(self, "Error", f"Path does not exist: {folder_path}")
             self.update_buttons.emit()
             return
+
         try:
-            store = open_zarr_store(folder_path)
-            root = zarr.group(store=store)
+            geff_path = find_single_geff(Path(folder_path))
+        except ValueError as e:
+            QMessageBox.critical(self, "Error", str(e))
+            self.update_buttons.emit()
+            return
+
+        # Opened with mode "r+" rather than through zarr.group, which creates a
+        # group when there is none. Still writable because the import dialog may
+        # add missing axes metadata to the geff.
+        try:
+            store = open_zarr_store(geff_path)
+            self.root = zarr.open_group(store=store, mode="r+")
         except (KeyError, ValueError, OSError) as e:
             QMessageBox.critical(self, "Error", f"Could not open zarr store: {e}")
             self.update_buttons.emit()
             return
 
-        geff_group = find_geff_group(root)
-        if geff_group is None:
-            QMessageBox.critical(
-                self, "Error", "No GEFF group found in the selected directory."
-            )
-            self.update_buttons.emit()
-            return
-
-        self.root = geff_group
-        self.store_path = folder_path
+        self.store_path = geff_path
         self.dir_name = os.path.basename(folder_path)
         self.update_buttons.emit()
