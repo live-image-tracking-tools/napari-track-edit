@@ -32,6 +32,9 @@ from napari_track_edit.download_progress import DownloadCancelled, download_prog
 from napari_track_edit.example_data import sample_tracks_path, user_data_dir
 from napari_track_edit.import_export.geff_io import write_geff_over
 from napari_track_edit.import_export.menus.export_dialog import ExportDialog
+from napari_track_edit.import_export.menus.file_dialog_options import (
+    load_dialog_options,
+)
 from napari_track_edit.import_export.menus.import_dialog import (
     ImportDialog,
 )
@@ -135,9 +138,9 @@ class TracksList(QGroupBox):
         super().__init__(title="Results List")
 
         self.colormap = None
-        self.file_dialog = QFileDialog()
-        self.file_dialog.setFileMode(QFileDialog.Directory)
-        self.file_dialog.setOption(QFileDialog.ShowDirsOnly, True)
+        self._last_load_dir: Path | None = (
+            None  # explicit, because Ubuntu does not remember
+        )
 
         # Where the save button writes to. Auto-filled, but the user can point
         # it anywhere; edits last for the session. The label and browse button
@@ -211,10 +214,24 @@ class TracksList(QGroupBox):
         Returns (tracks, name, path), where the path may be None because the
         import dialog does not always know the file the tracks came from.
         """
-        dialog = ImportDialog(import_type)
-        if dialog.exec_() != QDialog.Accepted or dialog.tracks is None:
+        dialog = ImportDialog(import_type, start_dir=self._load_start_dir())
+        accepted = dialog.exec_() == QDialog.Accepted
+        # Remember where the user browsed to even if the import failed or was
+        # cancelled, like the other load routes do.
+        picked = dialog.import_widget.picked_path
+        if picked is not None:
+            self._last_load_dir = picked.parent
+        if not accepted or dialog.tracks is None:
             return None
         return dialog.tracks, dialog.name, dialog.source_path
+
+    def _load_start_dir(self) -> str:
+        """Folder a load dialog opens in: where the last load came from, else
+        the save directory, else the default save directory."""
+        if self._last_load_dir is not None and self._last_load_dir.is_dir():
+            return str(self._last_load_dir)
+        save_dir = Path(self.save_dir_line.text())
+        return str(save_dir if save_dir.is_dir() else default_save_dir())
 
     def _browse_save_dir(self) -> None:
         """Let the user pick the directory that saved tracks are written to."""
@@ -501,9 +518,18 @@ class TracksList(QGroupBox):
         Returns (tracks, name, path), or None if the user cancelled or the
         directory did not contain loadable tracks.
         """
-        if not self.file_dialog.exec_():
+        # A fresh dialog each time: a reused native dialog (seen on Ubuntu) opens
+        # where it was pointed the previous time, ignoring setDirectory.
+        dir_str = QFileDialog.getExistingDirectory(
+            self,
+            "Select tracks directory",
+            self._load_start_dir(),
+            load_dialog_options(directories=True),
+        )
+        if not dir_str:
             return None
-        directory = Path(self.file_dialog.selectedFiles()[0])
+        directory = Path(dir_str)
+        self._last_load_dir = directory.parent
         try:
             tracks = loader(directory)
         except (ValueError, FileNotFoundError) as e:
@@ -533,12 +559,14 @@ class TracksList(QGroupBox):
         path_str, _ = QFileDialog.getOpenFileName(
             self,
             "Open tracks database",
-            str(default_save_dir()),
+            self._load_start_dir(),
             f"SQLite database (*{SQL_SUFFIX});;All files (*)",
+            options=load_dialog_options(),
         )
         if not path_str:
             return None
         path = Path(path_str)
+        self._last_load_dir = path.parent
 
         try:
             tracks = tracks_from_sql(path)
