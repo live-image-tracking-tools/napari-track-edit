@@ -502,12 +502,19 @@ class TestTracksListOverwrite:
 # ---------------------------------------------------------------------------
 
 
+_GET_EXISTING_DIRECTORY = (
+    "napari_track_edit.data_views.views_coordinator.tracks_list."
+    "QFileDialog.getExistingDirectory"
+)
+
+
 class TestTracksListLoadMotileRun:
-    def test_load_motile_run_success(self, tracks_list, motile_run, tmp_path):
+    def test_load_motile_run_success(
+        self, tracks_list, motile_run, tmp_path, monkeypatch
+    ):
         save_dir = motile_run.save(tmp_path / "run1.geff")
 
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=True)
-        tracks_list.file_dialog.selectedFiles = MagicMock(return_value=[str(save_dir)])
+        monkeypatch.setattr(_GET_EXISTING_DIRECTORY, lambda *a, **k: str(save_dir))
 
         tracks, name, path = tracks_list.load_motile_run()
 
@@ -518,22 +525,20 @@ class TestTracksListLoadMotileRun:
         assert path == save_dir
 
     def test_load_motile_run_adds_to_list_via_load_tracks(
-        self, tracks_list, motile_run, tmp_path
+        self, tracks_list, motile_run, tmp_path, monkeypatch
     ):
         save_dir = motile_run.save(tmp_path)
 
         tracks_list.dropdown_menu.setCurrentText("Motile Run")
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=True)
-        tracks_list.file_dialog.selectedFiles = MagicMock(return_value=[str(save_dir)])
+        monkeypatch.setattr(_GET_EXISTING_DIRECTORY, lambda *a, **k: str(save_dir))
 
         tracks_list.load_tracks()
 
         assert tracks_list.tracks_list.count() == 1
 
-    def test_load_motile_run_bad_path_warns(self, tracks_list, tmp_path):
+    def test_load_motile_run_bad_path_warns(self, tracks_list, tmp_path, monkeypatch):
         bad_path = tmp_path / "nonexistent_run"
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=True)
-        tracks_list.file_dialog.selectedFiles = MagicMock(return_value=[str(bad_path)])
+        monkeypatch.setattr(_GET_EXISTING_DIRECTORY, lambda *a, **k: str(bad_path))
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -542,8 +547,8 @@ class TestTracksListLoadMotileRun:
         assert len(caught) == 1
         assert result is None
 
-    def test_load_motile_run_dialog_cancelled(self, tracks_list):
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=False)
+    def test_load_motile_run_dialog_cancelled(self, tracks_list, monkeypatch):
+        monkeypatch.setattr(_GET_EXISTING_DIRECTORY, lambda *a, **k: "")
         assert tracks_list.load_motile_run() is None
 
 
@@ -554,14 +559,13 @@ class TestTracksListLoadMotileRun:
 
 class TestTracksListLoadGeff:
     def test_load_internal_tracks_success(
-        self, tracks_list, solution_tracks_2d, tmp_path
+        self, tracks_list, solution_tracks_2d, tmp_path, monkeypatch
     ):
         geff_path = tmp_path / "saved_tracks.geff"
         write_to_geff(solution_tracks_2d, geff_path)
 
         tracks_list.dropdown_menu.setCurrentText("Tracks (geff)")
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=True)
-        tracks_list.file_dialog.selectedFiles = MagicMock(return_value=[str(geff_path)])
+        monkeypatch.setattr(_GET_EXISTING_DIRECTORY, lambda *a, **k: str(geff_path))
 
         tracks_list.load_tracks()
 
@@ -571,14 +575,13 @@ class TestTracksListLoadGeff:
         assert widget.name.text() == "saved_tracks"
 
     def test_load_internal_tracks_emits_signal(
-        self, tracks_list, solution_tracks_2d, tmp_path
+        self, tracks_list, solution_tracks_2d, tmp_path, monkeypatch
     ):
         geff_path = tmp_path / "saved_tracks.geff"
         write_to_geff(solution_tracks_2d, geff_path)
 
         tracks_list.dropdown_menu.setCurrentText("Tracks (geff)")
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=True)
-        tracks_list.file_dialog.selectedFiles = MagicMock(return_value=[str(geff_path)])
+        monkeypatch.setattr(_GET_EXISTING_DIRECTORY, lambda *a, **k: str(geff_path))
 
         emitted = []
         tracks_list.tracks_loaded.connect(lambda t, p: emitted.append((t, p)))
@@ -591,10 +594,11 @@ class TestTracksListLoadGeff:
         assert isinstance(emitted[0][0], Tracks)
         assert emitted[0][1] == geff_path
 
-    def test_load_internal_tracks_bad_path_warns(self, tracks_list, tmp_path):
+    def test_load_internal_tracks_bad_path_warns(
+        self, tracks_list, tmp_path, monkeypatch
+    ):
         bad_path = tmp_path / "nonexistent.geff"
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=True)
-        tracks_list.file_dialog.selectedFiles = MagicMock(return_value=[str(bad_path)])
+        monkeypatch.setattr(_GET_EXISTING_DIRECTORY, lambda *a, **k: str(bad_path))
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -603,8 +607,8 @@ class TestTracksListLoadGeff:
         assert len(caught) == 1
         assert result is None
 
-    def test_load_internal_tracks_dialog_cancelled(self, tracks_list):
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=False)
+    def test_load_internal_tracks_dialog_cancelled(self, tracks_list, monkeypatch):
+        monkeypatch.setattr(_GET_EXISTING_DIRECTORY, lambda *a, **k: "")
         assert tracks_list.load_internal_tracks() is None
         assert tracks_list.tracks_list.count() == 0
 
