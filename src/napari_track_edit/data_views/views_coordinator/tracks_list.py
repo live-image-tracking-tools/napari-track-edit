@@ -32,6 +32,7 @@ from napari_track_edit.download_progress import DownloadCancelled, download_prog
 from napari_track_edit.example_data import sample_tracks_path, user_data_dir
 from napari_track_edit.import_export.geff_io import write_geff_over
 from napari_track_edit.import_export.menus.export_dialog import ExportDialog
+from napari_track_edit.import_export.menus.geff_import_utils import find_single_geff
 from napari_track_edit.import_export.menus.import_dialog import (
     ImportDialog,
 )
@@ -514,9 +515,13 @@ class TracksList(QGroupBox):
 
     def load_internal_tracks(self) -> tuple[Tracks, str, Path] | None:
         """Load tracks saved in internal format. The user selects the GEFF
-        store directly (the path written by :func:`write_to_geff`).
+        store (the path written by :func:`write_to_geff`), or a directory
+        holding exactly one, in which case that store is reported as loaded.
         """
-        return self._load_from_dialog(import_from_geff)
+        return self._load_from_dialog(
+            lambda directory: import_from_geff(find_single_geff(directory)),
+            geff_path=find_single_geff,
+        )
 
     def load_sql_tracks(self) -> tuple[Tracks, str, Path] | None:
         """Open an existing tracks database.
