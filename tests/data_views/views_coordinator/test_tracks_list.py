@@ -610,6 +610,72 @@ class TestTracksListLoadGeff:
 
 
 # ---------------------------------------------------------------------------
+# TracksList — load_tracks_from_path (path given on the command line)
+# ---------------------------------------------------------------------------
+
+
+class TestTracksListLoadFromPath:
+    def test_geff_store_loads_directly(self, tracks_list, solution_tracks_2d, tmp_path):
+        geff_path = tmp_path / "saved_tracks.geff"
+        write_to_geff(solution_tracks_2d, geff_path)
+        emitted = []
+        tracks_list.tracks_loaded.connect(lambda t, p: emitted.append((t, p)))
+
+        with patch(
+            "napari_track_edit.data_views.views_coordinator.tracks_list.ImportDialog"
+        ) as mock_dialog:
+            tracks_list.load_tracks_from_path(geff_path)
+
+        mock_dialog.assert_not_called()
+        assert tracks_list.tracks_list.count() == 1
+        widget = tracks_list.tracks_list.itemWidget(tracks_list.tracks_list.item(0))
+        assert widget.name.text() == "saved_tracks"
+        assert emitted[0][1] == geff_path
+
+    def test_motile_run_loads_as_run(self, tracks_list, motile_run, tmp_path):
+        save_dir = motile_run.save(tmp_path / "run1.geff")
+        emitted = []
+        tracks_list.tracks_loaded.connect(lambda t, p: emitted.append((t, p)))
+
+        tracks_list.load_tracks_from_path(save_dir)
+
+        assert len(emitted) == 1
+        assert isinstance(emitted[0][0], MotileRun)
+        assert emitted[0][1] == save_dir
+
+    def test_unloadable_path_opens_prefilled_import_dialog(
+        self, tracks_list, motile_run, tmp_path
+    ):
+        mock_dialog = MagicMock()
+        mock_dialog.exec_.return_value = QDialog.Accepted
+        mock_dialog.tracks = motile_run
+        mock_dialog.name = "imported"
+        mock_dialog.source_path = tmp_path
+
+        with patch(
+            "napari_track_edit.data_views.views_coordinator.tracks_list.ImportDialog",
+            return_value=mock_dialog,
+        ) as dialog_cls:
+            tracks_list.load_tracks_from_path(tmp_path)
+
+        dialog_cls.assert_called_once_with("geff")
+        mock_dialog.import_widget.set_path.assert_called_once_with(tmp_path)
+        assert tracks_list.tracks_list.count() == 1
+
+    def test_import_dialog_cancelled_adds_nothing(self, tracks_list, tmp_path):
+        mock_dialog = MagicMock()
+        mock_dialog.exec_.return_value = QDialog.Rejected
+
+        with patch(
+            "napari_track_edit.data_views.views_coordinator.tracks_list.ImportDialog",
+            return_value=mock_dialog,
+        ):
+            tracks_list.load_tracks_from_path(tmp_path)
+
+        assert tracks_list.tracks_list.count() == 0
+
+
+# ---------------------------------------------------------------------------
 # TracksList — load_tracks dispatch
 # ---------------------------------------------------------------------------
 

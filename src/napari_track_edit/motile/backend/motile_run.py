@@ -164,6 +164,22 @@ class MotileRun(Tracks):
         return run_dir
 
     @staticmethod
+    def is_run_dir(directory: Path | str) -> bool:
+        """Whether the given directory was written by MotileRun.save.
+
+        Plain geff stores have no solver params or run attrs, and v1 runs are
+        recognised by their graph.json.
+
+        Args:
+            directory (Path | str): The directory to check.
+        """
+        directory = Path(directory)
+        return any(
+            (directory / name).is_file()
+            for name in (PARAMS_FILENAME, ATTRS_FILENAME, "graph.json")
+        )
+
+    @staticmethod
     def geff_path(run_dir: Path | str) -> Path | None:
         """Return the geff store holding a saved run's graph.
 

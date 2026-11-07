@@ -1,10 +1,14 @@
 import argparse
 import logging
 import sys
+from functools import partial
+from pathlib import Path
 
 import napari
+from qtpy.QtCore import QTimer
 
 from napari_track_edit.application_menus.main_app import StartupWidget
+from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 LOG_FORMAT = "%(asctime)s [%(filename)s:%(lineno)d] %(levelname)-8s %(message)s"
 
@@ -43,6 +47,17 @@ def _activate_on_macos(viewer: napari.Viewer) -> None:
     window.activateWindow()
 
 
+def _open_tracks(viewer: napari.Viewer, path: Path) -> None:
+    """Load the tracks given on the command line and show the Tracks List tab.
+
+    Scheduled after StartupWidget's own deferred setup, so it overrides the
+    default foreground tab and any import dialog opens over a finished window.
+    """
+    tracks_viewer = TracksViewer.get_instance(viewer)
+    tracks_viewer.menu_manager.set_foreground_tabs(["Tracks List"])
+    tracks_viewer.tracks_list.load_tracks_from_path(path)
+
+
 def main():
     _configure_logging()
 
@@ -52,12 +67,23 @@ def main():
         choices=["all", "tracking", "editing"],
         default="all",
     )
+    parser.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        help="geff store or saved motile run to open",
+    )
 
     args, _ = parser.parse_known_args()
+    path = args.path.resolve() if args.path is not None else None
+    if path is not None and not path.exists():
+        parser.error(f"path does not exist: {path}")
 
     viewer = napari.Viewer()
     StartupWidget(viewer, mode=args.mode)
     _activate_on_macos(viewer)
+    if path is not None:
+        QTimer.singleShot(0, partial(_open_tracks, viewer, path))
 
     napari.run()
 

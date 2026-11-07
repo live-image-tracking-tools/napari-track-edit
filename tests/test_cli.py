@@ -69,3 +69,61 @@ def test_main_configures_package_logging():
     finally:
         package_logger.handlers = original_handlers
         package_logger.setLevel(original_level)
+
+
+def test_main_opens_path_after_startup(tmp_path):
+    """A path argument is loaded once the event loop starts, not before."""
+
+    viewer = MagicMock(name="viewer")
+
+    with (
+        patch("napari_track_edit.__main__.napari.Viewer", return_value=viewer),
+        patch("napari_track_edit.__main__.napari.run"),
+        patch("napari_track_edit.__main__.StartupWidget"),
+        patch("napari_track_edit.__main__.QTimer") as mock_timer,
+        patch("napari_track_edit.__main__.TracksViewer") as mock_tracks_viewer,
+        patch.object(sys, "argv", ["prog", str(tmp_path)]),
+    ):
+        from napari_track_edit.__main__ import main
+
+        main()
+
+        mock_timer.singleShot.assert_called_once()
+        _, callback = mock_timer.singleShot.call_args.args
+        callback()
+
+    tracks_viewer = mock_tracks_viewer.get_instance.return_value
+    tracks_viewer.tracks_list.load_tracks_from_path.assert_called_once_with(
+        tmp_path.resolve()
+    )
+    tracks_viewer.menu_manager.set_foreground_tabs.assert_called_once_with(
+        ["Tracks List"]
+    )
+
+
+def test_main_without_path_loads_nothing():
+    with (
+        patch("napari_track_edit.__main__.napari.Viewer", return_value=MagicMock()),
+        patch("napari_track_edit.__main__.napari.run"),
+        patch("napari_track_edit.__main__.StartupWidget"),
+        patch("napari_track_edit.__main__.QTimer") as mock_timer,
+        patch.object(sys, "argv", ["prog"]),
+    ):
+        from napari_track_edit.__main__ import main
+
+        main()
+
+    mock_timer.singleShot.assert_not_called()
+
+
+def test_main_rejects_missing_path(tmp_path):
+    with (
+        patch("napari_track_edit.__main__.napari.Viewer") as mock_viewer,
+        patch.object(sys, "argv", ["prog", str(tmp_path / "missing.geff")]),
+        pytest.raises(SystemExit),
+    ):
+        from napari_track_edit.__main__ import main
+
+        main()
+
+    mock_viewer.assert_not_called()
