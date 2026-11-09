@@ -1,5 +1,6 @@
 import contextlib
 import weakref
+from collections.abc import Callable
 
 import napari
 from psygnal import Signal
@@ -18,6 +19,11 @@ class LayerDropdown(QComboBox):
         follow_active (bool): when True (the default), the dropdown follows the active
             layer in the viewer. Set to False to only change the selection when the user
             explicitly picks a layer from the dropdown.
+        layer_filter (Callable, optional): only list the layers of the listed types for
+            which this returns True. Call `refresh` when its outcome may have changed.
+        layer_icon (Callable, optional): returns an icon to show next to a layer, or
+            None for no icon, e.g. to mark layers. Call `refresh` when it may have
+            changed.
     """
 
     layer_changed = Signal(str)
@@ -29,6 +35,8 @@ class LayerDropdown(QComboBox):
         allow_none=False,
         exclude_types: tuple = (),
         follow_active: bool = True,
+        layer_filter: Callable | None = None,
+        layer_icon: Callable | None = None,
     ):
         super().__init__()
 
@@ -37,6 +45,8 @@ class LayerDropdown(QComboBox):
         self.exclude_types = exclude_types
         self.allow_none = allow_none
         self.follow_active = follow_active
+        self.layer_filter = layer_filter
+        self.layer_icon = layer_icon
         self.selected_layer = None
         self._deleted = False
 
@@ -129,11 +139,7 @@ class LayerDropdown(QComboBox):
         try:
             if len(self.viewer.layers.selection) == 1:
                 selected = self.viewer.layers.selection.active
-                if (
-                    isinstance(selected, self.layer_types)
-                    and not isinstance(selected, self.exclude_types)
-                    and selected != self.selected_layer
-                ):
+                if self._is_listed(selected) and selected != self.selected_layer:
                     self.setCurrentText(selected.name)
                     self._emit_layer_changed()
         except (AttributeError, RuntimeError, TypeError):
@@ -157,10 +163,7 @@ class LayerDropdown(QComboBox):
                 self.clear()
 
                 layers = [
-                    layer
-                    for layer in self.viewer.layers
-                    if isinstance(layer, self.layer_types)
-                    and not isinstance(layer, self.exclude_types)
+                    layer for layer in self.viewer.layers if self._is_listed(layer)
                 ]
 
                 names = []
@@ -169,7 +172,11 @@ class LayerDropdown(QComboBox):
                     names.append("No selection")
 
                 for layer in layers:
-                    self.addItem(layer.name)
+                    icon = self.layer_icon(layer) if self.layer_icon else None
+                    if icon is None:
+                        self.addItem(layer.name)
+                    else:
+                        self.addItem(icon, layer.name)
                     names.append(layer.name)
 
                 # restore previous selection if still valid
@@ -182,6 +189,20 @@ class LayerDropdown(QComboBox):
                 self._emit_layer_changed()
         except (AttributeError, RuntimeError, TypeError):
             pass
+
+    def _is_listed(self, layer) -> bool:
+        """Whether the layer is one of the listed types and passes the filter"""
+
+        return (
+            isinstance(layer, self.layer_types)
+            and not isinstance(layer, self.exclude_types)
+            and (self.layer_filter is None or self.layer_filter(layer))
+        )
+
+    def refresh(self) -> None:
+        """Update the listed layers, e.g. after the outcome of the filter changed"""
+
+        self._update_dropdown()
 
     def set_layer_types(self, layer_types: tuple, exclude_types: tuple = ()) -> None:
         """Change which layer types are listed (and which to exclude) and refresh."""

@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from napari_orthogonal_views.ortho_view_manager import _VIEWER_MANAGERS
 
+from napari_track_edit.application_menus.plane_slider_widget import PlaneSliderWidget
 from napari_track_edit.application_menus.visualization_widget import (
     VisualizationWidget,
 )
@@ -25,7 +26,11 @@ def visualization_widget(viewer, solution_tracks_3d, qtbot):
 
     assert tracks_viewer.tracking_layers.seg_layer is not None
 
-    return widget, tracks_viewer
+    yield widget, tracks_viewer
+
+    # the viewer is shared by the whole module, so take this widget back off it the way
+    # MenuManager does when the menu is closed
+    widget.cleanup()
 
 
 @pytest.mark.parametrize("mode", ["lineage", "group", "all"])
@@ -150,6 +155,8 @@ def test_reopened_widget_shows_current_overlay_state(visualization_widget, qtbot
     qtbot.addWidget(new_widget)
 
     assert not new_widget.show_viewer_overlay.isChecked()
+    # take it off the shared viewer before qtbot deletes it, as MenuManager does
+    new_widget.cleanup()
 
 
 @pytest.mark.parametrize(
@@ -331,6 +338,7 @@ class TestOrthoViewsIntegration:
         assert new_widget.show_ortho_views.isChecked()
         ortho.main_controls_widget.show_checkbox.setChecked(False)
         assert not new_widget.show_ortho_views.isChecked()
+        new_widget.cleanup()
 
 
 class TestColorByWidget:
@@ -413,3 +421,306 @@ class TestColorByWidget:
         assert tracks_viewer.color_feature_key == group
         combo = widget.color_by_widget.combo
         assert combo.itemData(combo.currentIndex()) == group
+
+
+# Plane slider integration tests
+class TestPlaneSlidersIntegration:
+    """Tests for the plane and clipping plane controls in the visualization menu.
+
+    The plane sliders act on the selected layer and, for the tracking layers, on the
+    whole group of tracking layers.
+    """
+
+    @pytest.fixture
+    def plane_sliders(self, visualization_widget, viewer):
+        widget, tracks_viewer = visualization_widget
+        viewer.dims.ndisplay = 3
+        # start from an empty selection, so that every test below selects a layer that
+        # was not already the active one and the plane sliders pick it up
+        viewer.layers.selection.clear()
+        return widget, widget.plane_sliders, tracks_viewer.tracking_layers
+
+    def test_selecting_points_finds_the_whole_tracking_group(
+        self, plane_sliders, viewer
+    ):
+        """With the points layer selected, the plane controls act on all three layers"""
+
+        _, sliders, layers = plane_sliders
+        viewer.layers.selection.active = layers.points_layer
+
+        # the points layer has no plane of its own, so it borrows the one of the seg
+        assert sliders._plane_layer() is layers.seg_layer
+        assert set(sliders._target_layers()) == set(layers.track_layers)
+
+    def test_tracking_layers_share_nothing_else(self, plane_sliders, viewer):
+        """The group shares the plane controls only, the layers stay independent"""
+
+        _, sliders, layers = plane_sliders
+        viewer.layers.selection.active = layers.points_layer
+        sliders._set_mode("clipping_plane")
+
+        layers.points_layer.visible = False
+        layers.points_layer.opacity = 0.2
+        assert layers.seg_layer.visible
+        assert layers.seg_layer.opacity != 0.2
+
+    def test_plane_mode_gives_the_points_a_slab_and_leaves_the_seg_unclipped(
+        self, plane_sliders, viewer
+    ):
+        """The points mimic plane mode with a slab, which must not clip the seg layer"""
+
+        _, sliders, layers = plane_sliders
+        viewer.layers.selection.active = layers.points_layer
+        sliders._set_mode("plane")
+        sliders.plane_slider.setValue(4)
+
+        assert layers.seg_layer.depiction == "plane"
+        assert layers.seg_layer.plane.position == (4.0, 0.0, 0.0)
+
+        half_thickness = sliders.slab_thickness_box.value() / 2
+        for layer in (layers.points_layer, layers.tracks_layer):
+            lower, upper = layer.experimental_clipping_planes
+            assert lower.position == (4.0 - half_thickness, 0.0, 0.0)
+            assert upper.position == (4.0 + half_thickness, 0.0, 0.0)
+            assert lower.enabled and upper.enabled
+
+        # the layer that defines the plane is clipped by that plane, not by the slab
+        for clip_plane in layers.seg_layer.experimental_clipping_planes:
+            assert not clip_plane.enabled
+
+    def test_clipping_plane_mode_is_shared_by_all_tracking_layers(
+        self, plane_sliders, viewer
+    ):
+        """Outside plane mode the whole group is clipped the same way"""
+
+        _, sliders, layers = plane_sliders
+        viewer.layers.selection.active = layers.seg_layer
+        sliders._set_mode("clipping_plane")
+        sliders.clipping_plane_slider.setValue((2, 6))
+
+        assert layers.seg_layer.depiction == "volume"
+        for layer in layers.track_layers:
+            lower, upper = layer.experimental_clipping_planes
+            assert lower.position == (2.0, 0.0, 0.0)
+            assert upper.position == (6.0, 0.0, 0.0)
+            assert lower.enabled and upper.enabled
+
+    def test_cleanup_takes_the_plane_sliders_off_the_viewer(
+        self, plane_sliders, viewer
+    ):
+        """Closing the menu must not leave callbacks behind pointing at dead widgets"""
+
+        widget, sliders, layers = plane_sliders
+        viewer.layers.selection.active = layers.points_layer
+
+        assert sliders._snap_cursor_to_plane in viewer.mouse_move_callbacks
+
+        widget.cleanup()
+
+        for callbacks in (
+            viewer.mouse_move_callbacks,
+            viewer.mouse_drag_callbacks,
+            viewer.mouse_double_click_callbacks,
+        ):
+            assert sliders._snap_cursor_to_plane not in callbacks
+
+        # idempotent
+        widget.cleanup()
+
+
+class TestPlaneLinkedImage:
+    """Tests for linking an image layer to the plane controls of the tracking layers.
+
+    The link only shares the plane, its depiction and the clipping planes, unlike a
+    napari link, which shares every common attribute (including e.g. the colormap of
+    two labels layers, which napari cannot compare).
+    """
+
+    @pytest.fixture
+    def linked(self, visualization_widget, viewer):
+        widget, tracks_viewer = visualization_widget
+        layers = tracks_viewer.tracking_layers
+        image = viewer.add_image(
+            np.random.random(layers.seg_layer.data.shape), name="raw"
+        )
+        viewer.add_image(np.zeros((2, 3, 4, 5)), name="other shape")
+        viewer.dims.ndisplay = 3
+        viewer.layers.selection.active = layers.seg_layer
+        return widget, image, layers
+
+    def test_lists_only_images_with_the_shape_of_the_segmentation(self, linked):
+        widget, _, _ = linked
+        dropdown = widget.plane_sliders.link_dropdown
+
+        names = [dropdown.itemText(i) for i in range(dropdown.count())]
+        assert names == ["raw"]
+
+    def test_linked_image_follows_the_plane(self, linked):
+        widget, image, layers = linked
+        sliders = widget.plane_sliders
+        sliders._set_mode("plane")
+        sliders.plane_slider.setValue(3)
+
+        widget.plane_sliders.link_dropdown.setCurrentText("raw")
+        widget.plane_sliders.link_btn.setChecked(True)
+
+        # the image takes on the plane of the group when it joins
+        assert image.depiction == "plane"
+        assert image.plane.position == layers.seg_layer.plane.position
+
+        sliders.plane_slider.setValue(5)
+        assert image.plane.position == (5.0, 0.0, 0.0)
+
+        # only the plane controls are linked
+        layers.seg_layer.visible = False
+        assert image.visible
+
+    def test_linked_image_is_clipped_with_the_group(self, linked):
+        widget, image, _ = linked
+        sliders = widget.plane_sliders
+        widget.plane_sliders.link_dropdown.setCurrentText("raw")
+        widget.plane_sliders.link_btn.setChecked(True)
+
+        sliders._set_mode("clipping_plane")
+        sliders.clipping_plane_slider.setValue((2, 6))
+
+        lower, upper = image.experimental_clipping_planes
+        assert lower.position == (2.0, 0.0, 0.0)
+        assert upper.position == (6.0, 0.0, 0.0)
+        assert lower.enabled and upper.enabled
+
+    def test_selecting_the_image_drives_the_group(self, linked, viewer):
+        widget, image, layers = linked
+        sliders = widget.plane_sliders
+        widget.plane_sliders.link_dropdown.setCurrentText("raw")
+        widget.plane_sliders.link_btn.setChecked(True)
+
+        viewer.layers.selection.active = image
+        assert set(sliders._target_layers()) == {image, *layers.track_layers}
+
+    def test_unlinking_releases_the_image(self, linked):
+        widget, image, _ = linked
+        sliders = widget.plane_sliders
+        sliders._set_mode("plane")
+        widget.plane_sliders.link_dropdown.setCurrentText("raw")
+        widget.plane_sliders.link_btn.setChecked(True)
+        sliders.plane_slider.setValue(3)
+
+        widget.plane_sliders.link_btn.setChecked(False)
+        sliders.plane_slider.setValue(5)
+
+        assert image not in sliders._target_layers()
+        # the image goes back to a plain volume, without clipping
+        assert image.depiction == "volume"
+        assert not any(plane.enabled for plane in image.experimental_clipping_planes)
+
+    def test_unlinking_the_selected_image_shows_it_as_volume(self, linked, viewer):
+        widget, image, _ = linked
+        sliders = widget.plane_sliders
+        sliders._set_mode("clipping_plane")
+        widget.plane_sliders.link_dropdown.setCurrentText("raw")
+        widget.plane_sliders.link_btn.setChecked(True)
+        viewer.layers.selection.active = image
+
+        widget.plane_sliders.link_btn.setChecked(False)
+
+        assert sliders.mode == "volume"
+        assert image.depiction == "volume"
+        assert not any(plane.enabled for plane in image.experimental_clipping_planes)
+
+    def test_link_row_works_without_a_selected_layer(self, linked, viewer, qtbot):
+        widget, _, _ = linked
+        viewer.layers.selection.clear()
+        sliders = PlaneSliderWidget(viewer, link_group=list)
+        qtbot.addWidget(sliders)
+
+        # the plane controls wait for a selected layer, linking an image does not
+        assert not sliders.mode_widget.isEnabled()
+        assert sliders.link_widget.isEnabled()
+        sliders.cleanup()
+
+    def test_removing_the_image_unlinks_it(self, linked, viewer):
+        widget, image, _ = linked
+        widget.plane_sliders.link_dropdown.setCurrentText("raw")
+        widget.plane_sliders.link_btn.setChecked(True)
+
+        viewer.layers.remove(image)
+
+        assert not widget.plane_sliders.link_btn.isChecked()
+        assert widget.plane_sliders.linked_images == []
+
+    def test_several_images_can_be_linked(self, linked, viewer):
+        widget, image, layers = linked
+        sliders = widget.plane_sliders
+        second = viewer.add_image(
+            np.random.random(layers.seg_layer.data.shape), name="raw 2"
+        )
+        viewer.layers.selection.active = layers.seg_layer  # adding selected the image
+        sliders._set_mode("plane")
+        sliders.plane_slider.setValue(3)
+
+        for name in ("raw", "raw 2"):
+            sliders.link_dropdown.setCurrentText(name)
+            sliders.link_btn.setChecked(True)
+
+        # picking another image in the dropdown no longer unlinks the first one
+        assert sliders.linked_images == [image, second]
+        sliders.plane_slider.setValue(5)
+        for linked_image in (image, second):
+            assert linked_image.depiction == "plane"
+            assert linked_image.plane.position == (5.0, 0.0, 0.0)
+
+    def test_chain_button_follows_the_picked_image(self, linked, viewer):
+        widget, _, layers = linked
+        sliders = widget.plane_sliders
+        viewer.add_image(np.random.random(layers.seg_layer.data.shape), name="raw 2")
+
+        sliders.link_dropdown.setCurrentText("raw")
+        sliders.link_btn.setChecked(True)
+        sliders.link_dropdown.setCurrentText("raw 2")
+        assert not sliders.link_btn.isChecked()
+        sliders.link_dropdown.setCurrentText("raw")
+        assert sliders.link_btn.isChecked()
+
+    def test_linked_images_are_marked_in_the_dropdown(self, linked, viewer):
+        widget, _, layers = linked
+        sliders = widget.plane_sliders
+        dropdown = sliders.link_dropdown
+        viewer.add_image(np.random.random(layers.seg_layer.data.shape), name="raw 2")
+
+        dropdown.setCurrentText("raw")
+        sliders.link_btn.setChecked(True)
+
+        def marked():
+            return {
+                dropdown.itemText(i)
+                for i in range(dropdown.count())
+                if not dropdown.itemIcon(i).isNull()
+            }
+
+        assert marked() == {"raw"}
+        # the marker survives the dropdown being rebuilt
+        viewer.add_image(np.zeros((2, 3, 4, 5)), name="another")
+        assert marked() == {"raw"}
+
+        sliders.link_btn.setChecked(False)
+        assert marked() == set()
+
+    def test_unlinking_one_image_keeps_the_other(self, linked, viewer):
+        widget, image, layers = linked
+        sliders = widget.plane_sliders
+        second = viewer.add_image(
+            np.random.random(layers.seg_layer.data.shape), name="raw 2"
+        )
+        viewer.layers.selection.active = layers.seg_layer  # adding selected the image
+        sliders._set_mode("plane")
+        for name in ("raw", "raw 2"):
+            sliders.link_dropdown.setCurrentText(name)
+            sliders.link_btn.setChecked(True)
+
+        sliders.link_dropdown.setCurrentText("raw")
+        sliders.link_btn.setChecked(False)
+
+        assert sliders.linked_images == [second]
+        assert image.depiction == "volume"
+        assert second.depiction == "plane"

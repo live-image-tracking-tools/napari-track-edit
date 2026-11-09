@@ -1,5 +1,6 @@
 import napari
 import pytest
+from napari._vispy.utils.gl import get_gl_extensions
 
 
 @pytest.fixture(scope="module")
@@ -24,5 +25,7 @@ def viewer(qapp):
     module- or session-scoped viewer fixture.
     """
     v = napari.Viewer(show=False)
+    # Query the GL extensions now, while the canvas of this viewer is current.
+    get_gl_extensions()
     yield v
     v.close()

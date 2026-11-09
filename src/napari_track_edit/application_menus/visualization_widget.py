@@ -18,6 +18,7 @@ from qtpy.QtWidgets import (
 )
 from superqt import QLabeledDoubleSlider
 
+from napari_track_edit.application_menus.plane_slider_widget import PlaneSliderWidget
 from napari_track_edit.data_views.colormap import (
     categorical_feature_keys,
     feature_display_name,
@@ -257,12 +258,30 @@ class VisualizationWidget(QWidget):
 
         main_layout.addWidget(self.show_ortho_views)
         main_layout.addWidget(self.show_viewer_overlay)
+
+        # Plane and clipping plane controls. They act on the layer that is selected in
+        # the viewer and, for the tracking layers, on the whole group of tracking layers,
+        # which an image layer can join for the plane controls only.
+        self.plane_sliders = PlaneSliderWidget(
+            self.viewer,
+            link_group=lambda: self.tracks_viewer.tracking_layers.track_layers,
+        )
+        plane_box = QGroupBox("Plane views")
+        plane_box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        plane_box_layout = QVBoxLayout(plane_box)
+        plane_box_layout.setContentsMargins(8, 6, 8, 6)
+        plane_box_layout.setSpacing(6)
+        plane_box_layout.addWidget(self.plane_sliders)
+        main_layout.addWidget(plane_box)
+
         main_layout.addStretch(1)
 
     def cleanup(self) -> None:
-        """Stop following the TracksViewer, which outlives this widget.
+        """Detach from the viewer before this widget is destroyed. Idempotent.
 
-        Called by MenuManager when the dock is destroyed.
+        Called by MenuManager when the menu is closed. The plane sliders install
+        callbacks and event connections on the viewer itself, which would outlive this
+        widget and raise when they touch its deleted Qt children.
         """
 
         for signal, slot in (
@@ -272,6 +291,8 @@ class VisualizationWidget(QWidget):
         ):
             with contextlib.suppress(ValueError, KeyError, RuntimeError):
                 signal.disconnect(slot)
+
+        self.plane_sliders.cleanup()
 
     def toggle_viewer_text_overlay(self, checked: bool):
         """Change the visibility of the text overlay"""

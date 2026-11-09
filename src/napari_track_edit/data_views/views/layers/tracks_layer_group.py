@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 import napari
 from funtracks.data_model import Tracks
-from napari.experimental import link_layers, unlink_layers
 
 from napari_track_edit.data_views.views.layers.track_graph import TrackGraph
 from napari_track_edit.data_views.views.layers.track_labels import TrackLabels
@@ -85,33 +84,15 @@ class TracksLayerGroup:
         if self.seg_layer is not None:
             self.viewer.add_layer(self.seg_layer)
 
-        # self.link_experimental_clipping_planes()
+    @property
+    def track_layers(self) -> list[napari.layers.Layer]:
+        """The tracking layers that are currently in the viewer"""
 
-    def link_experimental_clipping_planes(self):
-        """Link the clipping planes of all tracking layers"""
-
-        track_layers = []
-        if self.tracks_layer is not None:
-            track_layers.append(self.tracks_layer)
-        if self.seg_layer is not None:
-            track_layers.append(self.seg_layer)
-        if self.points_layer is not None:
-            track_layers.append(self.points_layer)
-
-        if all(layer.ndim >= 3 for layer in track_layers):
-            link_layers(track_layers, ("experimental_clipping_planes",))
-
-    def unlink_experimental_clipping_planes(self):
-        """Unlink the clipping planes of all tracking layers"""
-
-        track_layers = []
-        if self.tracks_layer is not None:
-            track_layers.append(self.tracks_layer)
-        if self.seg_layer is not None:
-            track_layers.append(self.seg_layer)
-        if self.points_layer is not None:
-            track_layers.append(self.points_layer)
-        unlink_layers(track_layers, ("experimental_clipping_planes",))
+        return [
+            layer
+            for layer in (self.tracks_layer, self.seg_layer, self.points_layer)
+            if layer is not None
+        ]
 
     def _refresh(self) -> None:
         """Refresh the tracking layers with new tracks info"""
