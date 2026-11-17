@@ -81,7 +81,7 @@ jobs:
       # base restores it instead of re-running -- half the benchmark cost with no
       # measurement downside.
       - name: Retrieve cached baseline if available
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         id: cache_baseline
         with:
           path: baseline.json
@@ -110,7 +110,7 @@ jobs:
             uv run pytest tests/benchmarks -o addopts= --benchmark-json baseline.json
 
       - name: Cache baseline results
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         if: steps.cache_baseline.outputs.cache-hit != 'true' && hashFiles('baseline.json') != ''
         with:
           path: baseline.json
