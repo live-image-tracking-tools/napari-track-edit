@@ -100,6 +100,7 @@ testing =[
     "pytest-cov>=6",
     "pytest-qt>=4.4,<5",
     "pytest-benchmark>=5,<6",
+    "pytest-timeout>=2.3,<3",
 ]
 docs = [
     "myst-parser>=4,<5",
