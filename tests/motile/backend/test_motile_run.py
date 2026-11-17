@@ -1,6 +1,7 @@
 import warnings
 
 import numpy as np
+import pytest
 
 from napari_track_edit.motile.backend import MotileRun, SolverParams
 
@@ -157,3 +158,11 @@ def test_save_load(tmp_path, graph_2d):
         newrun.get_position(node_id)
         newrun.get_track_id(node_id)
     newrun.get_positions(node_ids, incl_time=True)
+
+
+def test_load_folder_without_tracks_raises_and_writes_nothing(tmp_path):
+    """A folder that is not a run fails to load without leaving an empty
+    tracks group behind."""
+    with pytest.raises(FileNotFoundError):
+        MotileRun.load(tmp_path)
+    assert list(tmp_path.iterdir()) == []

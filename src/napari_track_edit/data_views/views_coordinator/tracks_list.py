@@ -555,5 +555,8 @@ class TracksList(QGroupBox):
     def load_motile_run(self) -> tuple[Tracks, str, Path] | None:
         """Load a MotileRun from disk. The user selects the directory created
         by MotileRun.save(), and the geff store inside it is reported.
+
+        Unlike load_internal_tracks this does not search subfolders: a run is
+        read from its own directory layout, so the run directory must be picked.
         """
         return self._load_from_dialog(MotileRun.load, geff_path=MotileRun.geff_path)
