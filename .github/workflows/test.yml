@@ -108,7 +108,10 @@ jobs:
           # job timeout with no hint which test it was. The thread method is the one
           # that works everywhere, including inside a blocking Qt event loop.
           # --durations: lists the slowest tests per platform, to see where CI time goes.
-          run: uv run pytest --color=yes --timeout=120 --timeout-method=thread --durations=30 --cov=napari_track_edit --cov-report=xml --cov-report=term-missing .
+          # -n auto: one pytest-xdist worker per CPU core. --dist loadfile keeps each test
+          # module on one worker, so module-scoped fixtures like the shared napari viewer
+          # in tests/data_views/conftest.py are still created once per module.
+          run: uv run pytest --color=yes -n auto --dist loadfile --timeout=120 --timeout-method=thread --durations=30 --cov=napari_track_edit --cov-report=xml --cov-report=term-missing .
 
       - name: Coverage
         uses: codecov/codecov-action@v7

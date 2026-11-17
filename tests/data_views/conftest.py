@@ -1,28 +1,43 @@
+from unittest.mock import patch
+
 import napari
 import pytest
+from app_model import Application
+from napari._app_model._app import NapariApplication, _napari_names
+from napari._qt._qapp_model.qactions import init_qactions
+from napari.plugins import _initialize_plugins
 
 
 @pytest.fixture(scope="module")
-def viewer(qapp):
+def viewer(qapp, request):
     """Module-scoped napari viewer shared across all tests in a module.
 
     Avoids the expensive viewer creation per test. Tests should use the
     per-file autouse ``clear_viewer_layers`` fixture (defined in each test
     module) to clean up layers between tests.
 
-    Does NOT mix with napari's ``make_napari_viewer`` fixture. That fixture calls
-    ``napari.plugins._initialize_plugins.cache_clear()`` for every test it runs,
-    so a bare ``napari.Viewer()`` constructed afterwards re-runs plugin
-    registration against the real app model and napari >= 0.7 raises
-    ``ValueError: Command 'napari-track-edit.solve' already registered``. Within a
-    pytest session, don't add tests using ``make_napari_viewer`` alongside tests
-    using this fixture; prefer ``napari.components.ViewerModel`` where no Qt
-    window is needed (also ~15x cheaper to construct).
+    The viewer gets its own app model for the module, the same way napari's
+    ``make_napari_viewer`` uses ``mock_app_model`` for each test. Without that,
+    the viewer registers this plugin's commands in napari's real app model, and
+    once ``make_napari_viewer`` has cleared the plugin cache, the next viewer
+    registers them a second time and napari >= 0.7 raises ``ValueError: Command
+    'napari-track-edit.solve' already registered``. That depends on which test
+    files ran before in the same process, so it only showed up under
+    pytest-xdist.
 
-    Switching this fixture to ``make_napari_viewer`` avoids the conflict but adds
-    ~56s to the full suite (~2.2x on tests/data_views), because napari exposes no
-    module- or session-scoped viewer fixture.
+    Switching this fixture to ``make_napari_viewer`` also avoids the conflict but
+    adds ~56s to the full suite (~2.2x on tests/data_views), because napari
+    exposes no module- or session-scoped viewer fixture.
     """
-    v = napari.Viewer(show=False)
-    yield v
-    v.close()
+    app_name = f"test_app_{request.module.__name__}"
+    app = NapariApplication(app_name)
+    app.injection_store.namespace = _napari_names
+    _initialize_plugins.cache_clear()
+    init_qactions.cache_clear()
+    with patch.object(NapariApplication, "get_app_model", return_value=app):
+        v = napari.Viewer(show=False)
+        yield v
+        v.close()
+    Application.destroy(app_name)
+    _initialize_plugins.cache_clear()
+    init_qactions.cache_clear()
