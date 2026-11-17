@@ -5,6 +5,7 @@ from funtracks.data_model import Tracks
 from funtracks.utils.tracksdata_utils import create_empty_graph
 from tracksdata.nodes._mask import Mask
 
+from napari_track_edit._nte_app import NTEApp
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 
@@ -61,6 +62,20 @@ def reset_tracks_viewer():
         if hasattr(instance, "viewer") and instance.viewer is not None:
             instance.viewer.keymap.clear()
         del TracksViewer._instance
+
+
+@pytest.fixture(autouse=True)
+def reset_nte_app():
+    """Reset NTEApp singleton before and after each test, same as
+    reset_tracks_viewer: without this, state like config.orthoviews_enabled
+    leaks into unrelated tests that happen to reuse the same viewer fixture.
+    """
+    if hasattr(NTEApp, "_instance"):
+        del NTEApp._instance
+
+    yield
+    if hasattr(NTEApp, "_instance"):
+        del NTEApp._instance
 
 
 def _make_mask(bbox: list[int]) -> Mask:
