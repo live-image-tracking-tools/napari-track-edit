@@ -6,6 +6,7 @@ import pytest
 from app_model import Application
 from napari._app_model._app import NapariApplication, _napari_names
 from napari._qt._qapp_model.qactions import init_qactions
+from napari.components import ViewerModel
 from napari.plugins import _initialize_plugins
 from qtpy.QtCore import QEvent
 
@@ -14,9 +15,28 @@ from qtpy.QtCore import QEvent
 def viewer(qapp, request):
     """Module-scoped napari viewer shared across all tests in a module.
 
-    Avoids the expensive viewer creation per test. Tests should use the
-    per-file autouse ``clear_viewer_layers`` fixture (defined in each test
-    module) to clean up layers between tests.
+    By default a ``ViewerModel``: layers and events, but no Qt viewer. Creating
+    one takes ~0.002 s instead of ~0.2 s, and layer changes are not drawn on a
+    canvas, which on CI is done by a CPU-only software renderer. That made most
+    of these test files 2-5x faster. ``qapp`` is still needed: TracksViewer
+    creates Qt widgets such as TracksList.
+
+    A module whose tests need napari's Qt side (the Qt window, canvas, dock
+    widgets, ortho views) gets a real ``napari.Viewer`` by marking itself::
+
+        pytestmark = pytest.mark.qt_viewer
+
+    Tests should use the per-file autouse ``clear_viewer_layers`` fixture
+    (defined in each test module) to clean up layers between tests.
+    """
+    if request.node.get_closest_marker("qt_viewer") is None:
+        yield ViewerModel()
+        return
+    yield from _qt_viewer(qapp, request)
+
+
+def _qt_viewer(qapp, request):
+    """A real napari.Viewer for one module, see ``viewer``.
 
     The viewer gets its own app model for the module, the same way napari's
     ``make_napari_viewer`` uses ``mock_app_model`` for each test. Without that,

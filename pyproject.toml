@@ -137,6 +137,7 @@ conflicts = [
 addopts = "--ignore=tests/benchmarks -m 'not network'"
 markers = [
     "network: needs access to external download servers (deselected by default)",
+    "qt_viewer: the module-scoped viewer fixture in tests/data_views is a real napari.Viewer instead of a ViewerModel",
 ]
 # Benchmark modules are named bench_*.py; collect those in addition to test_*.py so
 # that pointing pytest at the tests/benchmarks directory discovers them.
