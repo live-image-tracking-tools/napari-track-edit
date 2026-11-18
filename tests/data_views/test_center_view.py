@@ -11,6 +11,9 @@ from tracksdata.nodes._mask import Mask
 from napari_track_edit.data_views.views.ortho_views import initialize_ortho_views
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
+# These tests need napari's Qt viewer, see the viewer fixture in conftest.py.
+pytestmark = pytest.mark.qt_viewer
+
 
 def visible_point_indices(layer: napari.layers.Points) -> np.ndarray:
     """Indices of the points currently in slice.
