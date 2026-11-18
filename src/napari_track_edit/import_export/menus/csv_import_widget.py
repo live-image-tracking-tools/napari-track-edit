@@ -15,15 +15,22 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from napari_track_edit.import_export.menus.file_dialog_options import (
+    load_dialog_options,
+)
+
 
 class ImportCSVWidget(QWidget):
     """QWidget for loading a CSV file as pandas dataframe."""
 
     update_buttons = Signal()
 
-    def __init__(self):
+    def __init__(self, start_dir: str = ""):
         super().__init__()
 
+        self.start_dir = start_dir  # folder the browse dialog opens in
+        # Last path picked with the browse dialog, whether or not it loaded
+        self.picked_path: Path | None = None
         self.df = None
 
         # QlineEdit for csv file path and browse button
@@ -61,9 +68,14 @@ class ImportCSVWidget(QWidget):
         """Open File dialog to select CSV file"""
 
         csv_file, _ = QFileDialog.getOpenFileName(
-            self, "Select CSV File", "", "CSV Files (*.csv)"
+            self,
+            "Select CSV File",
+            self.start_dir,
+            "CSV Files (*.csv)",
+            options=load_dialog_options(),
         )
         if csv_file:
+            self.picked_path = Path(csv_file)
             self._load_csv(csv_file)
         else:
             QMessageBox.warning(self, "Input Required", "Please select a CSV file.")
