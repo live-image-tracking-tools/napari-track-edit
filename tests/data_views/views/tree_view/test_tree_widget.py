@@ -18,6 +18,9 @@ from napari_track_edit.data_views.views.tree_view.navigation_widget import (
 from napari_track_edit.data_views.views.tree_view.tree_widget import TreeWidget
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
+# These tests need napari's Qt viewer, see the viewer fixture in conftest.py.
+pytestmark = pytest.mark.qt_viewer
+
 
 @pytest.fixture(autouse=True)
 def clear_viewer_layers(viewer):

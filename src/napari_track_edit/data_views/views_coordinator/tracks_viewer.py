@@ -109,7 +109,10 @@ class TracksViewer:
             if hasattr(TracksViewer, "_instance") and TracksViewer._instance is self:
                 del TracksViewer._instance
 
-        viewer.window._qt_window.destroyed.connect(_clear_if_current)
+        # A ViewerModel (no Qt window) is enough for everything else here.
+        qt_window = getattr(getattr(viewer, "window", None), "_qt_window", None)
+        if qt_window is not None:
+            qt_window.destroyed.connect(_clear_if_current)
         self.colormap = TrackColormap()
         self.color_feature_key: str | None = None
 
