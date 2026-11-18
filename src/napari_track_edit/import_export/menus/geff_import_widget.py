@@ -83,8 +83,13 @@ class ImportGeffWidget(QWidget):
         if folder:
             folder_path = Path(folder)
             self.picked_path = folder_path
-            self.geff_path_line.setText(str(folder_path))
-            self._load_geff(folder_path)
+            self.set_path(folder_path)
+
+    def set_path(self, folder_path: Path) -> None:
+        """Show the given path in the path line and load the geff group in it."""
+
+        self.geff_path_line.setText(str(folder_path))
+        self._load_geff(folder_path)
 
     def _load_geff(self, folder_path: Path) -> None:
         """Find the geff group in the selected folder_path and send update signal."""
