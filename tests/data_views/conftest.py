@@ -7,6 +7,7 @@ from app_model import Application
 from napari._app_model._app import NapariApplication, _napari_names
 from napari._qt._qapp_model.qactions import init_qactions
 from napari.plugins import _initialize_plugins
+from qtpy.QtCore import QEvent
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +45,9 @@ def viewer(qapp, request):
     # is still alive when it starts, but only runs a partial gc.collect(1), which
     # misses a viewer that lived through a whole module. Under pytest-xdist the
     # next file on this worker can be one that uses make_napari_viewer.
-    qapp.processEvents()  # run pending deleteLater calls
+    # processEvents() does not run deleteLater; flush those explicitly. Needed since
+    # PyQt 6.12 for the ortho views' own QtViewers.
+    qapp.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     gc.collect()
     Application.destroy(app_name)
     _initialize_plugins.cache_clear()
