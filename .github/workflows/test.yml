@@ -115,10 +115,12 @@ jobs:
           # job timeout with no hint which test it was. The thread method is the one
           # that works everywhere, including inside a blocking Qt event loop.
           # --durations: lists the slowest tests per platform, to see where CI time goes.
-          # -n auto: one pytest-xdist worker per CPU core. --dist loadfile keeps each test
+          # -n logical: one pytest-xdist worker per logical CPU. "auto" counts physical
+          # cores, which gave ubuntu and Windows runners (4 vCPUs) only 2 workers.
+          # --dist loadfile keeps each test
           # module on one worker, so module-scoped fixtures like the shared napari viewer
           # in tests/data_views/conftest.py are still created once per module.
-          run: uv run pytest --color=yes -n auto --dist loadfile --timeout=120 --timeout-method=thread --durations=30 ${{ matrix.coverage && '--cov=napari_track_edit --cov-report=xml --cov-report=term-missing' || '' }} .
+          run: uv run pytest --color=yes -n logical --dist loadfile --timeout=120 --timeout-method=thread --durations=30 ${{ matrix.coverage && '--cov=napari_track_edit --cov-report=xml --cov-report=term-missing' || '' }} .
 
       - name: Coverage
         if: matrix.coverage
