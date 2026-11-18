@@ -49,6 +49,8 @@ jobs:
           - platform: ubuntu-latest
             python-version: "3.13"
             resolution: highest
+            # The only job that collects coverage, see the Test step.
+            coverage: true
           - platform: macos-latest
             python-version: "3.13"
             resolution: highest
@@ -102,10 +104,26 @@ jobs:
 
       - name: Test
         uses: aganders3/headless-gui@v2
+        env:
+          # Coverage is collected on one job only: it costs ~24% on Python 3.11, where
+          # coverage can only use the slow sys.settrace core. On 3.12+ sysmon
+          # (sys.monitoring) costs a few percent. Codecov gets one report per run.
+          COVERAGE_CORE: sysmon
         with:
-          run: uv run pytest --color=yes --cov=napari_track_edit --cov-report=xml --cov-report=term-missing .
+          # --timeout: a hung test (e.g. an unmocked modal dialog) dumps every thread's
+          # stack and stops the run after 2 minutes, instead of hitting the 30 minute
+          # job timeout with no hint which test it was. The thread method is the one
+          # that works everywhere, including inside a blocking Qt event loop.
+          # --durations: lists the slowest tests per platform, to see where CI time goes.
+          # -n logical: one pytest-xdist worker per logical CPU. "auto" counts physical
+          # cores, which gave ubuntu and Windows runners (4 vCPUs) only 2 workers.
+          # --dist loadfile keeps each test
+          # module on one worker, so module-scoped fixtures like the shared napari viewer
+          # in tests/data_views/conftest.py are still created once per module.
+          run: uv run pytest --color=yes -n logical --dist loadfile --timeout=120 --timeout-method=thread --durations=30 ${{ matrix.coverage && '--cov=napari_track_edit --cov-report=xml --cov-report=term-missing' || '' }} .
 
       - name: Coverage
+        if: matrix.coverage
         uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

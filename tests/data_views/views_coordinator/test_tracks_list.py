@@ -431,16 +431,21 @@ class TestTracksListOverwrite:
 # ---------------------------------------------------------------------------
 
 
+_GET_EXISTING_DIRECTORY = (
+    "napari_track_edit.data_views.views_coordinator.tracks_list."
+    "QFileDialog.getExistingDirectory"
+)
+
+
 class TestTracksListLoadGeff:
     def test_load_internal_tracks_success(
-        self, tracks_list, solution_tracks_2d, tmp_path
+        self, tracks_list, solution_tracks_2d, tmp_path, monkeypatch
     ):
         geff_path = tmp_path / "saved_tracks.geff"
         write_to_geff(solution_tracks_2d, geff_path)
 
         tracks_list.dropdown_menu.setCurrentText("Tracks (geff)")
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=True)
-        tracks_list.file_dialog.selectedFiles = MagicMock(return_value=[str(geff_path)])
+        monkeypatch.setattr(_GET_EXISTING_DIRECTORY, lambda *a, **k: str(geff_path))
 
         tracks_list.load_tracks()
 
@@ -450,14 +455,13 @@ class TestTracksListLoadGeff:
         assert widget.name.text() == "saved_tracks"
 
     def test_load_internal_tracks_emits_signal(
-        self, tracks_list, solution_tracks_2d, tmp_path
+        self, tracks_list, solution_tracks_2d, tmp_path, monkeypatch
     ):
         geff_path = tmp_path / "saved_tracks.geff"
         write_to_geff(solution_tracks_2d, geff_path)
 
         tracks_list.dropdown_menu.setCurrentText("Tracks (geff)")
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=True)
-        tracks_list.file_dialog.selectedFiles = MagicMock(return_value=[str(geff_path)])
+        monkeypatch.setattr(_GET_EXISTING_DIRECTORY, lambda *a, **k: str(geff_path))
 
         emitted = []
         tracks_list.tracks_loaded.connect(lambda t, p: emitted.append((t, p)))
@@ -470,10 +474,11 @@ class TestTracksListLoadGeff:
         assert isinstance(emitted[0][0], Tracks)
         assert emitted[0][1] == geff_path
 
-    def test_load_internal_tracks_bad_path_warns(self, tracks_list, tmp_path):
+    def test_load_internal_tracks_bad_path_warns(
+        self, tracks_list, tmp_path, monkeypatch
+    ):
         bad_path = tmp_path / "nonexistent.geff"
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=True)
-        tracks_list.file_dialog.selectedFiles = MagicMock(return_value=[str(bad_path)])
+        monkeypatch.setattr(_GET_EXISTING_DIRECTORY, lambda *a, **k: str(bad_path))
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -482,9 +487,64 @@ class TestTracksListLoadGeff:
         assert len(caught) == 1
         assert result is None
 
-    def test_load_internal_tracks_dialog_cancelled(self, tracks_list):
-        tracks_list.file_dialog.exec_ = MagicMock(return_value=False)
+    def test_load_internal_tracks_dialog_cancelled(self, tracks_list, monkeypatch):
+        monkeypatch.setattr(_GET_EXISTING_DIRECTORY, lambda *a, **k: "")
         assert tracks_list.load_internal_tracks() is None
+        assert tracks_list.tracks_list.count() == 0
+
+
+# ---------------------------------------------------------------------------
+# TracksList — load_tracks_from_path (path given on the command line)
+# ---------------------------------------------------------------------------
+
+
+class TestTracksListLoadFromPath:
+    def test_geff_store_loads_directly(self, tracks_list, solution_tracks_2d, tmp_path):
+        geff_path = tmp_path / "saved_tracks.geff"
+        write_to_geff(solution_tracks_2d, geff_path)
+        emitted = []
+        tracks_list.tracks_loaded.connect(lambda t, p: emitted.append((t, p)))
+
+        with patch(
+            "napari_track_edit.data_views.views_coordinator.tracks_list.ImportDialog"
+        ) as mock_dialog:
+            tracks_list.load_tracks_from_path(geff_path)
+
+        mock_dialog.assert_not_called()
+        assert tracks_list.tracks_list.count() == 1
+        widget = tracks_list.tracks_list.itemWidget(tracks_list.tracks_list.item(0))
+        assert widget.name.text() == "saved_tracks"
+        assert emitted[0][1] == geff_path
+
+    def test_unloadable_path_opens_prefilled_import_dialog(
+        self, tracks_list, solution_tracks_2d, tmp_path
+    ):
+        mock_dialog = MagicMock()
+        mock_dialog.exec_.return_value = QDialog.Accepted
+        mock_dialog.tracks = solution_tracks_2d
+        mock_dialog.name = "imported"
+        mock_dialog.source_path = tmp_path
+
+        with patch(
+            "napari_track_edit.data_views.views_coordinator.tracks_list.ImportDialog",
+            return_value=mock_dialog,
+        ) as dialog_cls:
+            tracks_list.load_tracks_from_path(tmp_path)
+
+        assert dialog_cls.call_args.args == ("geff",)
+        mock_dialog.import_widget.set_path.assert_called_once_with(tmp_path)
+        assert tracks_list.tracks_list.count() == 1
+
+    def test_import_dialog_cancelled_adds_nothing(self, tracks_list, tmp_path):
+        mock_dialog = MagicMock()
+        mock_dialog.exec_.return_value = QDialog.Rejected
+
+        with patch(
+            "napari_track_edit.data_views.views_coordinator.tracks_list.ImportDialog",
+            return_value=mock_dialog,
+        ):
+            tracks_list.load_tracks_from_path(tmp_path)
+
         assert tracks_list.tracks_list.count() == 0
 
 

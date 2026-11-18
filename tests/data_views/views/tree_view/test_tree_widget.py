@@ -18,6 +18,9 @@ from napari_track_edit.data_views.views.tree_view.navigation_widget import (
 from napari_track_edit.data_views.views.tree_view.tree_widget import TreeWidget
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
+# These tests need napari's Qt viewer, see the viewer fixture in conftest.py.
+pytestmark = pytest.mark.qt_viewer
+
 
 @pytest.fixture(autouse=True)
 def clear_viewer_layers(viewer):
@@ -588,8 +591,9 @@ def test_deleted_tree_widget_leaves_no_dangling_canvas(viewer):
     gc.collect()
 
     assert canvas.get_closed()
-    # this is what the loop does on QApplication.aboutToQuit
-    remaining = loop.get_canvases(close_closed=True)
+    # the canvases the loop closes on QApplication.aboutToQuit
+    try:
+        remaining = loop.get_canvases(close_closed=True)  # rendercanvas < 3
+    except TypeError:
+        remaining = loop.get_canvases()  # rendercanvas 3 unregisters closed canvases
     assert canvas not in remaining
-    for remaining_canvas in remaining:
-        getattr(remaining_canvas, "_rc_closed_by_loop", False)
