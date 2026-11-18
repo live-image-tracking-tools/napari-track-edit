@@ -36,6 +36,7 @@ from napari_track_edit.import_export.menus.export_dialog import ExportDialog
 from napari_track_edit.import_export.menus.file_dialog_options import (
     load_dialog_options,
 )
+from napari_track_edit.import_export.menus.geff_import_utils import find_single_geff
 from napari_track_edit.import_export.menus.import_dialog import (
     ImportDialog,
 )
@@ -597,9 +598,13 @@ class TracksList(QGroupBox):
 
     def load_internal_tracks(self) -> tuple[Tracks, str, Path] | None:
         """Load tracks saved in internal format. The user selects the GEFF
-        store directly (the path written by :func:`write_to_geff`).
+        store (the path written by :func:`write_to_geff`), or a directory
+        holding exactly one, in which case that store is reported as loaded.
         """
-        return self._load_from_dialog(import_from_geff)
+        return self._load_from_dialog(
+            lambda directory: import_from_geff(find_single_geff(directory)),
+            geff_path=find_single_geff,
+        )
 
     def load_sql_tracks(self) -> tuple[Tracks, str, Path] | None:
         """Open an existing tracks database.
@@ -635,5 +640,8 @@ class TracksList(QGroupBox):
     def load_motile_run(self) -> tuple[Tracks, str, Path] | None:
         """Load a MotileRun from disk. The user selects the directory created
         by MotileRun.save(), and the geff store inside it is reported.
+
+        Unlike load_internal_tracks this does not search subfolders: a run is
+        read from its own directory layout, so the run directory must be picked.
         """
         return self._load_from_dialog(MotileRun.load, geff_path=MotileRun.geff_path)

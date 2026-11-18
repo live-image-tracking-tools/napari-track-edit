@@ -240,8 +240,16 @@ class MotileRun(Tracks):
             tracks = import_from_geff(tracks_path)
         elif (run_dir / "graph.json").exists():
             tracks = load_v1_tracks(run_dir)
-        else:
+        elif (run_dir / "tracks").exists():
             tracks = import_from_geff(run_dir / "tracks")
+        else:
+            # Checked here because import_from_geff would create a zarr group
+            # at the missing path before failing.
+            raise FileNotFoundError(
+                f"No saved run found in {run_dir}. Select the run directory "
+                "itself, or use 'Tracks (geff)' to load a geff from a folder "
+                "that contains one."
+            )
         if attrs is not None:
             # New runs use the "shape" key; fall back to the legacy
             # "segmentation_shape" key for runs saved by older versions.
