@@ -67,7 +67,7 @@ class TracksButton(QWidget):
     # https://doc.qt.io/qt-5/qlistwidget.html#setItemWidget
     # I think this means if we want static buttons we can just make the row here
     # but if we want to change the buttons we need to do something more complex
-    # Columns: Run name, save, export, delete buttons
+    # Columns: tracks name, save, export, delete buttons
     def __init__(self, tracks: Tracks, name: str):
         super().__init__()
         self.tracks = tracks
@@ -101,7 +101,7 @@ class TracksButton(QWidget):
 
 class TracksList(QGroupBox):
     """Widget for holding in-memory Tracks. Emits a view_tracks signal whenever
-    a run is selected in the list, useful for telling the TracksViewer to display the
+    tracks are selected in the list, useful for telling the TracksViewer to display the
     selected tracks.
     """
 
@@ -115,7 +115,7 @@ class TracksList(QGroupBox):
     tracks_saved = Signal(object, Path)
     """Emitted after tracks are saved to disk. Arguments: (tracks, path).
     Dependent applications can connect to this signal to save additional
-    data (e.g. solver parameters) alongside the tracks.
+    data (e.g. application-specific settings) alongside the tracks.
 
     The path is the geff store the tracks were written to. A geff is a zarr
     directory, and writing one only replaces geff-controlled groups, so
@@ -125,7 +125,7 @@ class TracksList(QGroupBox):
     tracks_loaded = Signal(object, Path)
     """Emitted after tracks are loaded from disk. Arguments: (tracks, path).
     Dependent applications can connect to this signal to load additional
-    data (e.g. solver parameters) from the same location.
+    data (e.g. application-specific settings) from the same location.
 
     The path is the geff store the tracks were read from, matching what
     tracks_saved reports for the same tracks, so data written inside it by a
