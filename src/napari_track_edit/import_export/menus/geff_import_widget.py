@@ -16,6 +16,9 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from napari_track_edit.import_export.menus.file_dialog_options import (
+    load_dialog_options,
+)
 from napari_track_edit.import_export.menus.geff_import_utils import (
     find_geff_group,
 )
@@ -26,9 +29,12 @@ class ImportGeffWidget(QWidget):
 
     update_buttons = Signal()
 
-    def __init__(self):
+    def __init__(self, start_dir: str = ""):
         super().__init__()
 
+        self.start_dir = start_dir  # folder the browse dialog opens in
+        # Last path picked with the browse dialog, whether or not it loaded
+        self.picked_path: Path | None = None
         self.root = None
         self.store_path: Path | None = None  # Path to the zarr store on disk
         self.dir_name = None
@@ -68,9 +74,15 @@ class ImportGeffWidget(QWidget):
     def _browse_geff(self) -> None:
         """Open File dialog to select geff folder"""
 
-        folder = QFileDialog.getExistingDirectory(self, "Select GEFF Zarr directory")
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select GEFF Zarr directory",
+            self.start_dir,
+            load_dialog_options(directories=True),
+        )
         if folder:
             folder_path = Path(folder)
+            self.picked_path = folder_path
             self.geff_path_line.setText(str(folder_path))
             self._load_geff(folder_path)
 
