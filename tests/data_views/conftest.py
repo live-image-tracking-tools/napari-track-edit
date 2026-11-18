@@ -45,8 +45,10 @@ def viewer(qapp, request):
     # is still alive when it starts, but only runs a partial gc.collect(1), which
     # misses a viewer that lived through a whole module. Under pytest-xdist the
     # next file on this worker can be one that uses make_napari_viewer.
-    # processEvents() does not run deleteLater; flush those explicitly. Needed since
-    # PyQt 6.12 for the ortho views' own QtViewers.
+    # Closing the viewer leaves part of its cleanup to deleteLater, which only runs
+    # in the event loop, and no event loop runs between test modules.
+    # processEvents() does not run those deletes; since PyQt 6.12 they are no
+    # longer run along the way either, so flush them explicitly.
     qapp.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     gc.collect()
     Application.destroy(app_name)
