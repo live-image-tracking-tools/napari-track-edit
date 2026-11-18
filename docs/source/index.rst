@@ -16,10 +16,7 @@ Napari Track Edit
 
 Napari Track Edit is a napari plugin for interactive visualization, navigation, and
 editing of object tracking results. You can open and edit existing tracking data,
-manually create new tracking results, or run automatic tracking with `motile`_.
-Motile is a library that makes it easy to solve tracking problems using optimization
-by framing the task as an Integer Linear Program (ILP).
-See the `motile documentation`_ for more details on the concepts and method.
+and manually create new tracking results.
 
 .. The video is hosted as a GitHub attachment (uploaded through a GitHub comment box),
    so that it does not have to be tracked in the repository.
@@ -47,6 +44,3 @@ See the `motile documentation`_ for more details on the concepts and method.
    :caption: Reference
 
    API reference <autoapi/napari_track_edit/index>
-
-.. _motile: https://github.com/funkelab/motile
-.. _motile documentation: https://funkelab.github.io/motile

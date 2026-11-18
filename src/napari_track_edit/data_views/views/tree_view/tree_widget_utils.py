@@ -73,8 +73,7 @@ def extract_sorted_tracks(
 ) -> pd.DataFrame | None:
     """
     Extract the information of individual tracks required for constructing the tree
-    plot. Follows the same logic as the relabel_segmentation function from the Motile
-    toolbox.
+    plot.
 
     Args:
         tracks (funtracks.data_model.Tracks): A tracks object containing a graph

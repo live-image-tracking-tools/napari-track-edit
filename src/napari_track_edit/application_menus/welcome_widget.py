@@ -68,12 +68,12 @@ class WelcomeWidget(QWidget):
 
         <h3>Quick Start</h3>
         <ol>
-            <li><b>Load Data</b>: Drag and drop your label or points data in the napari viewer.</li>
-            <li><b>Configure Tracking</b>: Specify parameters in the Tracking panel and click 'Run Tracking'.</li>
+            <li><b>Load Tracks</b>: Load or import existing tracks (geff, CSV, or SQL database) at the bottom of the Tracks List.</li>
+            <li><b>Track from Scratch</b>: Or open an image and create new tracks by hand in the Tracking panel.</li>
             <li><b>Results</b>: Results are added to the Tracks List. View and navigate a tracking result in the napari layers and in the Lineage View.</li>
             <li><b>Edit Results</b>: Use the Editing &amp; Selection panel to refine results.</li>
             <li><b>Visualization options</b>: Use the Visualization panel to adjust display mode and to show orthogonal views.</li>
-            <li><b>Save &amp; Load</b>: Save or export results in the Tracks List. To pick up where you left off, load the project from Motile Run.</li>
+            <li><b>Save &amp; Load</b>: Save or export results in the Tracks List. To pick up where you left off, load the saved tracks with 'Tracks (geff)'.</li>
         </ol>
 
         <h3>Tips</h3>

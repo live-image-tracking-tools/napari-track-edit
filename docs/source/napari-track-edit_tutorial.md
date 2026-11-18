@@ -3,8 +3,8 @@
 # Interactive Cell Tracking with Napari Track Edit
 *September 2026 - Napari Track Edit v1.\* - Caroline Malin-Mayor - Teun Huijben - Anniek Stokkermans*
 
-[`Napari Track Edit`](https://www.Napari-hub.org/plugins/motile-tracker) is a Napari plugin for interactive visualization, navigation, and editing of object tracking results.
-You can open and edit existing tracking data, manually create new tracking results, or run automatic tracking via the Napari Track Edit integration, which offers object tracking using the [`motile`](https://funkelab.github.io/motile/) library.
+[`Napari Track Edit`](https://napari-hub.org/plugins/napari-track-edit) is a Napari plugin for interactive visualization, navigation, and editing of object tracking results.
+You can open and edit existing tracking data, and manually create new tracking results.
 
 This tutorial will walk you through the main functionalities.
 You can find the full documentation [`here`](https://liveimagetrackingtools.org/napari-track-edit/).
@@ -102,9 +102,8 @@ You can restrict the display to the lineages of selected nodes in the Viewer (vi
 
 
 ## Generating Tracks
-There are two ways to obtain a new tracking result from within the plugin: manual tracking on an image layer, or automatic tracking using Motile on a Labels or Points layer. We will explore both methods here.
+Within the plugin, new tracking results are created by manual tracking on an image layer. Tracks that were generated elsewhere can be imported (see below).
 
-### Manual tracking
 Manual tracking from scratch requires that you open an `Image` layer first. In the `Tracking` widget, under `Track from Scratch` you can select this layer, and choose to either `Track with Points` or `Track with Labels`. Depending on your choice, this will create either an empty `Points` or empty `Labels` layer, where you can manually add points or paint labels to track objects.
 
 <div style="display: flex; flex-wrap: nowrap; justify-content: center; align-items: flex-start; gap: 20px; margin: 20px 0; break-inside: avoid; page-break-inside: avoid;">
@@ -114,36 +113,12 @@ Manual tracking from scratch requires that you open an `Image` layer first. In t
     </figure>
 </div>
 
-### Tracking with Motile
-
-<div style="display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 20px; margin: 20px 0; break-inside: avoid; page-break-inside: avoid;">
-    <div style="flex: 1 1 auto; min-width: 0;">
-        To track objects with Motile, you need to either provide object segmentations on a Napari <code>Labels</code> layer or object detections on a <code>Points</code> layer. Tracking parameters should be specified in the <code>Tracking</code> > <code>Track with Motile</code> tab and are subdivided in hyperparameters, constant costs and attribute weights.
-        Hovering over each of the parameters will display a tooltip, and more extensive information can be found in the documentation.
-        Once the parameters are set, you can start the solver by clicking <code>Run Tracking</code>.
-        After the solve is complete, you can find the Tracking Result in the <code>Tracks List</code> tab.
-        Tracking Results will accumulate here for each set of parameters that you tried.
-    </div>
-    <div style="display: flex; flex-wrap: nowrap; align-items: flex-end; gap: 16px; flex: 0 0 360px;">
-        <figure style="flex: 465 1 0; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-            <img src="images/tracking_parameters.png" style="display: block; width: 100%; height: auto;" />
-            <figcaption style="margin-top: 6px; font-size: 0.9em;">Tracking parameters</figcaption>
-        </figure>
-        <figure style="flex: 563 1 0; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
-            <img src="images/tracks_list.png" style="display: block; width: 100%; height: auto;" />
-            <figcaption style="margin-top: 6px; font-size: 0.9em;">Tracking results</figcaption>
-        </figure>
-    </div>
-</div>
-
 <div style="background-color: #e6f7ff; border: 2px solid #104982; padding: 15px; border-radius: 10px; margin: 20px 0; break-inside: avoid; page-break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
     <h2>Exercise 2 - Generating new tracks</h2>
     <p>1. Go to the <code>Tracks List</code> tab first, and clear the example tracks by clicking on the trash can icon.
     <p>2. Go to <code>File > Open Sample > Napari Track Edit > Fluo-N2DL-HeLa crop (2D)</code> to open the 2D HeLa cell test dataset</p>
     <p>3. Hide the segmentation '01_ST' and 'centroids' layers for now, but select 01_raw and go to the <code>Tracking</code> > <code>Track from Scratch</code>. Select <code>01_raw</code> from the dropdown menu, and click <code>Track with Points</code>. A new Points layer is generated, and you should see a new element in the Results list: 01_raw_manual_tracks. Select the <code>Add points</code> tool in the top left corner of the layer controls, and click on one of the nuclei in the viewer. Go to the next time point, and click again. You should see a growing lineage tree at the bottom of your screen. What happens if you add multiple points in the same time point? Try to build three small lineages.</p>
-    <p>4. To compute tracks automatically, go to the <code>Tracking</code> tab, and choose parameters for tracking. Use '01_ST' as input layer. You can consult the
-    <a href="https://liveimagetrackingtools.org/napari-track-edit/tracking.html" target="_blank" style="color: #0073e6; text-decoration: underline;">documentation</a> to help you decide on the different values. Click <code>Run Tracking</code> to start the computation. After the solver has finished, you should see that the Lineage View is now populated with tracks and that the cells are relabeled.</p>
-    <p>5. Click <code>Back to editing</code> and test multiple combinations of parameters. Note that you can also use the Points layer 'centroids' as input. Compare the different tracking results by clicking on the different entries in the <code>Tracks List</code> widget.</p>
+    <p>4. Repeat this with <code>Track with Labels</code>: a new Labels layer is generated. Select the paint brush, paint one of the nuclei, go to the next time point and paint the same nucleus again with the same label. Press <code>M</code> to start a new track. Compare the two results by clicking on the different entries in the <code>Tracks List</code> widget.</p>
 </div>
 
 ## Displaying object features in the Lineage View
@@ -223,7 +198,7 @@ When inspecting a tracking result, you may notice mistakes that you want to corr
 
 <div style="display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 20px; margin: 20px 0; break-inside: avoid; page-break-inside: avoid;">
     <div style="flex: 1 1 auto; min-width: 0;">
-        You can save your tracking results in the <code>Tracks List</code> tab. This will save the parameters and the tracking data to the displayed destination. You can load your results back in at the bottom of the <code>Tracks List</code> tab by loading a Motile Run and selecting the folder. In addition, Napari Track Edit allows you to import and export the results from/to <code>csv</code> and <code><a href="https://github.com/live-image-tracking-tools/geff">geff</code></a> via the dropdown menu at the bottom and the export (middle) button in the Results List.
+        You can save your tracking results in the <code>Tracks List</code> tab. This will save the tracking data as a geff store at the displayed destination. You can load your results back in at the bottom of the <code>Tracks List</code> tab by choosing <code>Tracks (geff)</code> and selecting the saved store. In addition, Napari Track Edit allows you to import and export the results from/to <code>csv</code> and <code><a href="https://github.com/live-image-tracking-tools/geff">geff</code></a> via the dropdown menu at the bottom and the export (middle) button in the Results List.
     </div>
     <figure style="flex: 0 0 auto; width: 200px; min-width: 0; margin: 0; text-align: center; break-inside: avoid; page-break-inside: avoid;">
         <img src="images/save_and_export.png" style="display: block; width: 100%; height: auto;" />
@@ -236,7 +211,7 @@ When inspecting a tracking result, you may notice mistakes that you want to corr
   <p>1. Go to the <code>Tracks List</code> tab.</p>
   <p>2. Select a save directory on your computer via the <code>Browse</code> button, and click the save button to save the tracks.</p>
   <p>3. Click the trash can icon to delete the tracks from the list.</p>
-  <p>4. At the bottom of the <code>Tracks List</code> tab, choose <code>Motile Run</code> from the dropdown menu to load your saved tracks back into the plugin. </p>
+  <p>4. At the bottom of the <code>Tracks List</code> tab, choose <code>Tracks (geff)</code> from the dropdown menu to load your saved tracks back into the plugin. </p>
   <p>5. Export your tracking results to csv with the export button in the <code>Results List</code> (next to the save and trash buttons). You will be asked whether to include saving the segmentation (as-is or relabeled by tracklet ID). </p>
   <p>7. At the bottom of the <code>Tracks List</code> tab, choose <code>External Tracks from CSV</code> from the dropdown menu to load the results back from the csv file. If you have a segmentation image, you must provide a segmentation id, which corresponds to the label value for each node in the segmentation image (if you exported with 'Relabel segmentation by Track ID', this value should be set to Tracklet ID). </p>
   <p>8. Export your tracking result to geff. Note that the segmentation data is included in the geff, so you do not need to save it separately.</p>

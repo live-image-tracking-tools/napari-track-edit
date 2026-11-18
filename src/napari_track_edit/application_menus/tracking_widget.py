@@ -7,9 +7,8 @@ from napari_track_edit.application_menus.tracking_from_scratch_widget import (
 
 # Ordered (name, widget_cls) pairs added as tabs to every new TrackingWidget.
 # "Track from Scratch" ships built in; downstream packages that bundle their own
-# tracking widget (e.g. a standalone motile_tracker, which depends on
-# napari-track-edit and so cannot be imported from here) can add to or replace
-# these via register_tracking_tab() at import time.
+# tracking widget (and depend on napari-track-edit, so cannot be imported from
+# here) can add to or replace these via register_tracking_tab() at import time.
 _TRACKING_TABS: list[tuple[str, type[QWidget]]] = [
     ("Track from Scratch", TrackingFromScratch),
 ]

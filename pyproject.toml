@@ -37,7 +37,6 @@ dependencies =[
     "magicgui>=0.10.1",
     "qtpy>=2.4,<3",
     "scikit-image>=0.25",
-    "pydantic>=2,<3",
     "tifffile[all]>=2025.1.10",
     "tqdm>=4,<5",
     "dask[array]>=2021.10.0",
@@ -75,9 +74,6 @@ dependencies =[
 
 [project.optional-dependencies]
 numba = ["numba>=0.62.1"]
-gurobi = ["gurobipy"]
-gurobi12 = ["gurobipy>=12,<13"]
-gurobi13 = ["gurobipy>=13,<14"]
 all = [
     "pyqt6>=6.7,<7",
 ]
@@ -115,16 +111,6 @@ dev = [
     "numba>=0.62.1",
     {include-group="testing"},
     {include-group = "docs"},
-]
-# For gurobi, install separately: uv pip install "gurobipy>=12,<13"
-
-[tool.uv]
-# gurobi12 and gurobi13 conflict with each other (mutually exclusive version pins)
-conflicts = [
-    [
-        {extra = "gurobi12"},
-        {extra = "gurobi13"},
-    ],
 ]
 
 [tool.pytest.ini_options]

@@ -17,27 +17,10 @@ environment with conda::
 
 Recommended extras
 ------------------
-For better performance, you can install optional extras:
-
-- **numba**: Speeds up candidate graph construction significantly.::
+For better performance, you can install the optional ``numba`` extra, which napari
+uses to speed up coloring large label layers::
 
     pip install napari-track-edit[numba]
-
-- **gurobi**: Uses the Gurobi solver instead of the default open-source solver.
-  Gurobi is much faster but requires a license (free for academics).::
-
-    pip install napari-track-edit[gurobi]
-
-You can install multiple extras at once: ``pip install napari-track-edit[numba,gurobi]``
-
-Gurobi license version mismatch
--------------------------------
-If you have a Gurobi license and encounter an error about license version mismatch,
-you may need to install a specific version of ``gurobipy`` that matches your license.
-Use one of the version-specific extras::
-
-    pip install napari-track-edit[gurobi12]  # For Gurobi 12.x licenses
-    pip install napari-track-edit[gurobi13]  # For Gurobi 13.x licenses
 
 If the installation is successful, you can then run ``napari`` from your command line, and
 Napari Track Edit should be visible in the ``Plugins`` drop down menu.

@@ -1,7 +1,9 @@
 """Tests for TrackingWidget - the tab widget holding the ways of making tracks."""
 
+import pytest
 from qtpy.QtWidgets import QGroupBox, QWidget
 
+from napari_track_edit.application_menus import tracking_widget
 from napari_track_edit.application_menus.tracking_from_scratch_widget import (
     TrackingFromScratch,
 )
@@ -9,6 +11,25 @@ from napari_track_edit.application_menus.tracking_widget import (
     TrackingWidget,
     register_tracking_tab,
 )
+
+
+class DummyWidget(QWidget):
+    def __init__(self, viewer):
+        super().__init__()
+        self.viewer = viewer
+
+
+class OtherDummyWidget(DummyWidget):
+    pass
+
+
+@pytest.fixture
+def restore_tabs(monkeypatch):
+    """Give each test its own copy of the tab registry, so registered tabs do not
+    leak into other tests."""
+    monkeypatch.setattr(
+        tracking_widget, "_TRACKING_TABS", list(tracking_widget._TRACKING_TABS)
+    )
 
 
 def test_tabs(make_napari_viewer):
@@ -23,30 +44,43 @@ def test_tabs(make_napari_viewer):
     assert widget.tabText(0) == "Track from Scratch"
 
 
-def test_register_tracking_tab_adds_tab(make_napari_viewer):
+def test_register_tracking_tab_adds_tab(make_napari_viewer, restore_tabs):
     """A registered tab appears in every subsequently created TrackingWidget."""
 
-    class DummyWidget(QWidget):
-        def __init__(self, viewer):
-            super().__init__()
-            self.viewer = viewer
+    register_tracking_tab("Dummy", DummyWidget)
+    viewer = make_napari_viewer()
+    widget = TrackingWidget(viewer)
+
+    assert widget.count() == 2
+    assert widget.tabText(1) == "Dummy"
+    assert isinstance(widget.tabs["Dummy"], DummyWidget)
+    assert widget.tabs["Dummy"].viewer is viewer
+
+
+def test_register_tracking_tab_at_index(make_napari_viewer, restore_tabs):
+    """A tab registered with an index is inserted at that position."""
+
+    register_tracking_tab("Dummy", DummyWidget, index=0)
+    widget = TrackingWidget(make_napari_viewer())
+
+    assert [widget.tabText(i) for i in range(widget.count())] == [
+        "Dummy",
+        "Track from Scratch",
+    ]
+
+
+def test_register_tracking_tab_replaces_existing(make_napari_viewer, restore_tabs):
+    """Registering an existing name replaces that tab in place, ignoring index."""
 
     register_tracking_tab("Dummy", DummyWidget)
-    try:
-        viewer = make_napari_viewer()
-        widget = TrackingWidget(viewer)
+    register_tracking_tab("Dummy", OtherDummyWidget, index=0)
+    widget = TrackingWidget(make_napari_viewer())
 
-        assert widget.count() == 2
-        assert widget.tabText(1) == "Dummy"
-        assert isinstance(widget.tabs["Dummy"], DummyWidget)
-    finally:
-        from napari_track_edit.application_menus.tracking_widget import (
-            _TRACKING_TABS,
-        )
-
-        _TRACKING_TABS[:] = [
-            (name, cls) for name, cls in _TRACKING_TABS if name != "Dummy"
-        ]
+    assert [widget.tabText(i) for i in range(widget.count())] == [
+        "Track from Scratch",
+        "Dummy",
+    ]
+    assert type(widget.tabs["Dummy"]) is OtherDummyWidget
 
 
 def test_from_scratch_tab_does_not_stretch(make_napari_viewer, qtbot):
