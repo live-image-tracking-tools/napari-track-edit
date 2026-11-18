@@ -1,3 +1,4 @@
+import gc
 from unittest.mock import patch
 
 import napari
@@ -38,6 +39,13 @@ def viewer(qapp, request):
         v = napari.Viewer(show=False)
         yield v
         v.close()
+    del v
+    # Free the closed viewer now. make_napari_viewer fails a test if any QtViewer
+    # is still alive when it starts, but only runs a partial gc.collect(1), which
+    # misses a viewer that lived through a whole module. Under pytest-xdist the
+    # next file on this worker can be one that uses make_napari_viewer.
+    qapp.processEvents()  # run pending deleteLater calls
+    gc.collect()
     Application.destroy(app_name)
     _initialize_plugins.cache_clear()
     init_qactions.cache_clear()
