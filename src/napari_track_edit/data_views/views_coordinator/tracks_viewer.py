@@ -107,7 +107,6 @@ class TracksViewer:
     ):
         self.viewer = viewer
         self.viewer.mouse_double_click_callbacks.clear()  # no double click to zoom
-        self.menu_manager = None  # will be set by MenuManager after initialization
         self.tree_widget_present = False
         self.table_widget_present = False
 
@@ -116,7 +115,10 @@ class TracksViewer:
             if hasattr(TracksViewer, "_instance") and TracksViewer._instance is self:
                 del TracksViewer._instance
 
-        viewer.window._qt_window.destroyed.connect(_clear_if_current)
+        # A ViewerModel (no Qt window) is enough for everything else here.
+        qt_window = getattr(getattr(viewer, "window", None), "_qt_window", None)
+        if qt_window is not None:
+            qt_window.destroyed.connect(_clear_if_current)
         self.colormap = TrackColormap()
         self.color_feature_key: str | None = None
 
@@ -928,12 +930,6 @@ class TracksViewer:
             return
         with self.center_node.blocked():
             self.tracks.redo()
-
-    def hide_panels(self, event=None):
-        """Show/hide menu and tree view panels without destroying"""
-
-        if self.menu_manager is not None:
-            self.menu_manager.toggle_menu_panel_visibility()
 
     def deselect(self, event=None):
         self.selected_nodes.reset()

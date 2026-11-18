@@ -4,6 +4,8 @@
 
 [![tests](https://github.com/live-image-tracking-tools/napari-track-edit/workflows/tests/badge.svg)](https://github.com/live-image-tracking-tools/napari-track-edit/actions)
 [![codecov](https://codecov.io/gh/live-image-tracking-tools/napari-track-edit/branch/main/graph/badge.svg)](https://codecov.io/gh/live-image-tracking-tools/napari-track-edit)
+[![PyPI version](https://badge.fury.io/py/napari-track-edit.svg)](https://badge.fury.io/py/napari-track-edit)
+[![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
 <img src="docs/source/images/logo_transparent.png" align="right" width="180" alt="Napari Track Edit logo" />
 

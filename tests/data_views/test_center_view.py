@@ -11,6 +11,9 @@ from tracksdata.nodes._mask import Mask
 from napari_track_edit.data_views.views.ortho_views import initialize_ortho_views
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
+# These tests need napari's Qt viewer, see the viewer fixture in conftest.py.
+pytestmark = pytest.mark.qt_viewer
+
 
 def visible_point_indices(layer: napari.layers.Points) -> np.ndarray:
     """Indices of the points currently in slice.
@@ -410,6 +413,9 @@ class TestCenterViewWithScale:
         )
 
         ortho_manager.cleanup()
+        # cleanup() uses deleteLater(); let the event loop run so the ortho QtViewers are
+        # actually deleted before napari's leak check (needed since PyQt6 6.12)
+        qtbot.wait(50)
 
 
 class TestExtraViewerDims:
@@ -533,6 +539,9 @@ class TestOrthoViewsWithExtraDims:
             qtbot.wait(50)
 
         ortho_manager.cleanup()
+        # cleanup() uses deleteLater(); let the event loop run so the ortho QtViewers are
+        # actually deleted before napari's leak check (needed since PyQt6 6.12)
+        qtbot.wait(50)
 
 
 class TestAxisLabels:
