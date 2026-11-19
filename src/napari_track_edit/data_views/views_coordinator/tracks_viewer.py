@@ -106,6 +106,8 @@ class TracksViewer:
 
         def _clear_if_current():
             self._disconnect_tracks()
+            # A normal quit ends the history logs; a log without an end is a crash
+            self.tracks_list.close_history()
             if hasattr(TracksViewer, "_instance") and TracksViewer._instance is self:
                 del TracksViewer._instance
 

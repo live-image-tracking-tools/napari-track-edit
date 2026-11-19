@@ -23,6 +23,7 @@ number of nodes it contains, and three buttons:
 - the export button exports the nodes in the group (and their ancestors) to CSV or geff
   (see :ref:`exporting-tracks`);
 - the trash can button deletes the group (the nodes themselves are not deleted).
+  Creating and deleting a group can be undone, like other edits.
 
 Adding and removing nodes
 *************************

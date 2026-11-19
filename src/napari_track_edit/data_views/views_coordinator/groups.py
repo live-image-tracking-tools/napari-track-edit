@@ -6,8 +6,13 @@ from warnings import warn
 
 from fonticon_fa6 import FA6S
 from funtracks.features._feature import Feature
-from funtracks.user_actions import UserUpdateNodesAttrs
+from funtracks.user_actions import (
+    UserAddFeature,
+    UserDeleteFeature,
+    UserUpdateNodesAttrs,
+)
 from napari._qt.qt_resources import QColoredSVGIcon
+from napari.utils.notifications import show_warning
 from qtpy.QtCore import Signal
 from qtpy.QtWidgets import (
     QAbstractItemView,
@@ -223,6 +228,7 @@ class CollectionWidget(QWidget):
     def _refresh(self) -> None:
         """Keep the node collection in sync with the node group attributes on the graph"""
 
+        self._sync_rows_with_features()
         collection_items = [
             self.collection_list.itemWidget(self.collection_list.item(i))
             for i in range(self.collection_list.count())
@@ -235,6 +241,51 @@ class CollectionWidget(QWidget):
             collection_item.update_node_count(
                 len(nodes)
             )  # update the count, but keep deleted nodes in the collection.
+
+    def _group_names(self) -> list[str]:
+        """The node features of the tracks that are groups."""
+        return [
+            group_name
+            for group_name, group_dict in self.tracks_viewer.tracks.features.items()
+            if group_dict["value_type"] == "bool" and group_name != "solution"
+        ]
+
+    def _row_names(self) -> dict[str, QListWidgetItem]:
+        """The rows of the group list by group name."""
+        items = (
+            self.collection_list.item(i) for i in range(self.collection_list.count())
+        )
+        return {
+            self.collection_list.itemWidget(item).name.text(): item for item in items
+        }
+
+    def _sync_rows_with_features(self) -> None:
+        """Add and remove rows for groups that undo or redo created or deleted.
+
+        Group create and delete are undoable actions, so a group can appear or
+        disappear without going through this widget. Restored groups get their
+        members back from the graph.
+        """
+        if self.tracks_viewer.tracks is None:
+            return
+        group_names = self._group_names()
+        rows = self._row_names()
+        for name, item in rows.items():
+            if name not in group_names:
+                self._drop_row(item)
+        for name in group_names:
+            if name not in rows:
+                row = self._append_row(name, select=False)
+                row.collection = set(self._nodes_in_group(name))
+                row.update_node_count(len(row.collection))
+
+    def _nodes_in_group(self, group_name: str) -> list[Any]:
+        tracks = self.tracks_viewer.tracks
+        return [
+            node
+            for node in tracks.graph_solution.node_ids()
+            if tracks.get_node_attr(node, group_name)
+        ]
 
     def retrieve_existing_groups(self) -> None:
         """Create collections based on the node attributes"""
@@ -262,7 +313,7 @@ class CollectionWidget(QWidget):
                     if self.tracks_viewer.tracks.get_node_attr(node, group_name)
                 ]
                 group_dict[group_name] = nodes
-                self._add_group(name=group_name, select=True)
+                self._append_row(group_name, select=True)
                 self.selected_collection.collection = set(group_dict[group_name])
                 nodes = [
                     n
@@ -408,12 +459,36 @@ class CollectionWidget(QWidget):
         if name is None:
             name = self.group_name.text()
 
-        names = [
-            self.collection_list.itemWidget(self.collection_list.item(i)).name.text()
-            for i in range(self.collection_list.count())
-        ]
-        while name in names:
-            name = name + "_1"
+        # A group is a feature on the Tracks, so its name must be new: not another
+        # group, and not a feature such as area or time
+        if name in self._row_names() or name in self.tracks_viewer.tracks.features:
+            show_warning(f"Cannot create group {name!r}: that name already exists.")
+            return
+
+        # Creating the feature is an undoable action; its refresh may already add
+        # the row (see _sync_rows_with_features).
+        new_feature: Feature = {
+            "feature_type": "node",  # This is a node feature
+            "value_type": "bool",  # The feature is a boolean
+            "num_values": 1,  # Each node has one value for this feature
+            "display_name": name,
+            "default_value": False,  # Default value for nodes without this feature
+        }
+        try:
+            UserAddFeature(self.tracks_viewer.tracks, name, new_feature)
+        except ValueError as e:
+            show_warning(f"Cannot create group {name!r}: {e}")
+            return
+
+        item = self._row_names().get(name)
+        if item is None:
+            self._append_row(name, select=False)
+            item = self._row_names()[name]
+        if select:
+            self.collection_list.setCurrentItem(item)
+
+    def _append_row(self, name: str, select: bool) -> CollectionButton:
+        """Add a row for the group ``name`` at the end of the list."""
         item = QListWidgetItem(self.collection_list)
         group_row = CollectionButton(name)
         self.collection_list.setItemWidget(item, group_row)
@@ -427,19 +502,7 @@ class CollectionWidget(QWidget):
 
         if select:
             self.collection_list.setCurrentRow(len(self.collection_list) - 1)
-
-        # Register group as new feature on Tracks
-        if name not in self.tracks_viewer.tracks.features:
-            new_feature: Feature = {
-                "feature_type": "node",  # This is a node feature
-                "value_type": "bool",  # The feature is a boolean
-                "num_values": 1,  # Each node has one value for this feature
-                "display_name": name,
-                "default_value": False,  # Default value for nodes without this feature
-            }
-
-            # Use add_feature to update both the FeatureDict and the graph schema
-            self.tracks_viewer.tracks.add_feature(name, new_feature)
+        return group_row
 
     def _remove_group(self, item: QListWidgetItem) -> None:
         """Remove a collection object from the list. You must pass the list item that
@@ -450,21 +513,32 @@ class CollectionWidget(QWidget):
                 contains the CollectionButton that represents a set of node_ids.
         """
 
+        group_name = self.collection_list.itemWidget(item).name.text()
+        if group_name in self.tracks_viewer.tracks.features:
+            # Undoable; its refresh already drops the row (see _sync_rows_with_features)
+            try:
+                UserDeleteFeature(self.tracks_viewer.tracks, group_name)
+            except ValueError as e:
+                show_warning(f"Cannot delete group {group_name!r}: {e}")
+                return
+        if group_name in self._row_names():
+            self._drop_row(item)
+
+    def _drop_row(self, item: QListWidgetItem) -> None:
+        """Remove the row of a group that no longer exists, and stop showing it."""
         row = self.collection_list.indexFromItem(item).row()
         group_name = self.collection_list.itemWidget(item).name.text()
         self.collection_list.takeItem(row)
+        if self.selected_collection is not None and (
+            self.selected_collection.name.text() == group_name
+        ):
+            self.selected_collection = None
 
         # fall back to coloring by tracklet ID if this group was used for coloring
         if self.tracks_viewer.color_feature_key == group_name:
             self.tracks_viewer.set_color_feature(
                 self.tracks_viewer.tracks.features.tracklet_key
             )
-
-        # remove from the features dict and graph schema
-        if group_name in self.tracks_viewer.tracks.features:
-            del self.tracks_viewer.tracks.features[group_name]
-        if group_name in self.tracks_viewer.tracks.graph_solution.node_attr_keys():
-            self.tracks_viewer.tracks.graph_solution.remove_node_attr_key(group_name)
 
         # If we removed the last group while in 'group' mode, fall back to 'all'
         # so the viewer doesn't stay stuck on an empty group view.

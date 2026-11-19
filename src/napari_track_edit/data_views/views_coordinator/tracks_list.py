@@ -10,6 +10,7 @@ from fonticon_fa6 import FA6S
 from funtracks.data_model import Tracks
 from funtracks.import_export import import_from_geff
 from napari._qt.qt_resources import QColoredSVGIcon
+from napari.utils.notifications import show_warning
 from qtpy.QtCore import Signal
 from qtpy.QtWidgets import (
     QAbstractItemView,
@@ -31,6 +32,11 @@ from superqt.fonticon import icon as qticon
 
 from napari_track_edit.download_progress import DownloadCancelled, download_progress
 from napari_track_edit.example_data import sample_tracks_path, user_data_dir
+from napari_track_edit.history.session import (
+    HistorySession,
+    load_annotator,
+    store_annotator,
+)
 from napari_track_edit.import_export.geff_io import write_geff_over
 from napari_track_edit.import_export.menus.export_dialog import ExportDialog
 from napari_track_edit.import_export.menus.file_dialog_options import (
@@ -72,6 +78,8 @@ class TracksButton(QWidget):
     def __init__(self, tracks: Tracks, name: str):
         super().__init__()
         self.tracks = tracks
+        # The history log of these tracks, set by TracksList.add_tracks
+        self.history: HistorySession | None = None
         self.name = QLabel(name)
         self.name.setFixedHeight(20)
         delete_icon = QColoredSVGIcon.from_resources("delete").colored("white")
@@ -151,6 +159,11 @@ class TracksList(QGroupBox):
         # the full width of the dock.
         self._save_name_edited = False
 
+        # The open history logs, one per row. Kept here rather than read from the
+        # rows, because the rows' Qt objects may already be gone when the viewer
+        # closes and the logs are ended.
+        self._history_sessions: list[HistorySession] = []
+
         self.save_browse_button = QPushButton("Browse")
         self.save_browse_button.setAutoDefault(0)
         self.save_browse_button.clicked.connect(self._browse_save_dir)
@@ -177,6 +190,22 @@ class TracksList(QGroupBox):
         self.on_disk_label = QLabel()
         self.on_disk_label.setWordWrap(True)
         self.on_disk_label.setVisible(False)
+
+        # Who is editing, written to the history logs. Editable, so that people can
+        # use a pseudonym instead of their OS username.
+        self.annotator_line = QLineEdit(load_annotator())
+        self.annotator_line.setToolTip(
+            "Name written to the history log of every edit. Stored for next sessions."
+        )
+        self.annotator_line.editingFinished.connect(self._on_annotator_edited)
+        annotator_row = QHBoxLayout()
+        annotator_row.addWidget(QLabel("Annotator:"))
+        annotator_row.addWidget(self.annotator_line)
+
+        # Where the edits of the selected tracks are logged
+        self.history_label = QLabel()
+        self.history_label.setWordWrap(True)
+        self.history_label.setVisible(False)
 
         self.tracks_list = QListWidget()
         self.tracks_list.setSelectionMode(
@@ -207,6 +236,8 @@ class TracksList(QGroupBox):
         layout.addWidget(self.save_dir_line)
         layout.addLayout(save_name_row)
         layout.addWidget(self.on_disk_label)
+        layout.addLayout(annotator_row)
+        layout.addWidget(self.history_label)
         layout.addWidget(self.tracks_list)
         layout.addLayout(load_menu)
         self.setLayout(layout)
@@ -310,6 +341,7 @@ class TracksList(QGroupBox):
         self._update_on_disk_label(
             self.tracks_list.itemWidget(selected[0]).tracks if selected else None
         )
+        self._update_history_label()
         if selected:
             tracks_button = self.tracks_list.itemWidget(selected[0])
             name = tracks_button.name.text()
@@ -341,7 +373,66 @@ class TracksList(QGroupBox):
         )
         self.on_disk_label.setVisible(True)
 
-    def add_tracks(self, tracks: Tracks, name: str, select=True):
+    def _update_history_label(self) -> None:
+        """Show where the edits of the selected tracks are logged."""
+        selected = self.tracks_list.selectedItems()
+        history = self.tracks_list.itemWidget(selected[0]).history if selected else None
+        if history is None:
+            self.history_label.setVisible(False)
+            return
+        self.history_label.setText(f"<i>History log: {history.log_path}</i>")
+        self.history_label.setVisible(True)
+
+    def _on_annotator_edited(self) -> None:
+        """Store the new annotator name and log it for every open tracks object."""
+        name = self.annotator_line.text().strip()
+        if not name:
+            # An empty name would make the log useless for auditing
+            self.annotator_line.setText(load_annotator())
+            return
+        if name == load_annotator():
+            # editingFinished also fires when the field loses focus unchanged
+            return
+        store_annotator(name)
+        for history in self._history_sessions:
+            history.set_annotator(name)
+
+    def close_history(self) -> None:
+        """Finish the history logs of all tracks, e.g. when the viewer closes."""
+        for history in self._history_sessions:
+            history.close()
+        self._history_sessions.clear()
+
+    def _close_row_history(self, row: TracksButton) -> None:
+        if row.history is None:
+            return
+        row.history.close()
+        if row.history in self._history_sessions:  # not if close_history ran
+            self._history_sessions.remove(row.history)
+        row.history = None
+
+    def _start_history(
+        self, row: TracksButton, name: str, source_path: Path | None
+    ) -> None:
+        # The stored name, not the field: the field may hold an unconfirmed edit
+        try:
+            row.history = HistorySession(
+                row.tracks, name, source_path, annotator=load_annotator()
+            )
+        except Exception as e:  # noqa: BLE001 - logging must never block loading
+            logger.exception("Could not start the history log of %s", name)
+            show_warning(f"Edits of {name!r} are not logged: {e}")
+            row.history = None
+            return
+        self._history_sessions.append(row.history)
+
+    def add_tracks(
+        self,
+        tracks: Tracks,
+        name: str,
+        select=True,
+        source_path: Path | None = None,
+    ):
         """Add tracks to the list and optionally select them. Will make a new
         row in the list UI representing the given tracks.
 
@@ -355,9 +446,12 @@ class TracksList(QGroupBox):
             name (str): the name of the tracks to display
             select (bool, optional): Whether or not to select the new tracks item in the
                 list (and thus display it in the tracks viewer). Defaults to True.
+            source_path (Path | None, optional): The file the tracks were loaded
+                from. Their history log is written next to it. Defaults to None.
         """
         item = QListWidgetItem(self.tracks_list)
         tracks_row = TracksButton(tracks, name)
+        self._start_history(tracks_row, name, source_path)
         self.tracks_list.setItemWidget(item, tracks_row)
         item.setSizeHint(tracks_row.minimumSizeHint())
         self.tracks_list.addItem(item)
@@ -406,7 +500,9 @@ class TracksList(QGroupBox):
             tracks (Tracks): The tracks it should now hold.
         """
         widget: TracksButton = self.tracks_list.itemWidget(item)
+        self._close_row_history(widget)
         widget.tracks = tracks
+        self._start_history(widget, widget.name.text(), source_path=None)
         if self.tracks_list.currentItem() is item:
             # Already selected, so setCurrentItem would not emit anything.
             self._selection_changed()
@@ -446,6 +542,14 @@ class TracksList(QGroupBox):
             tracks.save(saved_path)
         else:
             write_geff_over(tracks, saved_path)
+        if widget.history is not None:
+            try:
+                widget.history.saved(saved_path)
+            except Exception as e:  # noqa: BLE001 - the save itself succeeded
+                logger.exception("Could not continue the history log after saving")
+                show_warning(f"Edits from here on are not logged: {e}")
+                self._close_row_history(widget)
+            self._update_history_label()
         self.tracks_saved.emit(tracks, saved_path)
 
     def remove_tracks(self, item: QListWidgetItem):
@@ -456,6 +560,8 @@ class TracksList(QGroupBox):
             item (QListWidgetItem): The list item to remove. This list item
                 contains the TracksButton that represents a set of tracks.
         """
+        widget: TracksButton = self.tracks_list.itemWidget(item)
+        self._close_row_history(widget)
         row = self.tracks_list.indexFromItem(item).row()
         self.tracks_list.takeItem(row)
         if self.tracks_list.count() == 0:
@@ -523,7 +629,7 @@ class TracksList(QGroupBox):
         if result is None:
             return
         tracks, name, source_path = result
-        self.add_tracks(tracks, name, select=True)
+        self.add_tracks(tracks, name, select=True, source_path=source_path)
         if source_path is not None:
             self.tracks_loaded.emit(tracks, source_path)
 
@@ -545,7 +651,7 @@ class TracksList(QGroupBox):
                 self, "Error", f"Failed to load example {sample_name}: {e}"
             )
             return
-        self.add_tracks(tracks, sample_name, select=True)
+        self.add_tracks(tracks, sample_name, select=True, source_path=geff_dir)
         self.tracks_loaded.emit(tracks, geff_dir)
 
     def _load_from_dialog(

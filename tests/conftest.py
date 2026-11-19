@@ -65,6 +65,25 @@ def reset_tracks_viewer():
 
 
 @pytest.fixture(autouse=True)
+def isolated_history(tmp_path_factory, monkeypatch):
+    """Keep history logs and the stored annotator name out of the user's own
+    directories: tracks without a source log to the fallback directory, and the
+    annotator name lives in QSettings."""
+    from qtpy.QtCore import QSettings
+
+    from napari_track_edit.history import paths, session
+
+    base = tmp_path_factory.mktemp("history")
+    # fallback_dir() looks user_data_dir up in paths, also when called via session
+    monkeypatch.setattr(paths, "user_data_dir", lambda: base)
+    settings_file = str(base / "settings.ini")
+    monkeypatch.setattr(
+        session, "_settings", lambda: QSettings(settings_file, QSettings.IniFormat)
+    )
+    return base
+
+
+@pytest.fixture(autouse=True)
 def reset_nte_app():
     """Reset NTEApp singleton before and after each test, same as
     reset_tracks_viewer: without this, state like config.orthoviews_enabled
