@@ -214,6 +214,51 @@ To undo, click ``Undo`` or press ``Z``. Similarly, to redo an action, click ``Re
 press ``R``. Note that the action history is not saved: after loading tracks from disk,
 the history starts empty.
 
+History log
+***********
+Every edit is also written to a history log as it happens: each action, undo and redo,
+with a timestamp and the name of the annotator. Creating and deleting groups is logged
+too. The log is not a way to undo across sessions, but it lets you:
+
+- recover the edits of a session that ended without saving, e.g. after a crash;
+- see who made which edits, and when;
+- reproduce the edits exactly, by applying them again to the same starting data.
+
+The log only contains what changes the data. Track ids are not logged (they are
+recomputed from the edges), and neither are settings, the selection, or how the tracks
+are displayed.
+
+**Where the log is written.** Next to the file the tracks were loaded from, in a
+directory ending in ``.history``: tracks loaded from ``embryo.geff`` log to
+``embryo.geff.history/``. Every session gets its own file, named after the time it
+started and the annotator, e.g. ``20261119T140211_jane.jsonl``. Tracks that do not come
+from a file (e.g. made with Track from Scratch), or whose directory cannot be written,
+log to a ``history`` directory in the napari-track-edit data folder. The path is shown
+below the annotator name in the Results List. The file is only created at the first edit.
+
+Saving the tracks closes the log and starts a new one next to the saved geff, which
+continues from the saved state. Tracks stored in a database (``.db``) keep logging next
+to the database, since every edit is already saved there.
+
+**Annotator name.** The ``Annotator`` field in the Results List defaults to your user
+name on this computer. It is stored with every log, so anyone who receives the logs
+(e.g. together with the tracks) can see it. Type a different name or a pseudonym to use
+that instead; it is remembered for next time.
+
+**Recovering edits after a crash.** The ``funtracks`` command line applies a log to the
+tracks it started from, and writes the result to a new geff:
+
+.. code-block:: bash
+
+    funtracks history replay embryo.geff.history/20261119T140211_jane.jsonl \
+        --base embryo.geff --out embryo_recovered.geff
+
+It refuses to run if the tracks are not the ones the log started from. Logs of tracks in a
+database are for reference only: the database already holds the edits.
+
+**Annotator activity.** ``funtracks history summary <logs>`` lists, per annotator and per
+session, how many edits of each kind were made and how much time was spent editing.
+
 Copying nodes from an external source
 *************************************
 Apart from adding new nodes by adding points or segmentation labels, it is also possible to copy nodes from points or labels on another napari layer.
