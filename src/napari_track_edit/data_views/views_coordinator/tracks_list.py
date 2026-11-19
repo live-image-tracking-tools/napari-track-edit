@@ -10,6 +10,7 @@ from fonticon_fa6 import FA6S
 from funtracks.data_model import Tracks
 from funtracks.import_export import import_from_geff
 from napari._qt.qt_resources import QColoredSVGIcon
+from napari.utils.notifications import show_warning
 from qtpy.QtCore import Signal
 from qtpy.QtWidgets import (
     QAbstractItemView,
@@ -413,9 +414,16 @@ class TracksList(QGroupBox):
     def _start_history(
         self, row: TracksButton, name: str, source_path: Path | None
     ) -> None:
-        row.history = HistorySession(
-            row.tracks, name, source_path, annotator=self.annotator_line.text()
-        )
+        # The stored name, not the field: the field may hold an unconfirmed edit
+        try:
+            row.history = HistorySession(
+                row.tracks, name, source_path, annotator=load_annotator()
+            )
+        except Exception as e:  # noqa: BLE001 - logging must never block loading
+            logger.exception("Could not start the history log of %s", name)
+            show_warning(f"Edits of {name!r} are not logged: {e}")
+            row.history = None
+            return
         self._history_sessions.append(row.history)
 
     def add_tracks(
@@ -535,7 +543,12 @@ class TracksList(QGroupBox):
         else:
             write_geff_over(tracks, saved_path)
         if widget.history is not None:
-            widget.history.saved(saved_path)
+            try:
+                widget.history.saved(saved_path)
+            except Exception as e:  # noqa: BLE001 - the save itself succeeded
+                logger.exception("Could not continue the history log after saving")
+                show_warning(f"Edits from here on are not logged: {e}")
+                self._close_row_history(widget)
             self._update_history_label()
         self.tracks_saved.emit(tracks, saved_path)
 

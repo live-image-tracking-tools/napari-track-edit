@@ -95,7 +95,7 @@ def test_collection_widget_initialization(viewer, solution_tracks_2d):
 
 
 def test_group_creation_and_deletion(viewer, solution_tracks_2d, qtbot):
-    """Test creating groups (including duplicates) and deleting groups."""
+    """Test creating groups (refusing existing names) and deleting groups."""
     tracks_viewer = TracksViewer.get_instance(viewer)
     tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
 
@@ -118,38 +118,36 @@ def test_group_creation_and_deletion(viewer, solution_tracks_2d, qtbot):
     assert feature["value_type"] == "bool"
     assert feature["feature_type"] == "node"
 
-    # Test 2: Create group with duplicate name appends _1
+    # Test 2: A name that already exists is refused, for a group or any feature
     widget.group_name.setText("duplicate")
     qtbot.mouseClick(widget.new_group_button, Qt.MouseButton.LeftButton)
+    assert widget.collection_list.count() == 2
 
-    widget.group_name.setText("duplicate")
-    qtbot.mouseClick(widget.new_group_button, Qt.MouseButton.LeftButton)
-
-    # Verify both groups exist with different names
-    assert widget.collection_list.count() == 3
-
-    item1 = widget.collection_list.item(1)
-    button1 = widget.collection_list.itemWidget(item1)
-    assert button1.name.text() == "duplicate"
-
-    item2 = widget.collection_list.item(2)
-    button2 = widget.collection_list.itemWidget(item2)
-    assert button2.name.text() == "duplicate_1"
+    with patch(
+        "napari_track_edit.data_views.views_coordinator.groups.show_warning"
+    ) as warning:
+        widget.group_name.setText("duplicate")
+        qtbot.mouseClick(widget.new_group_button, Qt.MouseButton.LeftButton)
+        widget.group_name.setText("area")
+        qtbot.mouseClick(widget.new_group_button, Qt.MouseButton.LeftButton)
+    assert warning.call_count == 2
+    assert widget.collection_list.count() == 2
+    assert "duplicate_1" not in tracks_viewer.tracks.features
 
     # Test 3: Delete a group
     widget.group_name.setText("to_delete")
     qtbot.mouseClick(widget.new_group_button, Qt.MouseButton.LeftButton)
 
-    assert widget.collection_list.count() == 4
+    assert widget.collection_list.count() == 3
     assert "to_delete" in tracks_viewer.tracks.features
 
     # Delete the group
-    item = widget.collection_list.item(3)
+    item = widget.collection_list.item(2)
     button = widget.collection_list.itemWidget(item)
     qtbot.mouseClick(button.delete, Qt.MouseButton.LeftButton)
 
     # Verify group was removed
-    assert widget.collection_list.count() == 3
+    assert widget.collection_list.count() == 2
     assert "to_delete" not in tracks_viewer.tracks.features
 
 

@@ -313,7 +313,7 @@ class CollectionWidget(QWidget):
                     if self.tracks_viewer.tracks.get_node_attr(node, group_name)
                 ]
                 group_dict[group_name] = nodes
-                self._add_group(name=group_name, select=True)
+                self._append_row(group_name, select=True)
                 self.selected_collection.collection = set(group_dict[group_name])
                 nodes = [
                     n
@@ -459,25 +459,26 @@ class CollectionWidget(QWidget):
         if name is None:
             name = self.group_name.text()
 
-        names = self._row_names()
-        while name in names:
-            name = name + "_1"
+        # A group is a feature on the Tracks, so its name must be new: not another
+        # group, and not a feature such as area or time
+        if name in self._row_names() or name in self.tracks_viewer.tracks.features:
+            show_warning(f"Cannot create group {name!r}: that name already exists.")
+            return
 
-        # Register a new group as a feature on the Tracks. This is an undoable
-        # action; its refresh may already add the row (see _sync_rows_with_features).
-        if name not in self.tracks_viewer.tracks.features:
-            new_feature: Feature = {
-                "feature_type": "node",  # This is a node feature
-                "value_type": "bool",  # The feature is a boolean
-                "num_values": 1,  # Each node has one value for this feature
-                "display_name": name,
-                "default_value": False,  # Default value for nodes without this feature
-            }
-            try:
-                UserAddFeature(self.tracks_viewer.tracks, name, new_feature)
-            except ValueError as e:
-                show_warning(f"Cannot create group {name!r}: {e}")
-                return
+        # Creating the feature is an undoable action; its refresh may already add
+        # the row (see _sync_rows_with_features).
+        new_feature: Feature = {
+            "feature_type": "node",  # This is a node feature
+            "value_type": "bool",  # The feature is a boolean
+            "num_values": 1,  # Each node has one value for this feature
+            "display_name": name,
+            "default_value": False,  # Default value for nodes without this feature
+        }
+        try:
+            UserAddFeature(self.tracks_viewer.tracks, name, new_feature)
+        except ValueError as e:
+            show_warning(f"Cannot create group {name!r}: {e}")
+            return
 
         item = self._row_names().get(name)
         if item is None:

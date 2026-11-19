@@ -129,13 +129,52 @@ def test_removing_tracks_ends_the_log(loaded):
     assert types(log)[-1] == "session_end"
 
 
-def test_viewer_close_ends_the_logs(viewer, solution_tracks_2d):
+def test_closing_the_window_ends_the_logs(make_napari_viewer, solution_tracks_2d):
+    viewer = make_napari_viewer()
     tracks_viewer = TracksViewer.get_instance(viewer)
     tracks_viewer.tracks_list.add_tracks(solution_tracks_2d, "t")
     log = row(tracks_viewer.tracks_list).history.log_path
     UserDeleteNode(solution_tracks_2d, 4)
-    tracks_viewer.tracks_list.close_history()  # what the window teardown calls
+    # What Qt emits when the main window goes away on quit
+    viewer.window._qt_window.destroyed.emit()
     assert types(log)[-1] == "session_end"
+
+
+def test_a_failing_log_does_not_block_loading(geff_path, viewer, monkeypatch):
+    from napari_track_edit.data_views.views_coordinator import tracks_list as module
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(module, "HistorySession", broken)
+    warnings = []
+    monkeypatch.setattr(module, "show_warning", warnings.append)
+    tracks_list = TracksList()
+    tracks = import_from_geff(geff_path)
+    tracks_list._add_loaded((tracks, "tracks", geff_path))
+    assert tracks_list.tracks_list.count() == 1
+    assert row(tracks_list).tracks is tracks
+    assert row(tracks_list).history is None
+    assert len(warnings) == 1
+    assert not tracks_list.history_label.isVisible()
+
+
+def test_a_failing_log_rollover_does_not_block_saving(loaded, tmp_path, monkeypatch):
+    from napari_track_edit.data_views.views_coordinator import tracks_list as module
+
+    tracks_list, tracks = loaded
+    history = row(tracks_list).history
+
+    def broken(path):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(history, "saved", broken)
+    monkeypatch.setattr(module, "show_warning", lambda message: None)
+    emitted = []
+    tracks_list.tracks_saved.connect(lambda t, p: emitted.append(p))
+    saved = save(tracks_list, tmp_path, "saved")
+    assert emitted == [saved]
+    assert row(tracks_list).history is None
 
 
 # ---------------------------------------------------------------------------
@@ -341,3 +380,13 @@ def test_unchanged_annotator_writes_no_line(loaded):
     tracks_list.annotator_line.editingFinished.emit()  # focus left, nothing typed
     tracks_list.close_history()
     assert "annotator" not in types(log)
+
+
+def test_new_logs_use_the_stored_annotator_not_the_unconfirmed_field(geff_path, viewer):
+    tracks_list = TracksList()
+    tracks_list.annotator_line.setText("")  # cleared, not confirmed yet
+    tracks_list._add_loaded((import_from_geff(geff_path), "tracks", geff_path))
+    UserDeleteNode(row(tracks_list).tracks, 4)
+    log = row(tracks_list).history.log_path
+    tracks_list.close_history()
+    assert read_lines(log)[0]["annotator"] == load_annotator()

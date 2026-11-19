@@ -238,7 +238,9 @@ below the annotator name in the Results List. The file is only created at the fi
 
 Saving the tracks closes the log and starts a new one next to the saved geff, which
 continues from the saved state. Tracks stored in a database (``.db``) keep logging next
-to the database, since every edit is already saved there.
+to the database, since every edit is already saved there. Saving over the file the tracks came
+from replaces the starting point of the earlier log, so save under a new name if you want
+to be able to replay that log later.
 
 **Annotator name.** The ``Annotator`` field in the Results List defaults to your user
 name on this computer. It is stored with every log, so anyone who receives the logs
