@@ -781,7 +781,7 @@ class TestTracksListExport:
         item = tracks_list.tracks_list.item(0)
 
         emitted = []
-        tracks_list.request_colormap.connect(lambda: emitted.append(True))
+        tracks_list.request_node_colormap.connect(lambda: emitted.append(True))
 
         with patch(
             "napari_track_edit.data_views.views_coordinator.tracks_list.ExportDialog.show_export_dialog"

@@ -181,7 +181,7 @@ class TrackGraph(napari.layers.Tracks):
         # needs it), taken from the already-sorted data.
         self.properties = {"node_id": node_id_property}
         self.colormaps_dict["node_id"] = SimpleNamespace(
-            map=self.tracks_viewer.colormap.get_colors
+            map=self.tracks_viewer.node_colormap.get_colors
         )
         # always call, even if already on node_id, to trigger refresh
         self.color_by = "node_id"

@@ -357,7 +357,7 @@ class TrackPoints(ZOnlyPoints):
         """
         if len(nodes) == 0:
             return np.ones((1, 4))
-        return self.tracks_viewer.colormap.get_colors(np.asarray(nodes))
+        return self.tracks_viewer.node_colormap.get_colors(np.asarray(nodes))
 
     def get_symbols(self, tracks: Tracks, symbolmap: dict[NodeType, str]) -> list[str]:
         statemap = {

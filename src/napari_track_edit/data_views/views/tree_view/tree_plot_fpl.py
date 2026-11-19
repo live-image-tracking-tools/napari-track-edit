@@ -921,7 +921,13 @@ class TreePlot(QWidget):
         edge_pos[1::3] = self._positions[child_rows]
 
         edge_cols = np.ones((3 * e, 4), dtype=np.float32)
-        c = colors[child_rows]
+        # an edge is drawn in its child's color, unless edges are being colored
+        # by an edge feature of their own (see extract_sorted_tracks)
+        if "edge_color" in df.columns:
+            own = np.stack(df["edge_color"].to_numpy()).astype(np.float32) / 255.0
+            c = own[child_rows]
+        else:
+            c = colors[child_rows]
         edge_cols[0::3] = c
         edge_cols[1::3] = c
         edge_cols[2::3] = c

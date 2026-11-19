@@ -549,11 +549,14 @@ def test_deleting_the_group_being_colored_by_falls_back_to_track_ids(
 
     widget.group_name.setText("colored_group")
     qtbot.mouseClick(widget.new_group_button, Qt.MouseButton.LeftButton)
-    tracks_viewer.set_color_feature("colored_group")
+    tracks_viewer.set_node_color_feature("colored_group")
 
     item = widget.collection_list.item(0)
     button = widget.collection_list.itemWidget(item)
     qtbot.mouseClick(button.delete, Qt.MouseButton.LeftButton)
 
-    assert tracks_viewer.color_feature_key == tracks_viewer.tracks.features.tracklet_key
+    assert (
+        tracks_viewer.node_color_feature_key
+        == tracks_viewer.tracks.features.tracklet_key
+    )
     tracks_viewer._refresh()  # must not raise

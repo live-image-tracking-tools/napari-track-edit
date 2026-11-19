@@ -107,7 +107,7 @@ class TracksList(QGroupBox):
     """
 
     view_tracks = Signal(Tracks, str)
-    request_colormap = Signal()
+    request_node_colormap = Signal()
 
     tracks_cleared = Signal()
     """Emitted when the last tracks are removed from the list, so that the views
@@ -140,7 +140,7 @@ class TracksList(QGroupBox):
     def __init__(self):
         super().__init__(title="Results List")
 
-        self.colormap = None
+        self.node_colormap = None
         self._last_load_dir: Path | None = (
             None  # explicit, because Ubuntu does not remember
         )
@@ -385,11 +385,11 @@ class TracksList(QGroupBox):
         widget: TracksButton = self.tracks_list.itemWidget(item)
         tracks: Tracks = widget.tracks
         name: str = widget.name.text()
-        self.request_colormap.emit()
-        colormap = self.colormap
+        self.request_node_colormap.emit()
+        node_colormap = self.node_colormap
 
         result = ExportDialog.show_export_dialog(
-            self, tracks=tracks, name=name, colormap=colormap
+            self, tracks=tracks, name=name, node_colormap=node_colormap
         )
         if isinstance(result, Tracks):
             self._replace_tracks(item, result)

@@ -19,9 +19,10 @@ from superqt import QLabeledDoubleSlider
 
 from napari_track_edit._nte_app import NTEApp
 from napari_track_edit.data_views.colormap import (
-    categorical_feature_keys,
-    continuous_feature_keys,
+    SAME_AS_NODES,
+    edge_color_feature_keys,
     feature_display_name,
+    node_color_feature_keys,
 )
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
@@ -78,17 +79,17 @@ class VisualizationConfigWidget(QWidget):
         layout.addStretch(0)
 
 
-class ColorByWidget(QWidget):
-    """A "Color by" label and the dropdown picking the feature to color by.
+class FeatureColorByWidget(QWidget):
+    """A "Color ... by" label and the dropdown picking the feature to color by.
 
-    Selecting an entry goes through `TracksViewer.set_color_feature`, which
-    updates the shared colormap *and* rebuilds the labels, points, tracks,
-    tree and table.
-
-    Offers the categorical features (see `categorical_feature_keys`), the
-    numeric ones, shown as a gradient (see `continuous_feature_keys`), and
-    "None", which paints every node one flat color.
+    Shared by `NodeColorByWidget` and `EdgeColorByWidget`, which say which
+    features to offer (`_keys`), what to call them (`_display_name`), and how
+    to read and set the one in use on the `TracksViewer` (`_current`,
+    `_apply`).
     """
+
+    LABEL = ""
+    TOOLTIP = ""
 
     def __init__(self, tracks_viewer: TracksViewer):
         super().__init__()
@@ -98,15 +99,14 @@ class ColorByWidget(QWidget):
 
         self.combo = QComboBox()
         self.combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.combo.setToolTip(
-            "Node feature used to color the labels, points, tracks, tree and table."
-        )
+        self.combo.setToolTip(self.TOOLTIP)
         self.combo.currentIndexChanged.connect(self._on_selected)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 0, 8, 0)
         layout.setSpacing(8)
-        layout.addWidget(QLabel("Color by"))
+        self.label = QLabel(self.LABEL)
+        layout.addWidget(self.label)
         layout.addWidget(self.combo, stretch=1)
 
         self.tracks_viewer.tracks_updated.connect(self._populate)
@@ -118,22 +118,27 @@ class ColorByWidget(QWidget):
         self._populate()
         super().showEvent(event)
 
+    def _keys(self) -> list[str | None]:
+        raise NotImplementedError
+
+    def _display_name(self, key: str | None) -> str:
+        return feature_display_name(self.tracks_viewer.tracks, key)
+
+    def _current(self) -> str | None:
+        raise NotImplementedError
+
+    def _apply(self, key: str | None) -> None:
+        raise NotImplementedError
+
     def _populate(self, *_args) -> None:
         """Rebuild the entries and show the feature currently in use."""
 
-        tracks = self.tracks_viewer.tracks
-        keys = [
-            None,
-            *categorical_feature_keys(tracks),
-            *continuous_feature_keys(tracks),
-        ]
-        current = self.tracks_viewer.color_feature_key
+        keys = self._keys()
+        current = self._current()
         with QSignalBlocker(self.combo):
             self.combo.clear()
             for key in keys:
-                self.combo.addItem(
-                    feature_display_name(self.tracks_viewer.tracks, key), key
-                )
+                self.combo.addItem(self._display_name(key), key)
             self.combo.setCurrentIndex(keys.index(current) if current in keys else 0)
         self.combo.setEnabled(self.tracks_viewer.tracks is not None)
 
@@ -141,8 +146,72 @@ class ColorByWidget(QWidget):
         if index < 0:
             return
         feature_key = self.combo.itemData(index)
-        if feature_key != self.tracks_viewer.color_feature_key:
-            self.tracks_viewer.set_color_feature(feature_key)
+        if feature_key != self._current():
+            self._apply(feature_key)
+
+    def cleanup(self) -> None:
+        """Stop following the TracksViewer, which outlives this widget."""
+        for signal in (
+            self.tracks_viewer.tracks_updated,
+            self.tracks_viewer.colormap_updated,
+        ):
+            with contextlib.suppress(ValueError, KeyError, RuntimeError):
+                signal.disconnect(self._populate)
+
+
+class NodeColorByWidget(FeatureColorByWidget):
+    """ "Color nodes by": the node feature that colors the labels, points,
+    tracks, tree and table (see `TracksViewer.set_node_color_feature`).
+
+    Offers "None" (one flat color), then the categorical features and the
+    numeric ones, shown as a gradient (see `node_color_feature_keys`).
+    """
+
+    LABEL = "Color nodes by"
+    TOOLTIP = "Node feature used to color the labels, points, tracks, tree and table."
+
+    def _keys(self) -> list[str | None]:
+        return [None, *node_color_feature_keys(self.tracks_viewer.tracks)]
+
+    def _current(self) -> str | None:
+        return self.tracks_viewer.node_color_feature_key
+
+    def _apply(self, key: str | None) -> None:
+        self.tracks_viewer.set_node_color_feature(key)
+
+
+class EdgeColorByWidget(FeatureColorByWidget):
+    """ "Color edges by": the edge feature that colors the edges in the lineage
+    view (see `TracksViewer.set_edge_color_feature`).
+
+    Offers "Same as nodes" (each edge in its child node's color, the default),
+    "None" (one flat color), then the bool and numeric edge features (see
+    `edge_color_feature_keys`).
+    """
+
+    LABEL = "Color edges by"
+    TOOLTIP = (
+        "Edge feature used to color the edges in the lineage view. The napari "
+        "Tracks layer keeps the node colors."
+    )
+
+    def _keys(self) -> list[str | None]:
+        return [
+            SAME_AS_NODES,
+            None,
+            *edge_color_feature_keys(self.tracks_viewer.tracks),
+        ]
+
+    def _display_name(self, key: str | None) -> str:
+        if key == SAME_AS_NODES:
+            return "Same as nodes"
+        return super()._display_name(key)
+
+    def _current(self) -> str | None:
+        return self.tracks_viewer.edge_color_feature_key
+
+    def _apply(self, key: str | None) -> None:
+        self.tracks_viewer.set_edge_color_feature(key)
 
 
 class ModeWidget(QWidget):
@@ -240,14 +309,16 @@ class VisualizationWidget(QWidget):
 
         self.background_widget.setEnabled(False)  # initially disabled
 
-        self.color_by_widget = ColorByWidget(self.tracks_viewer)
+        self.node_color_by_widget = NodeColorByWidget(self.tracks_viewer)
+        self.edge_color_by_widget = EdgeColorByWidget(self.tracks_viewer)
 
         main_layout.addWidget(self.mode_widget)
         main_layout.addWidget(self.highlight_widget)
         main_layout.addWidget(self.foreground_widget)
         main_layout.addWidget(self.background_widget)
 
-        main_layout.addWidget(self.color_by_widget)
+        main_layout.addWidget(self.node_color_by_widget)
+        main_layout.addWidget(self.edge_color_by_widget)
 
         self.show_ortho_views = QCheckBox("Orthogonal views")
         self.show_ortho_views.toggled.connect(self.toggle_ortho_views)
@@ -269,13 +340,10 @@ class VisualizationWidget(QWidget):
         Called by MenuManager when the dock is destroyed.
         """
 
-        for signal, slot in (
-            (self.tracks_viewer.mode_updated, self._update_widget_availability),
-            (self.tracks_viewer.tracks_updated, self.color_by_widget._populate),
-            (self.tracks_viewer.colormap_updated, self.color_by_widget._populate),
-        ):
-            with contextlib.suppress(ValueError, KeyError, RuntimeError):
-                signal.disconnect(slot)
+        with contextlib.suppress(ValueError, KeyError, RuntimeError):
+            self.tracks_viewer.mode_updated.disconnect(self._update_widget_availability)
+        self.node_color_by_widget.cleanup()
+        self.edge_color_by_widget.cleanup()
 
     def toggle_viewer_text_overlay(self, checked: bool):
         """Change the visibility of the text overlay"""

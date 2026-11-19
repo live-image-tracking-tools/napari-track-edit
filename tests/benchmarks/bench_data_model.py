@@ -14,7 +14,7 @@ from bench_ui_actions import (
     ROUNDS,  # shared round count (median-gated; see that module)
 )
 
-from napari_track_edit.data_views.colormap import TrackColormap
+from napari_track_edit.data_views.colormap import NodeColormap
 from napari_track_edit.data_views.views.tree_view.tree_widget_utils import (
     extract_sorted_tracks,
 )
@@ -24,7 +24,7 @@ def _colormap(tracks):
     # Same colormap TracksViewer builds and hands the tree (tracks_viewer.py):
     # extract_sorted_tracks looks colors up per node, so a bare napari colormap
     # will not do.
-    cmap = TrackColormap()
+    cmap = NodeColormap()
     cmap.set_tracks(tracks)
     return cmap
 

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import numpy as np
 from napari.utils import DirectLabelColormap
 from napari.utils.colormaps import ensure_colormap, label_colormap
+from tracksdata.constants import DEFAULT_ATTR_KEYS
 
 if TYPE_CHECKING:
     from funtracks.data_model import Tracks
@@ -13,6 +14,9 @@ if TYPE_CHECKING:
 # What a node is painted with while its own color is not known yet - see add_node.
 PINK = (0.75, 0.08, 0.4)
 GREY = (0.7, 0.7, 0.7)  # What every node is colored when no feature is selected at all.
+# The edge "feature" that draws every edge in its child node's color (see
+# EdgeColormap). Not None, which means one flat color, as it does for nodes.
+SAME_AS_NODES = "__same_as_nodes__"
 
 
 def construct_direct_colormap(color_dict: dict) -> DirectLabelColormap:
@@ -40,7 +44,7 @@ class ColorSource(Protocol):
     Duck-type compatible with `CyclicLabelColormap.map`, so it's a drop-in
     replacement anywhere a napari colormap's `.map()` is used for track-id
     coloring. Swap in a continuous-feature or constant-color source later
-    without touching `TrackColormap` or its consumers.
+    without touching `NodeColormap` or its consumers.
 
     `shuffle()` re-draws whatever colors the source uses, so the "new colormap"
     button does the right thing whichever source is installed.
@@ -142,7 +146,7 @@ class GradientColorSource:
     them. Missing values (None, NaN) are painted GREY, so they read as "no
     value" rather than as the low end of the scale.
 
-    With `autoscale` on, `TrackColormap.set_tracks` calls `fit` with every
+    With `autoscale` on, `NodeColormap.set_tracks` calls `fit` with every
     node's value each time it recolors, so the limits follow the data through
     edits. Passing `limits` turns autoscale off.
     """
@@ -215,7 +219,9 @@ def _is_continuous(tracks: Tracks, feature_key: str) -> bool:
     )
 
 
-def make_color_source(tracks: Tracks | None, feature_key: str | None) -> ColorSource:
+def make_node_color_source(
+    tracks: Tracks | None, feature_key: str | None
+) -> ColorSource:
     """The `ColorSource` that can render a feature's values.
 
     A source and a feature have to match: a group's True/False needs two
@@ -233,7 +239,9 @@ def make_color_source(tracks: Tracks | None, feature_key: str | None) -> ColorSo
     return CategoricalColorSource()
 
 
-def color_feature_available(tracks: Tracks | None, feature_key: str | None) -> bool:
+def node_color_feature_available(
+    tracks: Tracks | None, feature_key: str | None
+) -> bool:
     """Whether `feature_key`'s values can actually be read off `tracks`.
 
     `tracks.features` only *describes* features; it is a plain dict that
@@ -255,12 +263,12 @@ def color_feature_available(tracks: Tracks | None, feature_key: str | None) -> b
     )
 
 
-def categorical_feature_keys(tracks: Tracks | None) -> list[str]:
+def node_categorical_feature_keys(tracks: Tracks | None) -> list[str]:
     """The node features that can currently drive coloring: tracklet id, lineage id, and
     every group (solution is excluded for now).
 
     Features with no column on the graph are left out - see
-    `color_feature_available`. The column set is fetched once here rather than
+    `node_color_feature_available`. The column set is fetched once here rather than
     per key, since reading it can hit the database.
     """
     if tracks is None:
@@ -283,11 +291,11 @@ def categorical_feature_keys(tracks: Tracks | None) -> list[str]:
     return keys
 
 
-def continuous_feature_keys(tracks: Tracks | None) -> list[str]:
+def node_continuous_feature_keys(tracks: Tracks | None) -> list[str]:
     """The numeric node features that can currently drive coloring, as a
     gradient (see `GradientColorSource`).
 
-    Same rules as `categorical_feature_keys` for features without a column.
+    Same rules as `node_categorical_feature_keys` for features without a column.
     """
     if tracks is None:
         return []
@@ -299,6 +307,62 @@ def continuous_feature_keys(tracks: Tracks | None) -> list[str]:
     ]
 
 
+def node_color_feature_keys(tracks: Tracks | None) -> list[str]:
+    """Every node feature that can currently drive node coloring: the
+    categorical ones, then the numeric ones."""
+    return [
+        *node_categorical_feature_keys(tracks),
+        *node_continuous_feature_keys(tracks),
+    ]
+
+
+def edge_color_feature_keys(tracks: Tracks | None) -> list[str]:
+    """The edge features that can currently drive edge coloring: bool features
+    (two colors) and numeric ones (a gradient), one value per edge, with a
+    column on the graph. `solution` is left out, as for nodes.
+    """
+    if tracks is None:
+        return []
+    attr_keys = set(tracks.graph_solution.edge_attr_keys())
+    return [
+        key
+        for key, feature in tracks.features.edge_features.items()
+        if feature["value_type"] in ("bool", "float", "int")
+        and feature.get("num_values", 1) == 1
+        and key != "solution"
+        and key in attr_keys
+    ]
+
+
+def edge_color_feature_available(
+    tracks: Tracks | None, feature_key: str | None
+) -> bool:
+    """Whether `feature_key`'s edge values can be read off `tracks`. None (one
+    flat color) and SAME_AS_NODES read nothing, so they always can. See
+    `node_color_feature_available`."""
+    if feature_key is None or feature_key == SAME_AS_NODES:
+        return True
+    if tracks is None:
+        return False
+    return (
+        feature_key in tracks.features
+        and feature_key in tracks.graph_solution.edge_attr_keys()
+    )
+
+
+def make_edge_color_source(
+    tracks: Tracks | None, feature_key: str | None
+) -> ColorSource:
+    """One flat color for None, two colors for a bool edge feature, a gradient
+    for a numeric one."""
+    if feature_key is None:
+        return ConstantColorSource()
+    feature = tracks.features.get(feature_key) if tracks is not None else None
+    if feature is not None and feature["value_type"] == "bool":
+        return BinaryColorSource()
+    return GradientColorSource()
+
+
 def feature_display_name(tracks: Tracks | None, feature_key: str | None) -> str:
     """The label to show for a feature in the UI."""
     if feature_key is None:
@@ -307,7 +371,7 @@ def feature_display_name(tracks: Tracks | None, feature_key: str | None) -> str:
     return feature_key if feature is None else feature.get("display_name", feature_key)
 
 
-class TrackColormap:
+class NodeColormap:
     """Node -> display color for a `Tracks` object, with color and alpha as
     independently updatable state (unlike `DirectLabelColormap`, which
     conflates them in one `color_dict`).
@@ -395,7 +459,7 @@ class TrackColormap:
     ) -> None:
         """Color by `feature_key`, rendered with `color_source`."""
         self._feature_key = feature_key
-        self._color_source = color_source or make_color_source(
+        self._color_source = color_source or make_node_color_source(
             self._tracks, feature_key
         )
         self.set_tracks(self._tracks)
@@ -599,3 +663,91 @@ class TrackColormap:
         return np.append(
             self._node_colors[node], self._alpha.get(node, self._default_alpha)
         )
+
+
+class EdgeColormap:
+    """Edge -> display color, by an edge feature, for the lineage view.
+
+    The tree draws a node's incoming edge under it, and in a lineage every node
+    has at most one parent, so colors are looked up by the edge's target node.
+
+    `feature_key` SAME_AS_NODES (the default) means edges are not colored on
+    their own at all (`active` is False) and the tree draws them like their
+    nodes; None means one flat color, as for nodes. Like `NodeColormap`, colors are computed once per `set_tracks` and only
+    read afterwards; the gradient limits are refit there too.
+    """
+
+    def __init__(self):
+        self._feature_key: str | None = SAME_AS_NODES
+        self._color_source: ColorSource | None = None
+        self._tracks: Tracks | None = None
+        # (sorted target node ids, matching RGB rows)
+        self._lookup: tuple[np.ndarray, np.ndarray] = (
+            np.empty(0, dtype=np.int64),
+            np.zeros((0, 3)),
+        )
+
+    @property
+    def feature_key(self) -> str | None:
+        return self._feature_key
+
+    @property
+    def color_source(self) -> ColorSource | None:
+        return self._color_source
+
+    @property
+    def active(self) -> bool:
+        return self._feature_key != SAME_AS_NODES
+
+    def set_feature(
+        self, feature_key: str | None, color_source: ColorSource | None = None
+    ) -> None:
+        """Color edges by `feature_key` (see the class docstring for None and
+        SAME_AS_NODES)."""
+        self._feature_key = feature_key
+        self._color_source = (
+            None
+            if feature_key == SAME_AS_NODES
+            else color_source or make_edge_color_source(self._tracks, feature_key)
+        )
+        self.set_tracks(self._tracks)
+
+    def set_tracks(self, tracks: Tracks | None) -> None:
+        """Read every edge's value of the feature and recompute the colors."""
+        self._tracks = tracks
+        targets = np.empty(0, dtype=np.int64)
+        rgb = np.zeros((0, 3))
+        if tracks is not None and self.active:
+            target_key = DEFAULT_ATTR_KEYS.EDGE_TARGET
+            key = self._feature_key
+            df = tracks.graph_solution.edge_attrs(
+                attr_keys=[target_key] if key is None else [target_key, key]
+            )
+            if len(df) > 0:
+                values = (
+                    np.zeros(len(df))
+                    if key is None
+                    else np.asarray(df[key].to_list(), dtype=object)
+                )
+                fit = getattr(self._color_source, "fit", None)
+                if fit is not None:
+                    fit(values)
+                targets = df[target_key].to_numpy().astype(np.int64)
+                rgb = np.asarray(self._color_source.map(values))[:, :3]
+                order = np.argsort(targets)
+                targets, rgb = targets[order], rgb[order]
+        self._lookup = (targets, rgb)
+
+    def get_colors(self, target_nodes) -> np.ndarray:
+        """RGBA of the edge into each of `target_nodes`, fully opaque;
+        transparent black where there is no such edge."""
+        targets, rgb = self._lookup
+        nodes = np.asarray(target_nodes, dtype=np.int64)
+        colors = np.zeros((len(nodes), 4))
+        if len(targets) == 0 or len(nodes) == 0:
+            return colors
+        index = np.clip(np.searchsorted(targets, nodes), 0, len(targets) - 1)
+        known = targets[index] == nodes
+        colors[known, :3] = rgb[index[known]]
+        colors[known, 3] = 1.0
+        return colors

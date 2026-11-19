@@ -6,7 +6,7 @@ import pytest
 from funtracks.data_model import Tracks
 from qtpy.QtWidgets import QLabel
 
-from napari_track_edit.data_views.colormap import GREY, PINK, TrackColormap
+from napari_track_edit.data_views.colormap import GREY, PINK, NodeColormap
 from napari_track_edit.import_export.menus.export_dialog import (
     SQL_EXPORT_TYPE,
     ExportDialog,
@@ -35,9 +35,9 @@ def fake_parent(qtbot):
 
 @pytest.fixture
 def colormap():
-    """A TrackColormap stub that vectorizes like the real one: get_colors() is
+    """A NodeColormap stub that vectorizes like the real one: get_colors() is
     called once with the whole node array and returns an (N, 4) RGBA array."""
-    cmap = MagicMock(spec=TrackColormap)
+    cmap = MagicMock(spec=NodeColormap)
     cmap.get_colors.side_effect = lambda nodes: np.tile(
         [0.0, 0.0, 0.0, 1.0], (len(np.atleast_1d(nodes)), 1)
     )
@@ -198,7 +198,7 @@ def test_export_dialog_cancel(
         fake_parent,
         solution_tracks_2d_without_segmentation,
         name="TestGroup",
-        colormap=colormap,
+        node_colormap=colormap,
     )
     assert result is False
 
@@ -225,7 +225,7 @@ def test_export_dialog_passes_has_segmentation(
         fake_parent,
         solution_tracks_2d_without_segmentation,
         name="x",
-        colormap=colormap,
+        node_colormap=colormap,
     )
     assert captured_kwargs[-1].get("has_segmentation") is False
 
@@ -233,7 +233,7 @@ def test_export_dialog_passes_has_segmentation(
         fake_parent,
         solution_tracks_2d,
         name="x",
-        colormap=colormap,
+        node_colormap=colormap,
     )
     assert captured_kwargs[-1].get("has_segmentation") is True
 
@@ -260,7 +260,7 @@ def test_export_csv_no_seg(
             solution_tracks_2d_without_segmentation,
             name="G",
             nodes_to_keep={1, 2, 3},
-            colormap=colormap,
+            node_colormap=colormap,
         )
 
     assert result is True
@@ -294,7 +294,7 @@ def test_export_csv_with_seg_zarr(
             fake_parent,
             solution_tracks_2d,
             name="G",
-            colormap=colormap,
+            node_colormap=colormap,
         )
 
     assert result is True
@@ -327,7 +327,7 @@ def test_export_csv_with_seg_tiff_no_relabel(
             fake_parent,
             solution_tracks_2d,
             name="G",
-            colormap=colormap,
+            node_colormap=colormap,
         )
 
     assert result is True
@@ -354,7 +354,7 @@ def test_export_geff_no_seg(
             solution_tracks_2d_without_segmentation,
             name="G",
             nodes_to_keep={1, 2},
-            colormap=colormap,
+            node_colormap=colormap,
         )
 
     assert result is True
@@ -382,7 +382,7 @@ def test_export_geff_with_seg_zarr(
             fake_parent,
             solution_tracks_2d,
             name="G",
-            colormap=colormap,
+            node_colormap=colormap,
         )
 
     assert result is True
@@ -413,7 +413,7 @@ def test_export_geff_with_seg_tiff_no_relabel(
             fake_parent,
             solution_tracks_2d,
             name="G",
-            colormap=colormap,
+            node_colormap=colormap,
         )
 
     assert result is True
@@ -447,7 +447,7 @@ def test_export_geff_error(
             fake_parent,
             solution_tracks_2d_without_segmentation,
             name="G",
-            colormap=colormap,
+            node_colormap=colormap,
         )
 
     assert result is False
@@ -486,7 +486,7 @@ def test_export_csv_colors_follow_the_selected_feature(
     for node in tracks.graph_solution.node_ids():
         tracks.graph_solution.nodes[node][GROUP] = node in IN_GROUP
 
-    colormap = TrackColormap()
+    colormap = NodeColormap()
     colormap.set_tracks(tracks)
     colormap.set_feature(GROUP)
 
@@ -506,7 +506,7 @@ def test_export_csv_colors_follow_the_selected_feature(
             tracks,
             name="G",
             nodes_to_keep=set(tracks.graph_solution.node_ids()),
-            colormap=colormap,
+            node_colormap=colormap,
         )
 
     color_dict = mock_export.call_args.kwargs["color_dict"]
@@ -614,7 +614,7 @@ def test_export_to_sql_writes_a_readable_database(
 
     with mock_file_dialog(db_path):
         result = ExportDialog.show_export_dialog(
-            fake_parent, solution_tracks_2d, name="G", colormap=colormap
+            fake_parent, solution_tracks_2d, name="G", node_colormap=colormap
         )
 
     assert result is True
@@ -637,7 +637,7 @@ def test_export_to_sql_without_rebind_leaves_session_in_memory(
 
     with mock_file_dialog(tmp_path / "tracks.db"):
         result = ExportDialog.show_export_dialog(
-            fake_parent, solution_tracks_2d, name="G", colormap=colormap
+            fake_parent, solution_tracks_2d, name="G", node_colormap=colormap
         )
 
     assert result is True  # a plain export, nothing to swap in
@@ -657,7 +657,7 @@ def test_export_to_sql_with_rebind_returns_database_backed_tracks(
 
     with mock_file_dialog(db_path):
         result = ExportDialog.show_export_dialog(
-            fake_parent, solution_tracks_2d, name="G", colormap=colormap
+            fake_parent, solution_tracks_2d, name="G", node_colormap=colormap
         )
 
     assert isinstance(result, Tracks)
@@ -683,7 +683,7 @@ def test_export_to_sql_overwrites_existing_file(
 
     with mock_file_dialog(db_path):
         result = ExportDialog.show_export_dialog(
-            fake_parent, solution_tracks_2d, name="G", colormap=colormap
+            fake_parent, solution_tracks_2d, name="G", node_colormap=colormap
         )
 
     assert result is True
@@ -711,7 +711,7 @@ def test_export_to_sql_refuses_own_database(
         ) as mock_warning,
     ):
         result = ExportDialog.show_export_dialog(
-            fake_parent, opened, name="G", colormap=colormap
+            fake_parent, opened, name="G", node_colormap=colormap
         )
 
     assert result is False
@@ -732,7 +732,7 @@ def test_export_to_sql_cancel_writes_nothing(
         return_value=fd,
     ):
         result = ExportDialog.show_export_dialog(
-            fake_parent, solution_tracks_2d, name="G", colormap=colormap
+            fake_parent, solution_tracks_2d, name="G", node_colormap=colormap
         )
 
     assert result is False
@@ -756,7 +756,7 @@ def test_already_on_disk_note_shown_for_database_backed_tracks(
     captured = accept_type_dialog(_select_sql)
     with mock_file_dialog(tmp_path / "copy.db"):
         ExportDialog.show_export_dialog(
-            fake_parent, opened, name="G", colormap=colormap
+            fake_parent, opened, name="G", node_colormap=colormap
         )
 
     labels = captured["dialog"].findChildren(QLabel)
