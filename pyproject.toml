@@ -128,6 +128,11 @@ conflicts = [
     ],
 ]
 
+[tool.uv.sources]
+# Temporary: funtracks history log (funtracks PR #324). Replace with a released
+# funtracks pin before merging.
+funtracks = { git = "https://github.com/funkelab/funtracks", branch = "history_log" }
+
 [tool.pytest.ini_options]
 # Benchmarks are slow and run in a dedicated CI job; exclude them from the normal
 # test suite (`just test` / `pytest .`). Run with `pytest tests/benchmarks -o addopts=`.
