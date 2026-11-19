@@ -7,8 +7,10 @@ from napari_track_edit.data_views.colormap import (
     BinaryColorSource,
     CategoricalColorSource,
     ConstantColorSource,
+    GradientColorSource,
     TrackColormap,
     categorical_feature_keys,
+    continuous_feature_keys,
     feature_display_name,
     make_color_source,
 )
@@ -30,6 +32,69 @@ def _tracks_subset(tracks, nodes):
             return tracks.get_nodes_attr(nodes, attr)
 
     return TracksSubset()
+
+
+class TestGradientColorSource:
+    def test_ends_of_the_range_get_the_ends_of_the_colormap(self):
+        source = GradientColorSource(limits=(0.0, 10.0))
+
+        colors = source.map(np.asarray([0.0, 10.0]))
+
+        assert np.allclose(colors, source.colormap.map(np.asarray([0.0, 1.0])))
+
+    def test_values_outside_the_limits_are_clipped(self):
+        source = GradientColorSource(limits=(0.0, 10.0))
+
+        colors = source.map(np.asarray([-5.0, 0.0, 10.0, 50.0]))
+
+        assert np.allclose(colors[0], colors[1])
+        assert np.allclose(colors[2], colors[3])
+
+    def test_missing_values_are_grey(self):
+        source = GradientColorSource(limits=(0.0, 1.0))
+
+        colors = source.map(np.asarray([None, 0.5, np.nan], dtype=object))
+
+        assert np.allclose(colors[0], (*GREY, 1.0))
+        assert np.allclose(colors[2], (*GREY, 1.0))
+        assert not np.allclose(colors[1], (*GREY, 1.0))
+
+    def test_scalar_in_scalar_out(self):
+        source = GradientColorSource(limits=(0.0, 1.0))
+
+        assert source.map(0.5).shape == (4,)
+
+    def test_fit_sets_the_limits_to_the_finite_range(self):
+        source = GradientColorSource()
+
+        source.fit(np.asarray([3.0, None, 7.0, np.nan], dtype=object))
+
+        assert source.limits == (3.0, 7.0)
+
+    def test_fixed_limits_are_not_refit(self):
+        source = GradientColorSource(limits=(0.0, 100.0))
+
+        source.fit(np.asarray([3.0, 7.0]))
+
+        assert source.limits == (0.0, 100.0)
+
+    def test_one_value_everywhere_does_not_divide_by_zero(self):
+        source = GradientColorSource()
+        source.fit(np.asarray([4.0, 4.0]))
+
+        colors = source.map(np.asarray([4.0, 4.0]))
+
+        assert np.all(np.isfinite(colors))
+        assert np.allclose(colors[0], source.colormap.map(np.asarray([0.5]))[0])
+
+    def test_shuffle_switches_colormap(self):
+        source = GradientColorSource()
+        before = source.map(np.asarray([0.2]))
+
+        source.shuffle()
+
+        assert source.colormap.name != "viridis"
+        assert not np.allclose(source.map(np.asarray([0.2])), before)
 
 
 class TestCategoricalColorSource:
@@ -855,6 +920,41 @@ class TestFeatureMenu:
 
     def test_no_tracks_no_keys(self):
         assert categorical_feature_keys(None) == []
+        assert continuous_feature_keys(None) == []
+
+    def test_lists_numeric_features_but_not_ids(self, solution_tracks_2d):
+        _add_area_feature(solution_tracks_2d)
+
+        keys = continuous_feature_keys(solution_tracks_2d)
+
+        assert "t" in keys
+        assert "area" in keys
+        assert solution_tracks_2d.features.tracklet_key not in keys
+        assert solution_tracks_2d.features.lineage_key not in keys
+        # multi-valued, bool and mask features cannot be one gradient
+        for key in ("pos", "bbox", "solution", "mask"):
+            assert key not in keys
+
+    def test_numeric_feature_gets_a_gradient(self, solution_tracks_2d):
+        _add_area_feature(solution_tracks_2d)
+
+        source = make_color_source(solution_tracks_2d, "area")
+
+        assert isinstance(source, GradientColorSource)
+
+    def test_coloring_by_a_numeric_feature_spans_the_colormap(self, solution_tracks_2d):
+        _add_area_feature(solution_tracks_2d)
+        cmap = TrackColormap()
+        cmap.set_tracks(solution_tracks_2d)
+
+        cmap.set_feature("area")
+
+        nodes = list(solution_tracks_2d.graph_solution.node_ids())
+        areas = np.asarray(solution_tracks_2d.get_nodes_attr(nodes, "area"))
+        colors = cmap.get_colors(nodes)
+        ends = cmap.color_source.colormap.map(np.asarray([0.0, 1.0]))
+        assert np.allclose(colors[np.argmin(areas)], ends[0])
+        assert np.allclose(colors[np.argmax(areas)], ends[1])
 
     def test_display_names(self, solution_tracks_2d):
         assert feature_display_name(solution_tracks_2d, None) == "None"
@@ -864,3 +964,14 @@ class TestFeatureMenu:
             )
             == "Lineage ID"
         )
+
+
+def _add_area_feature(tracks):
+    """Describe the graph's existing `area` column as a feature."""
+    tracks.features["area"] = {
+        "feature_type": "node",
+        "value_type": "float",
+        "num_values": 1,
+        "display_name": "Area",
+        "default_value": None,
+    }

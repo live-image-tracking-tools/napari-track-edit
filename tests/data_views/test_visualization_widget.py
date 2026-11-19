@@ -351,13 +351,14 @@ class TestColorByWidget:
         )
         return "my_group"
 
-    def test_lists_none_track_and_lineage(self, visualization_widget):
-        widget, _tracks_viewer = visualization_widget
+    def test_lists_none_track_lineage_and_numeric_features(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
         combo = widget.color_by_widget.combo
 
         labels = [combo.itemText(i) for i in range(combo.count())]
 
-        assert labels == ["None", "Tracklet ID", "Lineage ID"]
+        time_name = tracks_viewer.tracks.features["t"].get("display_name", "t")
+        assert labels == ["None", "Tracklet ID", "Lineage ID", time_name]
 
     def test_starts_on_the_feature_in_use(self, visualization_widget):
         widget, tracks_viewer = visualization_widget

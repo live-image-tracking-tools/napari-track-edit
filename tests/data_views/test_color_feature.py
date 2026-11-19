@@ -14,6 +14,7 @@ from napari_track_edit.data_views.colormap import (
     PINK,
     BinaryColorSource,
     CategoricalColorSource,
+    GradientColorSource,
     categorical_feature_keys,
 )
 from napari_track_edit.data_views.views.table.custom_table_widget import (
@@ -433,3 +434,28 @@ class TestClearTracks:
         # labels layer has minted to paint with, so this is a subset check)
         assert set(nodes) <= set(grouped.colormap.nodes)
         assert (grouped.colormap.get_colors(nodes)[:, 3] == 1.0).all()
+
+
+class TestContinuousColoring:
+    """Coloring by a numeric feature: time, in the 3D fixture node 1 at t=0
+    and nodes 2 and 3 at t=1, so the two ends of the gradient."""
+
+    def test_recolors_every_view(self, tracks_viewer):
+        tracks_viewer.set_color_feature("t")
+
+        assert isinstance(tracks_viewer.colormap.color_source, GradientColorSource)
+        ends = tracks_viewer.colormap.color_source.colormap.map(np.asarray([0.0, 1.0]))
+        colors = _view_colors(tracks_viewer)
+        for view in VIEWS:
+            assert np.allclose(colors[view][1], ends[0][:3]), view
+            assert np.allclose(colors[view][2], ends[1][:3]), view
+            assert np.allclose(colors[view][3], ends[1][:3]), view
+
+    def test_a_new_label_is_painted_grey(self, tracks_viewer):
+        # its value is not known until the node exists
+        tracks_viewer.set_color_feature("t")
+
+        _track, pending, swatch, _committed = _paint_new_label(tracks_viewer)
+
+        assert np.allclose(pending, GREY)
+        assert np.array_equal(swatch, [0, 0, 0, 0])

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import numpy as np
 from napari.utils import DirectLabelColormap
-from napari.utils.colormaps import label_colormap
+from napari.utils.colormaps import ensure_colormap, label_colormap
 
 if TYPE_CHECKING:
     from funtracks.data_model import Tracks
@@ -135,18 +135,101 @@ class ConstantColorSource:
         )[0]
 
 
+class GradientColorSource:
+    """A continuous colormap (viridis by default) for numeric features.
+
+    Values are scaled linearly between `limits` (low, high) and clipped to
+    them. Missing values (None, NaN) are painted GREY, so they read as "no
+    value" rather than as the low end of the scale.
+
+    With `autoscale` on, `TrackColormap.set_tracks` calls `fit` with every
+    node's value each time it recolors, so the limits follow the data through
+    edits. Passing `limits` turns autoscale off.
+    """
+
+    # what the "new colormap" button cycles through
+    COLORMAPS = ("viridis", "plasma", "magma", "inferno", "turbo", "twilight")
+
+    def __init__(
+        self,
+        colormap: str = "viridis",
+        limits: tuple[float, float] | None = None,
+    ):
+        self.colormap = ensure_colormap(colormap)
+        self.autoscale = limits is None
+        self.limits: tuple[float, float] = (0.0, 1.0) if limits is None else limits
+
+    def fit(self, values: np.ndarray) -> None:
+        """Set `limits` to the range of the finite `values`, if autoscaling."""
+        if not self.autoscale:
+            return
+        arr = _as_float(values)
+        finite = arr[np.isfinite(arr)]
+        if finite.size > 0:
+            self.limits = (float(finite.min()), float(finite.max()))
+
+    def map(self, values: np.ndarray) -> np.ndarray:
+        scalar = np.ndim(values) == 0
+        arr = np.atleast_1d(_as_float(values))
+        low, high = self.limits
+        span = high - low
+        # a feature with one value everywhere lands in the middle of the scale
+        scaled = (arr - low) / span if span > 0 else np.full(arr.shape, 0.5)
+        missing = ~np.isfinite(scaled)
+        colors = np.empty((len(arr), 4))
+        colors[~missing] = self.colormap.map(np.clip(scaled[~missing], 0.0, 1.0))
+        colors[missing] = (*GREY, 1.0)
+        return colors[0] if scalar else colors
+
+    def shuffle(self) -> None:
+        """Switch to the next colormap in `COLORMAPS`."""
+        names = self.COLORMAPS
+        current = self.colormap.name
+        index = names.index(current) + 1 if current in names else 0
+        self.colormap = ensure_colormap(names[index % len(names)])
+
+
+def _as_float(values) -> np.ndarray:
+    """`values` as a float array, with None (a missing value) as NaN."""
+    arr = np.asarray(values)
+    if arr.dtype.kind == "O":
+        arr = np.array([np.nan if v is None else v for v in arr.ravel()]).reshape(
+            arr.shape
+        )
+    return arr.astype(float)
+
+
+def _is_continuous(tracks: Tracks, feature_key: str) -> bool:
+    """Whether a node feature holds one number per node that is not an id.
+
+    Integer features count too (time, counts); tracklet and lineage ids are
+    the exception, as their numbers are labels rather than amounts.
+    """
+    features = tracks.features
+    feature = features.get(feature_key)
+    return (
+        feature is not None
+        and feature["value_type"] in ("float", "int")
+        and feature.get("num_values", 1) == 1
+        and feature_key not in (features.tracklet_key, features.lineage_key)
+    )
+
+
 def make_color_source(tracks: Tracks | None, feature_key: str | None) -> ColorSource:
     """The `ColorSource` that can render a feature's values.
 
     A source and a feature have to match: a group's True/False needs two
     colors, no feature at all means one flat color, categorical features get random
-    colors via CategoricalColorSource. TODO: GradientColorSource for continuous features.
+    colors via CategoricalColorSource, and numeric features a gradient via
+    GradientColorSource.
     """
     if feature_key is None:
         return ConstantColorSource()
     feature = tracks.features.get(feature_key) if tracks is not None else None
     if feature is not None and feature["value_type"] == "bool":
         return BinaryColorSource()
+    if tracks is not None and _is_continuous(tracks, feature_key):
+        return GradientColorSource()
     return CategoricalColorSource()
 
 
@@ -198,6 +281,22 @@ def categorical_feature_keys(tracks: Tracks | None) -> list[str]:
         and key in attr_keys
     ]
     return keys
+
+
+def continuous_feature_keys(tracks: Tracks | None) -> list[str]:
+    """The numeric node features that can currently drive coloring, as a
+    gradient (see `GradientColorSource`).
+
+    Same rules as `categorical_feature_keys` for features without a column.
+    """
+    if tracks is None:
+        return []
+    attr_keys = set(tracks.graph_solution.node_attr_keys())
+    return [
+        key
+        for key, feature in tracks.features.node_features.items()
+        if key in attr_keys and _is_continuous(tracks, key)
+    ]
 
 
 def feature_display_name(tracks: Tracks | None, feature_key: str | None) -> str:
@@ -338,6 +437,9 @@ class TrackColormap:
         self._tracks = tracks
         nodes = tracks.graph_solution.node_ids() if tracks is not None else []
         values = self._feature_values(tracks, nodes) if tracks is not None else []
+        fit = getattr(self.color_source, "fit", None)
+        if fit is not None and len(values) > 0:
+            fit(values)
         if len(values) > 0:
             # One vectorized call - color_source.map has a large fixed
             # per-call overhead, so mapping per-node is much slower.
