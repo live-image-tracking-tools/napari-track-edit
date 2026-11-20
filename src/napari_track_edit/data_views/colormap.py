@@ -135,10 +135,15 @@ class CategoricalColorSource:
         self._order = np.arange(self.ID_CYCLE)
 
     def preview(self, name: str) -> np.ndarray:
-        """The colors to show for `name` in the colormap picker."""
+        """The colors to show for `name` in the colormap picker: the ones ids
+        get now for the palette in use (shuffled or not), and the ones they
+        would get after picking it for the others."""
         if name == RANDOM_IDS:
             return self._cyclic_colormap.map(np.arange(1, 25))[:, :3]
-        return palette_colors(name, self.ID_CYCLE)[:24]
+        colors = palette_colors(name, self.ID_CYCLE)
+        if name == self._choice:
+            colors = colors[self._order]
+        return colors[:24]
 
     def map(self, values: np.ndarray) -> np.ndarray:
         # napari's cyclic colormap only accepts integer dtypes: a bool (group)
@@ -363,8 +368,11 @@ class PaletteColorSource:
         self._order = np.arange(len(palette_colors(name, self._n_colors)))
 
     def preview(self, name: str) -> np.ndarray:
-        """The (N, 3) colors to show for palette `name` in the colormap picker."""
-        return palette_colors(name, self._n_colors)
+        """The (N, 3) colors to show for palette `name` in the colormap picker:
+        in their current (shuffled) order for the palette in use, in palette
+        order, as picking it would give, for the others."""
+        colors = palette_colors(name, self._n_colors)
+        return colors[self._order] if name == self.palette else colors
 
     def shuffle(self) -> None:
         """Deal the same palette's colors out to the categories in a new order.

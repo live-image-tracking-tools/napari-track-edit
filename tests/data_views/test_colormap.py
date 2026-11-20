@@ -1361,3 +1361,25 @@ class TestPaletteMissingValues:
         source = PaletteColorSource.for_values(np.asarray(["a", np.nan], dtype=object))
 
         assert len(source._slots) == 1
+
+
+class TestPreviewFollowsShuffle:
+    def test_id_palette_in_use(self):
+        source = CategoricalColorSource()
+        source.choice = "hues"
+        before = source.preview("hues").copy()
+        other = source.preview("purple-orange").copy()
+
+        source.shuffle()
+
+        assert not np.allclose(source.preview("hues"), before)
+        assert np.allclose(source.preview("purple-orange"), other)
+
+    def test_category_palette_in_use(self):
+        source = PaletteColorSource.for_values(range(5))
+        before = source.preview("tab10").copy()
+
+        source.shuffle()
+
+        assert not np.allclose(source.preview("tab10"), before)
+        assert np.allclose(source.preview("tab20"), palette_colors("tab20"))
