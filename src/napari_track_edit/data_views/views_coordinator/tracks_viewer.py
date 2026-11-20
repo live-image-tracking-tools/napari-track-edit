@@ -262,6 +262,21 @@ class TracksViewer:
             self._refresh()
         self.colormap_updated.emit()
 
+    def set_node_colormap_choice(self, name: str) -> None:
+        """Switch the node colors to the named colormap (a gradient or a
+        palette, see `colormap_choices`) and refresh every view."""
+        self.node_colormap.color_source.choice = name
+        if self.tracks is not None:
+            self._refresh()
+        self.colormap_updated.emit()
+
+    def set_edge_colormap_choice(self, name: str) -> None:
+        """Switch the lineage view's edge colors to the named colormap."""
+        self.edge_colormap.color_source.choice = name
+        if self.tracks is not None:
+            self._refresh()
+        self.colormap_updated.emit()
+
     def _validate_node_color_feature(self) -> None:
         """Fall back to track ids if the feature being colored by is gone."""
 

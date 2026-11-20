@@ -12,6 +12,8 @@ from tracksdata.constants import DEFAULT_ATTR_KEYS
 from napari_track_edit.data_views.palettes import (
     CATEGORICAL_PALETTES,
     GRADIENTS,
+    ID_PALETTES,
+    RANDOM_IDS,
     palette_colors,
     palette_for,
 )
@@ -56,6 +58,12 @@ def node_feature_values(tracks: Tracks, nodes, feature_key) -> list:
     return tracks.get_nodes_attr(nodes, feature_key)
 
 
+def colormap_choices(color_source) -> tuple[str, ...]:
+    """The named colormaps `color_source` can switch between; empty for sources
+    without any (ids, groups, one flat color)."""
+    return tuple(getattr(color_source, "choices", ()))
+
+
 def construct_direct_colormap(color_dict: dict) -> DirectLabelColormap:
     """A `DirectLabelColormap` built without pydantic's per-color validation.
 
@@ -83,8 +91,13 @@ class ColorSource(Protocol):
     coloring. Swap in a continuous-feature or constant-color source later
     without touching `NodeColormap` or its consumers.
 
-    `shuffle()` re-draws whatever colors the source uses, so the "new colormap"
-    button does the right thing whichever source is installed.
+    `shuffle()` re-draws whatever colors the source uses, so napari's "shuffle
+    colors" button does the right thing whichever source is installed.
+
+    Sources with named colormaps to choose from (`GradientColorSource`,
+    `PaletteColorSource`) also have `choices` and a settable `choice`, which
+    the colormap picker next to the "Color ... by" dropdowns shows (drawn with
+    their `preview(name)` colors); see `colormap_choices`.
     """
 
     def map(self, values: np.ndarray) -> np.ndarray: ...
@@ -96,12 +109,36 @@ class CategoricalColorSource:
     """Default `ColorSource`: cyclic color per unique id, 0 -> transparent.
 
     Not track-specific - works for any categorical id (cell type, lineage id).
+
+    `choice` "random" (the default) is napari's random label colormap; the
+    other ID_PALETTES are generated palettes of ID_CYCLE colors that ids
+    cycle through.
     """
 
-    def __init__(self, num_colors: int = 49, seed: float = 0.5):
+    choices = ID_PALETTES
+    ID_CYCLE = 49  # colors an id palette cycles through
+
+    def __init__(self, num_colors: int = ID_CYCLE, seed: float = 0.5):
         self._cyclic_colormap = label_colormap(
             num_colors, seed=seed, background_value=0
         )
+        self._choice = RANDOM_IDS
+        self._order = np.arange(self.ID_CYCLE)
+
+    @property
+    def choice(self) -> str:
+        return self._choice
+
+    @choice.setter
+    def choice(self, name: str) -> None:
+        self._choice = name
+        self._order = np.arange(self.ID_CYCLE)
+
+    def preview(self, name: str) -> np.ndarray:
+        """The colors to show for `name` in the colormap picker."""
+        if name == RANDOM_IDS:
+            return self._cyclic_colormap.map(np.arange(1, 25))[:, :3]
+        return palette_colors(name, self.ID_CYCLE)[:24]
 
     def map(self, values: np.ndarray) -> np.ndarray:
         # napari's cyclic colormap only accepts integer dtypes: a bool (group)
@@ -117,12 +154,24 @@ class CategoricalColorSource:
             arr = flat if arr.ndim else flat[0]
         elif arr.dtype.kind in "bf":
             arr = arr.astype(np.int64)
-        return self._cyclic_colormap.map(arr)
+        if self._choice == RANDOM_IDS:
+            return self._cyclic_colormap.map(arr)
+        scalar = np.ndim(arr) == 0
+        ids = np.atleast_1d(arr).astype(np.int64)
+        palette = palette_colors(self._choice, self.ID_CYCLE)[self._order]
+        colors = np.ones((len(ids), 4))
+        colors[:, :3] = palette[(ids - 1) % self.ID_CYCLE]
+        colors[ids == 0] = 0.0  # the background stays transparent
+        return colors[0] if scalar else colors
 
     def shuffle(self, num_colors: int | None = None, seed: float | None = None) -> None:
-        """Replace the color cycle (see `TrackLabels.new_colormap`). With no
+        """New colors (see `TrackLabels.new_colormap`): a new random cycle for
+        "random", the same palette in a new order for the others. With no
         arguments a random cycle is drawn, matching the argument-less
-        `ColorSource.shuffle` that the "new colormap" button calls."""
+        `ColorSource.shuffle` that the "shuffle colors" button calls."""
+        if self._choice != RANDOM_IDS:
+            self._order = np.random.permutation(self.ID_CYCLE)
+            return
         if num_colors is None:
             num_colors = random.randint(49, 69)
         if seed is None:
@@ -171,9 +220,7 @@ class ConstantColorSource:
         return np.tile(self.color, (len(arr), 1))
 
     def shuffle(self) -> None:
-        self.color = CategoricalColorSource(seed=random.uniform(0, 1)).map(
-            np.asarray([1])
-        )[0]
+        """Nothing to shuffle: "None" means one flat grey, so it stays grey."""
 
 
 class GradientColorSource:
@@ -219,6 +266,21 @@ class GradientColorSource:
         colors[missing] = (*GREY, 1.0)
         return colors[0] if scalar else colors
 
+    choices = GRADIENTS
+
+    @property
+    def choice(self) -> str:
+        return self.colormap.name
+
+    @choice.setter
+    def choice(self, name: str) -> None:
+        self.colormap = ensure_colormap(name)
+
+    @staticmethod
+    def preview(name: str) -> np.ndarray:
+        """The (N, 3) colors to show for colormap `name` in the colormap picker."""
+        return ensure_colormap(name).map(np.linspace(0.0, 1.0, 64))[:, :3]
+
     def shuffle(self) -> None:
         """Switch to the next colormap in `GRADIENTS`."""
         names = GRADIENTS
@@ -241,17 +303,25 @@ class PaletteColorSource:
     data (or a new value appearing) does not recolor the existing categories.
     Values beyond the palette's length reuse its colors from the start.
     Missing values (None) are GREY.
+
+    `shuffle` keeps the palette and deals its colors out to the slots in a new
+    random order; picking another palette (`choice`) starts it in order again.
     """
 
-    def __init__(self, palette: str = CATEGORICAL_PALETTES[0]):
-        self.palette = palette
+    def __init__(self, palette: str = CATEGORICAL_PALETTES[0], n_colors: int = 20):
         self._slots: dict = {}
+        # how many colors a generated palette is made with: the number of
+        # categories when the feature was picked. Fixed from then on, so that
+        # a new category does not recolor the others; it reuses a color.
+        self._n_colors = max(int(n_colors), 1)
+        self.choice = palette
 
     @classmethod
     def for_values(cls, values) -> PaletteColorSource:
         """A source whose palette is big enough for `values`' categories, with
         their slots already handed out."""
-        source = cls(palette_for(len(_categories(values))))
+        n = len(_categories(values))
+        source = cls(palette_for(n), n_colors=n)
         source.fit(values)
         return source
 
@@ -266,7 +336,7 @@ class PaletteColorSource:
         arr = np.atleast_1d(np.asarray(values, dtype=object))
         colors = np.empty((len(arr), 4))
         colors[:] = (*GREY, 1.0)
-        palette = palette_colors(self.palette)
+        palette = palette_colors(self.palette, self._n_colors)[self._order]
         missing = np.array([v is None for v in arr], dtype=bool)
         if (~missing).any():
             # one dict lookup per distinct value, not per node
@@ -280,11 +350,30 @@ class PaletteColorSource:
             colors[~missing, :3] = rgb[inverse]
         return colors[0] if scalar else colors
 
+    choices = CATEGORICAL_PALETTES
+
+    @property
+    def choice(self) -> str:
+        return self.palette
+
+    @choice.setter
+    def choice(self, name: str) -> None:
+        self.palette = name
+        # which palette color each slot gets; in order until shuffled
+        self._order = np.arange(len(palette_colors(name, self._n_colors)))
+
+    def preview(self, name: str) -> np.ndarray:
+        """The (N, 3) colors to show for palette `name` in the colormap picker."""
+        return palette_colors(name, self._n_colors)
+
     def shuffle(self) -> None:
-        """Switch to the next palette; every value keeps its slot."""
-        names = CATEGORICAL_PALETTES
-        index = names.index(self.palette) + 1 if self.palette in names else 0
-        self.palette = names[index % len(names)]
+        """Deal the same palette's colors out to the categories in a new order.
+        Every value keeps its slot, so categories still never share a color
+        unless there are more of them than the palette has colors."""
+        order = self._order
+        while len(order) > 1 and np.array_equal(order, self._order):
+            order = np.random.permutation(len(self._order))
+        self._order = order
 
 
 def _categories(values) -> list:

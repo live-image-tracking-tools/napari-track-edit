@@ -1,11 +1,22 @@
 import numpy as np
 import pytest
 from napari_orthogonal_views.ortho_view_manager import _VIEWER_MANAGERS
+from qtpy.QtCore import Qt
 
 from napari_track_edit.application_menus.visualization_widget import (
     VisualizationWidget,
 )
-from napari_track_edit.data_views.colormap import SAME_AS_NODES, FeatureComponent
+from napari_track_edit.data_views.colormap import (
+    GREY,
+    SAME_AS_NODES,
+    FeatureComponent,
+)
+from napari_track_edit.data_views.palettes import (
+    CATEGORICAL_PALETTES,
+    GRADIENTS,
+    ID_PALETTES,
+    RANDOM_IDS,
+)
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 # These tests need napari's Qt viewer, see the viewer fixture in conftest.py.
@@ -505,3 +516,121 @@ class TestEdgeColorByWidget:
             tracks_viewer.node_color_feature_key
             == tracks_viewer.tracks.features.tracklet_key
         )
+
+
+class TestColormapPicker:
+    def test_lists_id_palettes_for_track_ids(self, visualization_widget):
+        widget, _tracks_viewer = visualization_widget
+
+        picker = widget.node_color_by_widget.colormap_combo
+        assert not picker.isHidden()
+        assert [picker.itemData(i) for i in range(picker.count())] == list(ID_PALETTES)
+        assert picker.currentData() == RANDOM_IDS
+
+    def test_shuffle_keeps_none_grey(self, visualization_widget):
+        _widget, tracks_viewer = visualization_widget
+        tracks_viewer.set_node_color_feature(None)
+
+        tracks_viewer.tracking_layers.seg_layer.new_colormap()  # "shuffle colors"
+
+        colors = tracks_viewer.node_colormap.get_colors([1, 2, 3])
+        assert np.allclose(colors[:, :3], GREY)
+
+    def test_hidden_for_none(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+
+        tracks_viewer.set_node_color_feature(None)
+
+        assert widget.node_color_by_widget.colormap_combo.isHidden()
+
+    def test_lists_gradients_for_a_numeric_feature(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.time_key)
+
+        picker = widget.node_color_by_widget.colormap_combo
+        assert not picker.isHidden()
+        assert [picker.itemData(i) for i in range(picker.count())] == list(GRADIENTS)
+        assert picker.currentData() == GRADIENTS[0]
+        assert picker.itemText(0) == ""  # colors only
+        assert picker.itemData(0, Qt.UserRole + 1) is not None  # its preview
+
+    def test_picking_a_colormap_recolors(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.time_key)
+        before = tracks_viewer.node_colormap.get_colors([1, 2, 3])
+
+        picker = widget.node_color_by_widget.colormap_combo
+        picker.setCurrentIndex(picker.findData("magma"))
+
+        assert tracks_viewer.node_colormap.color_source.choice == "magma"
+        assert not np.allclose(
+            tracks_viewer.node_colormap.get_colors([1, 2, 3]), before
+        )
+
+    def test_shuffle_button_moves_the_picker(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.time_key)
+
+        tracks_viewer.tracking_layers.seg_layer.new_colormap()  # "shuffle colors"
+
+        assert widget.node_color_by_widget.colormap_combo.currentData() == GRADIENTS[1]
+
+    def test_lists_palettes_for_a_categorical_feature(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        tracks = tracks_viewer.tracks
+        tracks.add_feature(
+            "label",
+            {
+                "feature_type": "node",
+                "value_type": "str",
+                "num_values": 1,
+                "display_name": "Label",
+                "default_value": None,
+            },
+        )
+        for node in tracks.graph_solution.node_ids():
+            tracks.graph_solution.nodes[node]["label"] = "a" if node == 1 else "b"
+
+        tracks_viewer.set_node_color_feature("label")
+        picker = widget.node_color_by_widget.colormap_combo
+        picker.setCurrentIndex(picker.findData(CATEGORICAL_PALETTES[1]))
+
+        assert [picker.itemData(i) for i in range(picker.count())] == list(
+            CATEGORICAL_PALETTES
+        )
+        assert (
+            tracks_viewer.node_colormap.color_source.choice == CATEGORICAL_PALETTES[1]
+        )
+
+    def test_edge_picker_sets_the_edge_colormap(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        tracks = tracks_viewer.tracks
+        tracks.add_feature(
+            "iou",
+            {
+                "feature_type": "edge",
+                "value_type": "float",
+                "num_values": 1,
+                "display_name": "IoU",
+                "default_value": None,
+            },
+        )
+        tracks_viewer.set_edge_color_feature("iou")
+        node_choice_before = getattr(
+            tracks_viewer.node_colormap.color_source, "choice", None
+        )
+
+        picker = widget.edge_color_by_widget.colormap_combo
+        picker.setCurrentIndex(picker.findData("turbo"))
+
+        assert tracks_viewer.edge_colormap.color_source.choice == "turbo"
+        assert (
+            getattr(tracks_viewer.node_colormap.color_source, "choice", None)
+            == node_choice_before
+        )
+
+    def test_edge_picker_hidden_for_same_as_nodes(self, visualization_widget):
+        widget, _tracks_viewer = visualization_widget
+
+        assert widget.edge_color_by_widget.colormap_combo.isHidden()

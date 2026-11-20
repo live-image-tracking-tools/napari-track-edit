@@ -18,7 +18,11 @@ from napari_track_edit.data_views.colormap import (
     node_categorical_feature_keys,
     node_value_feature_keys,
 )
-from napari_track_edit.data_views.palettes import palette_colors
+from napari_track_edit.data_views.palettes import (
+    hue_palette,
+    palette_colors,
+    palette_for,
+)
 
 
 def _tracks_subset(tracks, nodes):
@@ -876,13 +880,14 @@ class TestConstantColorSource:
     def test_scalar_maps_to_a_single_rgba(self):
         assert ConstantColorSource().map(np.asarray(3)).shape == (4,)
 
-    def test_shuffle_picks_a_new_color(self):
+    def test_shuffle_keeps_the_color(self):
+        # "None" means one flat grey; shuffling must not turn it into a color
         source = ConstantColorSource()
         before = source.color.copy()
 
         source.shuffle()
 
-        assert not np.array_equal(source.color, before)
+        assert np.array_equal(source.color, before)
 
     def test_no_feature_gets_one(self, solution_tracks_2d):
         assert isinstance(
@@ -1161,15 +1166,28 @@ class TestPaletteColorSource:
     def test_more_than_ten_categories_get_tab20(self):
         assert PaletteColorSource.for_values(range(15)).palette == "tab20"
 
-    def test_shuffle_switches_palette_and_keeps_slots(self):
-        source = PaletteColorSource.for_values([1, 2])
+    def test_shuffle_keeps_the_palette_and_deals_new_colors(self):
+        source = PaletteColorSource.for_values([1, 2, 3])
+        before = source.map(np.asarray([1, 2, 3]))
 
         source.shuffle()
 
-        assert source.palette == "tab20"
+        after = source.map(np.asarray([1, 2, 3]))
+        assert source.palette == "tab10"
+        assert not np.allclose(after, before)
+        # still distinct colors, all from the same palette
+        assert len({tuple(c) for c in after[:, :3].round(6)}) == 3
+        tab10 = {tuple(c) for c in palette_colors("tab10").round(6)}
+        assert {tuple(c) for c in after[:, :3].round(6)} <= tab10
+
+    def test_picking_a_palette_starts_it_in_order(self):
+        source = PaletteColorSource.for_values([1, 2])
+        source.shuffle()
+
+        source.choice = "tab20"
+
         assert np.allclose(
-            source.map(np.asarray([1, 2]))[:, :3],
-            palette_colors("tab20")[:2],
+            source.map(np.asarray([1, 2]))[:, :3], palette_colors("tab20")[:2]
         )
 
     def test_scalar_in_scalar_out(self):
@@ -1256,3 +1274,72 @@ class TestValueFeatureDetection:
         cmap.set_tracks(solution_tracks_2d)
         cmap.set_feature("kind")
         assert isinstance(cmap.color_source, PaletteColorSource)
+
+
+class TestGeneratedPalettes:
+    def test_hue_palette_has_n_distinct_colors(self):
+        colors = hue_palette(25)
+
+        assert colors.shape == (25, 3)
+        assert len({tuple(c) for c in colors.round(6)}) == 25
+
+    def test_hue_palette_is_the_same_every_time(self):
+        assert np.allclose(
+            hue_palette(12, vary_saturation=True), hue_palette(12, vary_saturation=True)
+        )
+
+    def test_purple_orange_keeps_out_of_greens(self):
+        import colorsys
+
+        hues = [colorsys.rgb_to_hsv(*c)[0] for c in hue_palette(20, purple_orange=True)]
+
+        assert all(not 0.2 < h < 0.6 for h in hues)
+
+    def test_varied_saturation_varies(self):
+        import colorsys
+
+        sats = [
+            colorsys.rgb_to_hsv(*c)[1] for c in hue_palette(20, vary_saturation=True)
+        ]
+
+        assert min(sats) < 0.9
+
+    def test_more_categories_than_tab20_get_generated_hues(self):
+        assert palette_for(30) == "hues"
+        source = PaletteColorSource.for_values(range(30))
+        colors = source.map(np.arange(30))
+        assert len({tuple(c) for c in colors[:, :3].round(6)}) == 30
+
+    def test_generated_palette_for_categories(self):
+        source = PaletteColorSource.for_values(["a", "b", "c"])
+
+        source.choice = "purple-orange"
+
+        colors = source.map(np.asarray(["a", "b", "c"], dtype=object))
+        assert np.allclose(colors[:, :3], palette_colors("purple-orange", 3))
+
+
+class TestIdPalettes:
+    def test_random_is_the_default(self):
+        assert CategoricalColorSource().choice == "random"
+
+    def test_generated_palette_colors_ids_and_keeps_zero_transparent(self):
+        source = CategoricalColorSource()
+        source.choice = "hues"
+
+        colors = source.map(np.asarray([0, 1, 2, 1 + CategoricalColorSource.ID_CYCLE]))
+
+        assert np.all(colors[0] == 0)
+        assert np.allclose(colors[1, :3], palette_colors("hues", 49)[0])
+        assert not np.allclose(colors[1], colors[2])
+        assert np.allclose(colors[1], colors[3])  # ids cycle through the palette
+
+    def test_shuffle_keeps_a_generated_palette(self):
+        source = CategoricalColorSource()
+        source.choice = "hues varied"
+        before = source.map(np.arange(1, 10))
+
+        source.shuffle()
+
+        assert source.choice == "hues varied"
+        assert not np.allclose(source.map(np.arange(1, 10)), before)

@@ -1,9 +1,12 @@
 import contextlib
 
 import napari
+import numpy as np
 from psygnal import Signal
-from qtpy.QtCore import QSignalBlocker
+from qtpy.QtCore import QSignalBlocker, QSize, Qt
+from qtpy.QtGui import QIcon, QImage, QPixmap
 from qtpy.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -12,6 +15,10 @@ from qtpy.QtWidgets import (
     QLabel,
     QRadioButton,
     QSizePolicy,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionComboBox,
+    QStylePainter,
     QVBoxLayout,
     QWidget,
 )
@@ -20,6 +27,7 @@ from superqt import QLabeledDoubleSlider
 from napari_track_edit._nte_app import NTEApp
 from napari_track_edit.data_views.colormap import (
     SAME_AS_NODES,
+    colormap_choices,
     edge_color_feature_keys,
     feature_display_name,
     node_color_feature_keys,
@@ -79,6 +87,75 @@ class VisualizationConfigWidget(QWidget):
         layout.addStretch(0)
 
 
+_PREVIEW_ROLE = Qt.UserRole + 1  # item data role holding a colormap's preview
+_ARROW_WIDTH = 20  # room left for a combo box's drop-down arrow
+
+
+def _preview_pixmap(colors: np.ndarray) -> QPixmap:
+    """A strip showing `colors` (N, 3, floats in 0-1) side by side: a smooth
+    gradient for many colors, swatches for a palette. Drawn stretched to
+    whatever space it is given (see `_ColormapCombo`)."""
+    width, height = 256, 1
+    columns = np.floor(np.linspace(0, len(colors), width, endpoint=False)).astype(int)
+    rgb = (np.clip(colors[columns], 0, 1) * 255).astype(np.uint8)
+    pixels = np.ascontiguousarray(np.repeat(rgb[np.newaxis], height, axis=0))
+    image = QImage(pixels.data, width, height, 3 * width, QImage.Format_RGB888)
+    return QPixmap.fromImage(image.copy())
+
+
+class _PreviewDelegate(QStyledItemDelegate):
+    """Draws a colormap preview across the whole row of the picker's list.
+
+    A preview set as an item icon is squeezed into the small square icon area
+    napari's style allows, so it is drawn here instead.
+    """
+
+    ROW_HEIGHT = 24
+
+    def paint(self, painter, option, index) -> None:
+        # the row background (hover, selection) without any text or icon
+        self.initStyleOption(option, index)
+        option.text = ""
+        option.icon = QIcon()
+        style = option.widget.style() if option.widget else QApplication.style()
+        style.drawControl(QStyle.CE_ItemViewItem, option, painter, option.widget)
+        pixmap = index.data(_PREVIEW_ROLE)
+        if pixmap is not None:
+            painter.drawPixmap(option.rect.adjusted(8, 5, -8, -5), pixmap)
+
+    def sizeHint(self, option, index) -> QSize:
+        hint = super().sizeHint(option, index)
+        return QSize(hint.width(), max(hint.height(), self.ROW_HEIGHT))
+
+
+class _ColormapCombo(QComboBox):
+    """A combo box showing colormap previews instead of names, both in its
+    list and in the closed box."""
+
+    def __init__(self):
+        super().__init__()
+        self.setItemDelegate(_PreviewDelegate(self))
+
+    def add_preview(self, colors: np.ndarray, name: str) -> None:
+        self.addItem("", name)
+        self.setItemData(self.count() - 1, _preview_pixmap(colors), _PREVIEW_ROLE)
+
+    def paintEvent(self, event) -> None:
+        painter = QStylePainter(self)
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        option.currentText = ""
+        option.currentIcon = QIcon()
+        painter.drawComplexControl(QStyle.CC_ComboBox, option)
+        pixmap = self.currentData(_PREVIEW_ROLE)
+        if pixmap is not None:
+            # everything left of the drop-down arrow. Not the style's edit
+            # field or arrow rects: under napari's stylesheet those leave a
+            # strip a fraction of the box wide.
+            field = self.rect().adjusted(8, 7, -(8 + _ARROW_WIDTH), -7)
+            painter.drawPixmap(field, pixmap)
+
+
 class FeatureColorByWidget(QWidget):
     """A "Color ... by" label and the dropdown picking the feature to color by.
 
@@ -86,6 +163,12 @@ class FeatureColorByWidget(QWidget):
     features to offer (`_keys`), what to call them (`_display_name`), and how
     to read and set the one in use on the `TracksViewer` (`_current`,
     `_apply`).
+
+    Next to it, a colormap picker (`colormap_combo`) lists the colormaps the
+    current feature's colors can switch between (gradients for numbers,
+    palettes for categories; see `colormap_choices`), and is hidden when there
+    are none. napari's "shuffle colors" button steps through the same list
+    for node colors, and the picker follows.
     """
 
     LABEL = ""
@@ -102,12 +185,17 @@ class FeatureColorByWidget(QWidget):
         self.combo.setToolTip(self.TOOLTIP)
         self.combo.currentIndexChanged.connect(self._on_selected)
 
+        self.colormap_combo = _ColormapCombo()
+        self.colormap_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.colormap_combo.currentIndexChanged.connect(self._on_colormap_selected)
+
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 0, 8, 0)
         layout.setSpacing(8)
         self.label = QLabel(self.LABEL)
         layout.addWidget(self.label)
-        layout.addWidget(self.combo, stretch=1)
+        layout.addWidget(self.combo, stretch=2)
+        layout.addWidget(self.colormap_combo, stretch=1)
 
         self.tracks_viewer.tracks_updated.connect(self._populate)
         self.tracks_viewer.colormap_updated.connect(self._populate)
@@ -130,6 +218,13 @@ class FeatureColorByWidget(QWidget):
     def _apply(self, key: str | None) -> None:
         raise NotImplementedError
 
+    def _color_source(self):
+        """The color source of the feature in use, or None."""
+        raise NotImplementedError
+
+    def _apply_colormap(self, name: str) -> None:
+        raise NotImplementedError
+
     def _populate(self, *_args) -> None:
         """Rebuild the entries and show the feature currently in use."""
 
@@ -141,6 +236,30 @@ class FeatureColorByWidget(QWidget):
                 self.combo.addItem(self._display_name(key), key)
             self.combo.setCurrentIndex(keys.index(current) if current in keys else 0)
         self.combo.setEnabled(self.tracks_viewer.tracks is not None)
+        self._populate_colormaps()
+
+    def _populate_colormaps(self) -> None:
+        """List the current feature's colormaps and show the one in use."""
+        source = self._color_source()
+        choices = colormap_choices(source)
+        with QSignalBlocker(self.colormap_combo):
+            self.colormap_combo.clear()
+            for name in choices:
+                # the colors only, no name
+                self.colormap_combo.add_preview(source.preview(name), name)
+            if choices and source.choice in choices:
+                self.colormap_combo.setCurrentIndex(choices.index(source.choice))
+        self.colormap_combo.setVisible(
+            bool(choices) and self.tracks_viewer.tracks is not None
+        )
+
+    def _on_colormap_selected(self, index: int) -> None:
+        if index < 0:
+            return
+        name = self.colormap_combo.itemData(index)
+        source = self._color_source()
+        if source is not None and name != getattr(source, "choice", None):
+            self._apply_colormap(name)
 
     def _on_selected(self, index: int) -> None:
         if index < 0:
@@ -179,6 +298,12 @@ class NodeColorByWidget(FeatureColorByWidget):
     def _apply(self, key: str | None) -> None:
         self.tracks_viewer.set_node_color_feature(key)
 
+    def _color_source(self):
+        return self.tracks_viewer.node_colormap.color_source
+
+    def _apply_colormap(self, name: str) -> None:
+        self.tracks_viewer.set_node_colormap_choice(name)
+
 
 class EdgeColorByWidget(FeatureColorByWidget):
     """The "Color edges by" dropdown: the edge feature that colors the edges in
@@ -212,6 +337,12 @@ class EdgeColorByWidget(FeatureColorByWidget):
 
     def _apply(self, key: str | None) -> None:
         self.tracks_viewer.set_edge_color_feature(key)
+
+    def _color_source(self):
+        return self.tracks_viewer.edge_colormap.color_source
+
+    def _apply_colormap(self, name: str) -> None:
+        self.tracks_viewer.set_edge_colormap_choice(name)
 
 
 class ModeWidget(QWidget):
