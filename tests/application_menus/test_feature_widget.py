@@ -148,7 +148,7 @@ def test_checkbox_state_reflects_enabled_features(
     assert not widget._checkboxes["perimeter"].isChecked()
     assert not widget._checkboxes["ellipse_axis_radii"].isChecked()
 
-    # Also check a case where no features should be available because there is no segmentation
+    # Without segmentation, no (regionprops) features are available.
     tracks_viewer.update_tracks(
         solution_tracks_2d_without_segmentation, "test without features"
     )

@@ -89,7 +89,7 @@ def get_attr_dtype_pandas(series: pd.Series) -> str:
 
 
 class StandardFieldMapWidget(QWidget):
-    """QWidget to map motile run attributes to node properties in csv or geff."""
+    """QWidget to map track attributes to node properties in csv or geff."""
 
     props_updated = Signal()
 
