@@ -71,7 +71,7 @@ def main():
         "path",
         nargs="?",
         type=Path,
-        help="geff store or saved motile run to open",
+        help="geff store to open",
     )
 
     args, _ = parser.parse_known_args()

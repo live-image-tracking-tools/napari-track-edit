@@ -266,29 +266,8 @@ def rebind_tracks_to_graph(tracks: Tracks, graph: td.graph.BaseGraph) -> Tracks:
 
     Returns:
         Tracks: A new object carrying over everything about `tracks` that is not
-            stored in the graph. A MotileRun rebinds to a MotileRun so its solver
-            params survive; anything else rebinds to a plain Tracks, which is
-            what every other loader in this package returns.
+            stored in the graph.
     """
-    # Imported here rather than at module level: motile.backend imports
-    # geff_io from this package, and MotileRun is only needed on this path.
-    from napari_track_edit.motile.backend.motile_run import MotileRun
-
-    if isinstance(tracks, MotileRun):
-        return MotileRun(
-            graph,
-            run_name=tracks.run_name,
-            scale=tracks.scale,
-            ndim=tracks.ndim,
-            solver_params=tracks.solver_params,
-            input_segmentation=tracks.input_segmentation,
-            input_points=tracks.input_points,
-            time=tracks.time,
-            gaps=tracks.gaps,
-            status=tracks.status,
-            _features=tracks.features,
-        )
-
     return Tracks(
         graph,
         scale=tracks.scale,

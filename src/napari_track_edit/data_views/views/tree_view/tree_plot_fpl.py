@@ -116,10 +116,8 @@ def _flag_canvas_closed(canvas_ref: weakref.ref) -> None:
     canvas = canvas_ref()
     if canvas is None:
         return
-    try:
+    with contextlib.suppress(RuntimeError):
         canvas.close()
-    except RuntimeError:
-        pass
     if not canvas.get_closed():  # rendercanvas < 3
         canvas._is_closed = True
 
