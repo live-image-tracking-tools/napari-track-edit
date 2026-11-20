@@ -8,6 +8,7 @@ from napari_track_edit.data_views.colormap import (
     CategoricalColorSource,
     ConstantColorSource,
     EdgeColormap,
+    FeatureComponent,
     GradientColorSource,
     NodeColormap,
     edge_color_feature_keys,
@@ -1050,3 +1051,57 @@ class TestEdgeColormap:
 
         assert keys == ["cost", "flag"]
         assert edge_color_feature_keys(None) == []
+
+
+class TestPositionAxes:
+    def test_stacked_position_is_offered_per_axis(self, solution_tracks_2d):
+        position_key = solution_tracks_2d.features.position_key
+
+        keys = node_continuous_feature_keys(solution_tracks_2d)
+
+        assert FeatureComponent(position_key, 0) in keys
+        assert FeatureComponent(position_key, 1) in keys
+        assert position_key not in keys
+        assert "bbox" not in keys  # other multi-valued features stay out
+
+    def test_axes_are_named_after_their_value_names(self, solution_tracks_2d):
+        position_key = solution_tracks_2d.features.position_key
+        names = solution_tracks_2d.features[position_key]["value_names"]
+
+        assert [
+            feature_display_name(solution_tracks_2d, FeatureComponent(position_key, i))
+            for i in range(len(names))
+        ] == list(names)
+
+    def test_coloring_by_an_axis_is_a_gradient_over_it(self, solution_tracks_2d):
+        position_key = solution_tracks_2d.features.position_key
+        axis = FeatureComponent(position_key, 1)
+        cmap = NodeColormap()
+        cmap.set_tracks(solution_tracks_2d)
+
+        cmap.set_feature(axis)
+
+        assert isinstance(cmap.color_source, GradientColorSource)
+        nodes = list(solution_tracks_2d.graph_solution.node_ids())
+        coords = np.asarray(
+            [p[1] for p in solution_tracks_2d.get_nodes_attr(nodes, position_key)]
+        )
+        colors = cmap.get_colors(nodes)
+        ends = cmap.color_source.colormap.map(np.asarray([0.0, 1.0]))
+        assert np.allclose(colors[np.argmin(coords)], ends[0])
+        assert np.allclose(colors[np.argmax(coords)], ends[1])
+
+    def test_split_position_columns_are_plain_keys(self, solution_tracks_2d):
+        for axis in ("y", "x"):
+            solution_tracks_2d.graph_solution.add_node_attr_key(axis, 0.0)
+            solution_tracks_2d.features[axis] = {
+                "feature_type": "node",
+                "value_type": "float",
+                "num_values": 1,
+                "display_name": axis,
+                "default_value": 0.0,
+            }
+
+        keys = node_continuous_feature_keys(solution_tracks_2d)
+
+        assert "y" in keys and "x" in keys

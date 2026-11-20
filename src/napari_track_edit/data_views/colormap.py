@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import numpy as np
@@ -17,6 +18,35 @@ GREY = (0.7, 0.7, 0.7)  # What every node is colored when no feature is selected
 # The edge "feature" that draws every edge in its child node's color (see
 # EdgeColormap). Not None, which means one flat color, as it does for nodes.
 SAME_AS_NODES = "__same_as_nodes__"
+
+
+@dataclass(frozen=True)
+class FeatureComponent:
+    """One value of a multi-valued node feature, as a color feature key.
+
+    Used for the axes of a stacked position feature (e.g. `pos` = (z, y, x)),
+    so that each axis can be picked to color by on its own. Positions stored
+    as one column per axis are plain keys already.
+
+    A frozen dataclass rather than a tuple: Qt hands a Python tuple stored as
+    item data back as a list, which no longer compares equal.
+    """
+
+    key: str
+    index: int
+
+
+def _base_key(feature_key):
+    """The feature a color feature key reads: itself, or a component's feature."""
+    return feature_key.key if isinstance(feature_key, FeatureComponent) else feature_key
+
+
+def node_feature_values(tracks: Tracks, nodes, feature_key) -> list:
+    """Every node's value of `feature_key`, a plain key or a `FeatureComponent`."""
+    if isinstance(feature_key, FeatureComponent):
+        values = tracks.get_nodes_attr(nodes, feature_key.key)
+        return [None if v is None else v[feature_key.index] for v in values]
+    return tracks.get_nodes_attr(nodes, feature_key)
 
 
 def construct_direct_colormap(color_dict: dict) -> DirectLabelColormap:
@@ -209,6 +239,8 @@ def _is_continuous(tracks: Tracks, feature_key: str) -> bool:
     Integer features count too (time, counts); tracklet and lineage ids are
     the exception, as their numbers are labels rather than amounts.
     """
+    if isinstance(feature_key, FeatureComponent):
+        return True  # only position axes are offered as components
     features = tracks.features
     feature = features.get(feature_key)
     return (
@@ -257,10 +289,8 @@ def node_color_feature_available(
         return True
     if tracks is None:
         return False
-    return (
-        feature_key in tracks.features
-        and feature_key in tracks.graph_solution.node_attr_keys()
-    )
+    key = _base_key(feature_key)
+    return key in tracks.features and key in tracks.graph_solution.node_attr_keys()
 
 
 def node_categorical_feature_keys(tracks: Tracks | None) -> list[str]:
@@ -300,11 +330,18 @@ def node_continuous_feature_keys(tracks: Tracks | None) -> list[str]:
     if tracks is None:
         return []
     attr_keys = set(tracks.graph_solution.node_attr_keys())
-    return [
-        key
-        for key, feature in tracks.features.node_features.items()
-        if key in attr_keys and _is_continuous(tracks, key)
-    ]
+    position_key = tracks.features.position_key
+    keys: list = []
+    for key, feature in tracks.features.node_features.items():
+        if key not in attr_keys:
+            continue
+        if key == position_key and feature.get("num_values", 1) > 1:
+            # a stacked position: one entry per axis. Positions stored as one
+            # column per axis are single-valued and picked up below.
+            keys += [FeatureComponent(key, i) for i in range(feature["num_values"])]
+        elif _is_continuous(tracks, key):
+            keys.append(key)
+    return keys
 
 
 def node_color_feature_keys(tracks: Tracks | None) -> list[str]:
@@ -367,6 +404,12 @@ def feature_display_name(tracks: Tracks | None, feature_key: str | None) -> str:
     """The label to show for a feature in the UI."""
     if feature_key is None:
         return "None"
+    if isinstance(feature_key, FeatureComponent):
+        feature = tracks.features.get(feature_key.key) if tracks is not None else None
+        names = (feature or {}).get("value_names")
+        if names is not None and feature_key.index < len(names):
+            return str(names[feature_key.index])
+        return f"{feature_key.key}[{feature_key.index}]"
     feature = tracks.features.get(feature_key) if tracks is not None else None
     return feature_key if feature is None else feature.get("display_name", feature_key)
 
@@ -475,7 +518,7 @@ class NodeColormap:
 
     def _feature_values(self, tracks: Tracks, nodes) -> list:
         key = self.feature_key or tracks.features.tracklet_key
-        return tracks.get_nodes_attr(nodes, key)
+        return node_feature_values(tracks, nodes, key)
 
     def map(self, values: np.ndarray) -> np.ndarray:
         """Map feature values to base RGBA (no per-node alpha, no cache lookup).
@@ -714,7 +757,14 @@ class EdgeColormap:
         self.set_tracks(self._tracks)
 
     def set_tracks(self, tracks: Tracks | None) -> None:
-        """Read every edge's value of the feature and recompute the colors."""
+        """Read every edge's value of the feature and recompute the colors.
+
+        TODO: TracksViewer._refresh calls this on every edit, so while edges
+        are colored by a feature every edit re-reads all edges, even with no
+        lineage view open to show them. Skip it while no tree widget is
+        present (and recompute when one opens) if this shows up on large
+        graphs.
+        """
         self._tracks = tracks
         targets = np.empty(0, dtype=np.int64)
         rgb = np.zeros((0, 3))

@@ -5,7 +5,7 @@ from napari_orthogonal_views.ortho_view_manager import _VIEWER_MANAGERS
 from napari_track_edit.application_menus.visualization_widget import (
     VisualizationWidget,
 )
-from napari_track_edit.data_views.colormap import SAME_AS_NODES
+from napari_track_edit.data_views.colormap import SAME_AS_NODES, FeatureComponent
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
 # These tests need napari's Qt viewer, see the viewer fixture in conftest.py.
@@ -359,7 +359,29 @@ class TestColorByWidget:
         labels = [combo.itemText(i) for i in range(combo.count())]
 
         time_name = tracks_viewer.tracks.features["t"].get("display_name", "t")
-        assert labels == ["None", "Tracklet ID", "Lineage ID", time_name]
+        # the 3D fixture's stacked position, one entry per axis
+        assert labels == [
+            "None",
+            "Tracklet ID",
+            "Lineage ID",
+            time_name,
+            "z",
+            "y",
+            "x",
+        ]
+
+    def test_picking_a_position_axis_sets_it_on_the_viewer(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        combo = widget.node_color_by_widget.combo
+        index = [combo.itemText(i) for i in range(combo.count())].index("y")
+
+        combo.setCurrentIndex(index)
+
+        position_key = tracks_viewer.tracks.features.position_key
+        assert tracks_viewer.node_color_feature_key == FeatureComponent(position_key, 1)
+        # and it shows as picked after the dropdown is rebuilt
+        widget.node_color_by_widget._populate()
+        assert combo.currentText() == "y"
 
     def test_starts_on_the_feature_in_use(self, visualization_widget):
         widget, tracks_viewer = visualization_widget
