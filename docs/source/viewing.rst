@@ -180,14 +180,17 @@ The remaining options apply to all tracks:
 
 - ``Color nodes by``: the node feature used to color the labels, points, tracks, tree and
   table. You can color by tracklet ID (default), lineage ID, membership of a
-  :doc:`group <groups>`, or a numeric feature such as time or area, which is shown as a
-  gradient (viridis) from its lowest to its highest value over the whole dataset. Nodes
-  without a value are grey. Choose ``None`` to paint every node in one flat color.
+  :doc:`group <groups>`, a position axis, or any other number or text feature. Text, and
+  whole numbers with at most 20 different values (such as a cell-type code), are shown as
+  categories, each in its own color; a category keeps its color while you edit. Other
+  numbers, and time, are shown as a gradient (viridis) from their lowest to their highest
+  value over the whole dataset. Nodes without a value are grey. Choose ``None`` to paint
+  every node in one flat color.
 - ``Color edges by``: the edge feature used to color the edges in the lineage view.
   ``Same as nodes`` (default) draws each edge in the color of the node it leads to;
-  ``None`` draws every edge in one flat color; a numeric edge feature (such as IoU) is shown
-  as a gradient and a true/false feature in two colors. The napari Tracks layer always
-  follows the node colors.
+  ``None`` draws every edge in one flat color; an edge feature is shown the same way as a
+  node feature (categories or a gradient), and a true/false feature in two colors. The
+  napari Tracks layer always follows the node colors.
 - ``Orthogonal views``: show orthogonal views of the data next to the main view.
   Press ``T`` to center all views on the mouse cursor. For 2D + time data, the ortho views
   show the time axis.

@@ -247,10 +247,12 @@ class CollectionWidget(QWidget):
             # nothing is loaded, so the cleared list above is the whole answer
             return
 
-        # find existing group features on Tracks
+        # find existing group features on Tracks: bool node features. A bool
+        # edge feature is not a group, and has no node column to read.
+        node_features = self.tracks_viewer.tracks.features.node_features
         group_features = [
             (group_name, group_dict)
-            for group_name, group_dict in self.tracks_viewer.tracks.features.items()
+            for group_name, group_dict in node_features.items()
             if group_dict["value_type"] == "bool" and group_name != "solution"
         ]
         group_dict = {}

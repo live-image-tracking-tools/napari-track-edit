@@ -408,6 +408,25 @@ class TestRetrieveExistingGroups:
         assert 1 in button.collection
         assert 2 in button.collection
 
+    def test_bool_edge_feature_is_not_a_group(self, viewer, solution_tracks_2d):
+        """A bool edge feature has no node column; reading it as a group raised
+        KeyError when the tracks were shown."""
+        from funtracks.features import Feature
+
+        solution_tracks_2d.add_feature(
+            "confident",
+            Feature(
+                feature_type="edge", value_type="bool", num_values=1, default_value=None
+            ),
+        )
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
+
+        widget = CollectionWidget(tracks_viewer)
+        widget.retrieve_existing_groups()  # must not raise
+
+        assert widget.collection_list.count() == 0
+
     def test_refresh_removes_deleted_nodes(
         self, viewer, solution_tracks_2d, qtbot, click_node
     ):

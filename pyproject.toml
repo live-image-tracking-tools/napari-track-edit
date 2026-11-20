@@ -45,6 +45,7 @@ dependencies =[
     "fonticon-fontawesome6>=6,<7",
     "pyqtgraph>=0.13,<1",
     "fastplotlib>=0.6.1,<0.7",
+    "cmap>=0.5,<1",  # categorical palettes (data_views/palettes.py)
     "pygfx==0.15.3",
     "wgpu>=0.29, <0.30",
     "napari-orthogonal-views>=0.5.0",

@@ -11,12 +11,14 @@ from napari_track_edit.data_views.colormap import (
     FeatureComponent,
     GradientColorSource,
     NodeColormap,
+    PaletteColorSource,
     edge_color_feature_keys,
     feature_display_name,
     make_node_color_source,
     node_categorical_feature_keys,
-    node_continuous_feature_keys,
+    node_value_feature_keys,
 )
+from napari_track_edit.data_views.palettes import palette_colors
 
 
 def _tracks_subset(tracks, nodes):
@@ -921,12 +923,12 @@ class TestFeatureMenu:
 
     def test_no_tracks_no_keys(self):
         assert node_categorical_feature_keys(None) == []
-        assert node_continuous_feature_keys(None) == []
+        assert node_value_feature_keys(None) == []
 
     def test_lists_numeric_features_but_not_ids(self, solution_tracks_2d):
         _add_area_feature(solution_tracks_2d)
 
-        keys = node_continuous_feature_keys(solution_tracks_2d)
+        keys = node_value_feature_keys(solution_tracks_2d)
 
         assert "t" in keys
         assert "area" in keys
@@ -1057,7 +1059,7 @@ class TestPositionAxes:
     def test_stacked_position_is_offered_per_axis(self, solution_tracks_2d):
         position_key = solution_tracks_2d.features.position_key
 
-        keys = node_continuous_feature_keys(solution_tracks_2d)
+        keys = node_value_feature_keys(solution_tracks_2d)
 
         assert FeatureComponent(position_key, 0) in keys
         assert FeatureComponent(position_key, 1) in keys
@@ -1102,6 +1104,155 @@ class TestPositionAxes:
                 "default_value": 0.0,
             }
 
-        keys = node_continuous_feature_keys(solution_tracks_2d)
+        keys = node_value_feature_keys(solution_tracks_2d)
 
         assert "y" in keys and "x" in keys
+
+
+def _add_node_feature(tracks, key, value_type, value_of_node):
+    """Add a node feature with a value per node."""
+    tracks.add_feature(
+        key,
+        {
+            "feature_type": "node",
+            "value_type": value_type,
+            "num_values": 1,
+            "display_name": key,
+            "default_value": None,
+        },
+    )
+    for node in tracks.graph_solution.node_ids():
+        tracks.graph_solution.nodes[node][key] = value_of_node(node)
+
+
+class TestPaletteColorSource:
+    def test_one_palette_color_per_value_in_sorted_order(self):
+        source = PaletteColorSource.for_values(["b", "a", "c", "a"])
+
+        colors = source.map(np.asarray(["a", "b", "c"], dtype=object))
+
+        assert source.palette == "tab10"
+        assert np.allclose(colors[:, :3], palette_colors("tab10")[:3])
+
+    def test_missing_values_are_grey(self):
+        source = PaletteColorSource.for_values([1, 2])
+
+        colors = source.map(np.asarray([None, 1], dtype=object))
+
+        assert np.allclose(colors[0], (*GREY, 1.0))
+        assert not np.allclose(colors[1], (*GREY, 1.0))
+
+    def test_new_values_do_not_recolor_old_ones(self):
+        source = PaletteColorSource.for_values(["b", "c"])
+        before = source.map(np.asarray(["b", "c"], dtype=object))
+
+        # "a" sorts first, but arrives later: it gets the next free slot
+        source.fit(["a", "b", "c"])
+
+        after = source.map(np.asarray(["b", "c", "a"], dtype=object))
+        assert np.allclose(after[:2], before)
+        assert np.allclose(after[2, :3], palette_colors("tab10")[2])
+
+    def test_unseen_value_is_grey_until_fit(self):
+        source = PaletteColorSource.for_values([1])
+
+        assert np.allclose(source.map(5), (*GREY, 1.0))
+
+    def test_more_than_ten_categories_get_tab20(self):
+        assert PaletteColorSource.for_values(range(15)).palette == "tab20"
+
+    def test_shuffle_switches_palette_and_keeps_slots(self):
+        source = PaletteColorSource.for_values([1, 2])
+
+        source.shuffle()
+
+        assert source.palette == "tab20"
+        assert np.allclose(
+            source.map(np.asarray([1, 2]))[:, :3],
+            palette_colors("tab20")[:2],
+        )
+
+    def test_scalar_in_scalar_out(self):
+        assert PaletteColorSource.for_values([1]).map(1).shape == (4,)
+
+
+class TestValueFeatureDetection:
+    def test_int_feature_with_few_values_is_categorical(self, solution_tracks_2d):
+        _add_node_feature(solution_tracks_2d, "cell_type", "int", lambda n: n % 2)
+
+        source = make_node_color_source(solution_tracks_2d, "cell_type")
+
+        assert isinstance(source, PaletteColorSource)
+
+    def test_int_feature_with_many_values_is_a_gradient(
+        self, solution_tracks_2d, monkeypatch
+    ):
+        monkeypatch.setattr("napari_track_edit.data_views.colormap.MAX_CATEGORIES", 2)
+        _add_node_feature(solution_tracks_2d, "count", "int", lambda n: n)
+
+        source = make_node_color_source(solution_tracks_2d, "count")
+
+        assert isinstance(source, GradientColorSource)
+
+    def test_time_is_always_a_gradient(self, solution_tracks_2d):
+        # only a handful of time points, but time is an amount, not a category
+        time_key = solution_tracks_2d.features.time_key
+
+        source = make_node_color_source(solution_tracks_2d, time_key)
+
+        assert isinstance(source, GradientColorSource)
+
+    def test_float_feature_is_a_gradient(self, solution_tracks_2d):
+        _add_node_feature(solution_tracks_2d, "score", "float", lambda n: n % 2)
+
+        source = make_node_color_source(solution_tracks_2d, "score")
+
+        assert isinstance(source, GradientColorSource)
+
+    def test_text_feature_is_offered_and_categorical(self, solution_tracks_2d):
+        _add_node_feature(
+            solution_tracks_2d, "label", "str", lambda n: "a" if n < 3 else "b"
+        )
+
+        assert "label" in node_value_feature_keys(solution_tracks_2d)
+        source = make_node_color_source(solution_tracks_2d, "label")
+        assert isinstance(source, PaletteColorSource)
+
+    def test_text_feature_colors_nodes_per_value(self, solution_tracks_2d):
+        _add_node_feature(
+            solution_tracks_2d, "label", "str", lambda n: "a" if n < 3 else "b"
+        )
+        cmap = NodeColormap()
+        cmap.set_tracks(solution_tracks_2d)
+
+        cmap.set_feature("label")
+
+        tab10 = palette_colors("tab10")
+        assert np.allclose(cmap.get_color(1)[:3], tab10[0])
+        assert np.allclose(cmap.get_color(4)[:3], tab10[1])
+
+    def test_a_new_value_after_an_edit_keeps_the_old_colors(self, solution_tracks_2d):
+        _add_node_feature(
+            solution_tracks_2d, "label", "str", lambda n: "b" if n < 3 else "c"
+        )
+        cmap = NodeColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        cmap.set_feature("label")
+        before = cmap.get_colors([1, 4])
+
+        solution_tracks_2d.graph_solution.nodes[5]["label"] = "a"
+        cmap.set_tracks(solution_tracks_2d)  # what every refresh does
+
+        assert np.allclose(cmap.get_colors([1, 4]), before)
+        assert not np.allclose(cmap.get_color(5)[:3], GREY)
+
+    def test_edge_text_feature_is_categorical(self, solution_tracks_2d):
+        _add_edge_feature(
+            solution_tracks_2d, "kind", "str", lambda t: "x" if t % 2 else "y"
+        )
+
+        assert "kind" in edge_color_feature_keys(solution_tracks_2d)
+        cmap = EdgeColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        cmap.set_feature("kind")
+        assert isinstance(cmap.color_source, PaletteColorSource)

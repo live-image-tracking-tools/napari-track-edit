@@ -370,6 +370,23 @@ class TestColorByWidget:
             "x",
         ]
 
+    def test_lists_text_features(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        tracks_viewer.tracks.add_feature(
+            "label",
+            {
+                "feature_type": "node",
+                "value_type": "str",
+                "num_values": 1,
+                "display_name": "Label",
+                "default_value": None,
+            },
+        )
+
+        widget.node_color_by_widget._populate()
+
+        assert widget.node_color_by_widget.combo.findData("label") != -1
+
     def test_picking_a_position_axis_sets_it_on_the_viewer(self, visualization_widget):
         widget, tracks_viewer = visualization_widget
         combo = widget.node_color_by_widget.combo

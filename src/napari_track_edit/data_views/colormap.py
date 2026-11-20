@@ -9,6 +9,13 @@ from napari.utils import DirectLabelColormap
 from napari.utils.colormaps import ensure_colormap, label_colormap
 from tracksdata.constants import DEFAULT_ATTR_KEYS
 
+from napari_track_edit.data_views.palettes import (
+    CATEGORICAL_PALETTES,
+    GRADIENTS,
+    palette_colors,
+    palette_for,
+)
+
 if TYPE_CHECKING:
     from funtracks.data_model import Tracks
 
@@ -181,12 +188,9 @@ class GradientColorSource:
     edits. Passing `limits` turns autoscale off.
     """
 
-    # what the "new colormap" button cycles through
-    COLORMAPS = ("viridis", "plasma", "magma", "inferno", "turbo", "twilight")
-
     def __init__(
         self,
-        colormap: str = "viridis",
+        colormap: str = GRADIENTS[0],
         limits: tuple[float, float] | None = None,
     ):
         self.colormap = ensure_colormap(colormap)
@@ -216,11 +220,80 @@ class GradientColorSource:
         return colors[0] if scalar else colors
 
     def shuffle(self) -> None:
-        """Switch to the next colormap in `COLORMAPS`."""
-        names = self.COLORMAPS
+        """Switch to the next colormap in `GRADIENTS`."""
+        names = GRADIENTS
         current = self.colormap.name
         index = names.index(current) + 1 if current in names else 0
         self.colormap = ensure_colormap(names[index % len(names)])
+
+
+# An int feature with at most this many distinct values is colored as
+# categories rather than as a gradient (see make_node_color_source).
+MAX_CATEGORIES = 20
+
+
+class PaletteColorSource:
+    """A fixed palette for categorical features with few values (small int
+    codes, text), one palette color per distinct value.
+
+    Each value keeps its color: `fit` hands out palette slots to values it has
+    not seen before, in sorted order, and never takes one back, so editing the
+    data (or a new value appearing) does not recolor the existing categories.
+    Values beyond the palette's length reuse its colors from the start.
+    Missing values (None) are GREY.
+    """
+
+    def __init__(self, palette: str = CATEGORICAL_PALETTES[0]):
+        self.palette = palette
+        self._slots: dict = {}
+
+    @classmethod
+    def for_values(cls, values) -> PaletteColorSource:
+        """A source whose palette is big enough for `values`' categories, with
+        their slots already handed out."""
+        source = cls(palette_for(len(_categories(values))))
+        source.fit(values)
+        return source
+
+    def fit(self, values) -> None:
+        """Give every value not seen before the next free slot."""
+        new = [v for v in _categories(values) if v not in self._slots]
+        for value in new:
+            self._slots[value] = len(self._slots)
+
+    def map(self, values) -> np.ndarray:
+        scalar = np.ndim(values) == 0
+        arr = np.atleast_1d(np.asarray(values, dtype=object))
+        colors = np.empty((len(arr), 4))
+        colors[:] = (*GREY, 1.0)
+        palette = palette_colors(self.palette)
+        missing = np.array([v is None for v in arr], dtype=bool)
+        if (~missing).any():
+            # one dict lookup per distinct value, not per node
+            uniq, inverse = np.unique(arr[~missing], return_inverse=True)
+            slots = np.array([self._slots.get(v, -1) for v in uniq])
+            rgb = np.where(
+                (slots >= 0)[:, np.newaxis],
+                palette[np.maximum(slots, 0) % len(palette)],
+                np.asarray(GREY),
+            )
+            colors[~missing, :3] = rgb[inverse]
+        return colors[0] if scalar else colors
+
+    def shuffle(self) -> None:
+        """Switch to the next palette; every value keeps its slot."""
+        names = CATEGORICAL_PALETTES
+        index = names.index(self.palette) + 1 if self.palette in names else 0
+        self.palette = names[index % len(names)]
+
+
+def _categories(values) -> list:
+    """The distinct non-missing values, sorted (as text if they do not sort)."""
+    distinct = {v for v in np.asarray(values, dtype=object).ravel() if v is not None}
+    try:
+        return sorted(distinct)
+    except TypeError:
+        return sorted(distinct, key=str)
 
 
 def _as_float(values) -> np.ndarray:
@@ -233,11 +306,13 @@ def _as_float(values) -> np.ndarray:
     return arr.astype(float)
 
 
-def _is_continuous(tracks: Tracks, feature_key: str) -> bool:
-    """Whether a node feature holds one number per node that is not an id.
+def _is_value_feature(tracks: Tracks, feature_key) -> bool:
+    """Whether a node feature holds one number or one piece of text per node,
+    colored by its values: as categories or as a gradient (see
+    `make_node_color_source`).
 
-    Integer features count too (time, counts); tracklet and lineage ids are
-    the exception, as their numbers are labels rather than amounts.
+    Tracklet and lineage ids are left out: they have colors of their own
+    (`CategoricalColorSource`), and so do groups (bool features).
     """
     if isinstance(feature_key, FeatureComponent):
         return True  # only position axes are offered as components
@@ -245,10 +320,30 @@ def _is_continuous(tracks: Tracks, feature_key: str) -> bool:
     feature = features.get(feature_key)
     return (
         feature is not None
-        and feature["value_type"] in ("float", "int")
+        and feature["value_type"] in ("float", "int", "str")
         and feature.get("num_values", 1) == 1
         and feature_key not in (features.tracklet_key, features.lineage_key)
     )
+
+
+def _value_color_source(feature: dict | None, read_values, is_time: bool):
+    """Categories or a gradient for a feature colored by its values.
+
+    Text is always categories; floats (and position axes, which have no
+    feature dict of their own here) are always a gradient. An int feature is
+    categories when it has at most MAX_CATEGORIES distinct values, otherwise a
+    gradient, except time, which is a gradient however few time points there
+    are. Deciding this reads the values once, here, when the feature is picked:
+    the choice does not flip back and forth as edits add or remove values.
+    """
+    value_type = None if feature is None else feature["value_type"]
+    if value_type == "str":
+        return PaletteColorSource.for_values(read_values())
+    if value_type == "int" and not is_time:
+        values = read_values()
+        if len(_categories(values)) <= MAX_CATEGORIES:
+            return PaletteColorSource.for_values(values)
+    return GradientColorSource()
 
 
 def make_node_color_source(
@@ -256,18 +351,24 @@ def make_node_color_source(
 ) -> ColorSource:
     """The `ColorSource` that can render a feature's values.
 
-    A source and a feature have to match: a group's True/False needs two
-    colors, no feature at all means one flat color, categorical features get random
-    colors via CategoricalColorSource, and numeric features a gradient via
-    GradientColorSource.
+    A source and a feature have to match: no feature at all means one flat
+    color, a group's True/False two colors, tracklet and lineage ids random
+    colors via CategoricalColorSource, and every other feature categories or a
+    gradient, decided from its values (see `_value_color_source`).
     """
     if feature_key is None:
         return ConstantColorSource()
     feature = tracks.features.get(feature_key) if tracks is not None else None
     if feature is not None and feature["value_type"] == "bool":
         return BinaryColorSource()
-    if tracks is not None and _is_continuous(tracks, feature_key):
-        return GradientColorSource()
+    if tracks is not None and _is_value_feature(tracks, feature_key):
+        return _value_color_source(
+            feature,
+            lambda: node_feature_values(
+                tracks, tracks.graph_solution.node_ids(), feature_key
+            ),
+            is_time=feature_key == tracks.features.time_key,
+        )
     return CategoricalColorSource()
 
 
@@ -321,9 +422,9 @@ def node_categorical_feature_keys(tracks: Tracks | None) -> list[str]:
     return keys
 
 
-def node_continuous_feature_keys(tracks: Tracks | None) -> list[str]:
-    """The numeric node features that can currently drive coloring, as a
-    gradient (see `GradientColorSource`).
+def node_value_feature_keys(tracks: Tracks | None) -> list:
+    """The node features colored by their values: numbers, text and position
+    axes, as categories or a gradient (see `make_node_color_source`).
 
     Same rules as `node_categorical_feature_keys` for features without a column.
     """
@@ -339,24 +440,25 @@ def node_continuous_feature_keys(tracks: Tracks | None) -> list[str]:
             # a stacked position: one entry per axis. Positions stored as one
             # column per axis are single-valued and picked up below.
             keys += [FeatureComponent(key, i) for i in range(feature["num_values"])]
-        elif _is_continuous(tracks, key):
+        elif _is_value_feature(tracks, key):
             keys.append(key)
     return keys
 
 
 def node_color_feature_keys(tracks: Tracks | None) -> list[str]:
-    """Every node feature that can currently drive node coloring: the
-    categorical ones, then the numeric ones."""
+    """Every node feature that can currently drive node coloring: ids and
+    groups, then the features colored by their values."""
     return [
         *node_categorical_feature_keys(tracks),
-        *node_continuous_feature_keys(tracks),
+        *node_value_feature_keys(tracks),
     ]
 
 
 def edge_color_feature_keys(tracks: Tracks | None) -> list[str]:
     """The edge features that can currently drive edge coloring: bool features
-    (two colors) and numeric ones (a gradient), one value per edge, with a
-    column on the graph. `solution` is left out, as for nodes.
+    (two colors), and numbers and text (categories or a gradient, as for
+    nodes), one value per edge, with a column on the graph. `solution` is left
+    out, as for nodes.
     """
     if tracks is None:
         return []
@@ -364,7 +466,7 @@ def edge_color_feature_keys(tracks: Tracks | None) -> list[str]:
     return [
         key
         for key, feature in tracks.features.edge_features.items()
-        if feature["value_type"] in ("bool", "float", "int")
+        if feature["value_type"] in ("bool", "float", "int", "str")
         and feature.get("num_values", 1) == 1
         and key != "solution"
         and key in attr_keys
@@ -390,14 +492,21 @@ def edge_color_feature_available(
 def make_edge_color_source(
     tracks: Tracks | None, feature_key: str | None
 ) -> ColorSource:
-    """One flat color for None, two colors for a bool edge feature, a gradient
-    for a numeric one."""
+    """One flat color for None, two colors for a bool edge feature, and
+    categories or a gradient for numbers and text, decided from the values as
+    for nodes (see `_value_color_source`)."""
     if feature_key is None:
         return ConstantColorSource()
     feature = tracks.features.get(feature_key) if tracks is not None else None
     if feature is not None and feature["value_type"] == "bool":
         return BinaryColorSource()
-    return GradientColorSource()
+    return _value_color_source(
+        feature,
+        lambda: tracks.graph_solution.edge_attrs(attr_keys=[feature_key])[
+            feature_key
+        ].to_list(),
+        is_time=False,
+    )
 
 
 def feature_display_name(tracks: Tracks | None, feature_key: str | None) -> str:
