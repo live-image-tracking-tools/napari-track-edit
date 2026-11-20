@@ -674,3 +674,38 @@ class TestTrackIdSwatch:
         # two tracklet ids get two different colors, not two ends of a gradient
         assert not np.allclose(colors.map(2), colors.map(3))
         assert colors is not tracks_viewer.node_colormap
+
+
+class TestRememberedColormap:
+    def test_switching_back_to_a_feature_restores_its_colormap(
+        self, visualization_widget
+    ):
+        _widget, tracks_viewer = visualization_widget
+        time_key = tracks_viewer.tracks.features.time_key
+        tracks_viewer.set_node_color_feature(time_key)
+        tracks_viewer.set_node_colormap_choice("magma")
+
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.tracklet_key)
+        tracks_viewer.set_node_color_feature(time_key)
+
+        assert tracks_viewer.node_colormap.color_source.choice == "magma"
+
+    def test_edges_remember_their_own_colormap(self, visualization_widget):
+        _widget, tracks_viewer = visualization_widget
+        tracks_viewer.tracks.add_feature(
+            "iou",
+            {
+                "feature_type": "edge",
+                "value_type": "float",
+                "num_values": 1,
+                "display_name": "IoU",
+                "default_value": None,
+            },
+        )
+        tracks_viewer.set_edge_color_feature("iou")
+        tracks_viewer.set_edge_colormap_choice("turbo")
+
+        tracks_viewer.set_edge_color_feature(SAME_AS_NODES)
+        tracks_viewer.set_edge_color_feature("iou")
+
+        assert tracks_viewer.edge_colormap.color_source.choice == "turbo"

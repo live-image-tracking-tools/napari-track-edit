@@ -1383,3 +1383,23 @@ class TestPreviewFollowsShuffle:
 
         assert not np.allclose(source.preview("tab10"), before)
         assert np.allclose(source.preview("tab20"), palette_colors("tab20"))
+
+
+class TestReviewEdgeCases:
+    def test_one_value_everywhere_keeps_missing_values_grey(self):
+        source = GradientColorSource()
+        source.fit(np.asarray([3.0, None, 3.0], dtype=object))
+
+        colors = source.map(np.asarray([3.0, None], dtype=object))
+
+        assert np.allclose(colors[1], (*GREY, 1.0))
+        assert not np.allclose(colors[0], (*GREY, 1.0))
+
+    def test_no_categories_yet_still_gives_a_generated_palette_colors(self):
+        source = PaletteColorSource.for_values(np.asarray([None, None], dtype=object))
+        source.choice = "hues"
+
+        source.fit(["a", "b"])
+
+        colors = source.map(np.asarray(["a", "b"], dtype=object))
+        assert not np.allclose(colors[0], colors[1])

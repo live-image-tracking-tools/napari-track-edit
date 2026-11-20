@@ -175,7 +175,10 @@ class CategoricalColorSource:
         arguments a random cycle is drawn, matching the argument-less
         `ColorSource.shuffle` that the "shuffle colors" button calls."""
         if self._choice != RANDOM_IDS:
-            self._order = np.random.permutation(self.ID_CYCLE)
+            order = self._order
+            while np.array_equal(order, self._order):
+                order = np.random.permutation(self.ID_CYCLE)
+            self._order = order
             return
         if num_colors is None:
             num_colors = random.randint(49, 69)
@@ -264,7 +267,12 @@ class GradientColorSource:
         low, high = self.limits
         span = high - low
         # a feature with one value everywhere lands in the middle of the scale
-        scaled = (arr - low) / span if span > 0 else np.full(arr.shape, 0.5)
+        scaled = (
+            (arr - low) / span
+            if span > 0
+            # missing values stay NaN here, so they are still painted GREY
+            else np.where(np.isfinite(arr), 0.5, np.nan)
+        )
         missing = ~np.isfinite(scaled)
         colors = np.empty((len(arr), 4))
         colors[~missing] = self.colormap.map(np.clip(scaled[~missing], 0.0, 1.0))
@@ -326,7 +334,9 @@ class PaletteColorSource:
         """A source whose palette is big enough for `values`' categories, with
         their slots already handed out."""
         n = len(_categories(values))
-        source = cls(palette_for(n), n_colors=n)
+        # no categories yet (an empty graph, or no values set): a generated
+        # palette would otherwise be made with a single color for all of them
+        source = cls(palette_for(n), n_colors=n if n > 0 else 20)
         source.fit(values)
         return source
 

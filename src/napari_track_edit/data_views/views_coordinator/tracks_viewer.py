@@ -26,7 +26,9 @@ from napari_track_edit.data_views.colormap import (
     CategoricalColorSource,
     EdgeColormap,
     NodeColormap,
+    colormap_choices,
     edge_color_feature_available,
+    make_edge_color_source,
     make_node_color_source,
     node_color_feature_available,
 )
@@ -65,6 +67,13 @@ BASE_TEXT = (
     "\n"
     "Current display mode : "
 )
+
+
+def _restore_choice(source, choice) -> None:
+    """Switch `source` to the colormap `choice` that was picked for its feature
+    before, if it still offers it."""
+    if choice is not None and choice in colormap_choices(source):
+        source.choice = choice
 
 
 class TracksViewer:
@@ -122,6 +131,10 @@ class TracksViewer:
         # edges in the lineage view; SAME_AS_NODES: drawn like their nodes
         self.edge_colormap = EdgeColormap()
         self.edge_color_feature_key: str | None = SAME_AS_NODES
+        # the colormap picked for each feature, restored when it is picked
+        # again (see set_node_colormap_choice)
+        self._node_colormap_choices: dict = {}
+        self._edge_colormap_choices: dict = {}
 
         self.symbolmap: dict[NodeType, str] = {
             NodeType.END: "x",
@@ -230,9 +243,9 @@ class TracksViewer:
             feature_key = self.tracks.features.tracklet_key
 
         self.node_color_feature_key = feature_key
-        self.node_colormap.set_feature(
-            feature_key, make_node_color_source(self.tracks, feature_key)
-        )
+        source = make_node_color_source(self.tracks, feature_key)
+        _restore_choice(source, self._node_colormap_choices.get(feature_key))
+        self.node_colormap.set_feature(feature_key, source)
         if refresh and self.tracks is not None:
             self._refresh()
         self.refresh_track_id_color()
@@ -259,7 +272,13 @@ class TracksViewer:
             feature_key = SAME_AS_NODES
 
         self.edge_color_feature_key = feature_key
-        self.edge_colormap.set_feature(feature_key)
+        source = (
+            None
+            if feature_key == SAME_AS_NODES
+            else make_edge_color_source(self.tracks, feature_key)
+        )
+        _restore_choice(source, self._edge_colormap_choices.get(feature_key))
+        self.edge_colormap.set_feature(feature_key, source)
         if refresh and self.tracks is not None:
             self._refresh()
         self.colormap_updated.emit()
@@ -268,6 +287,7 @@ class TracksViewer:
         """Switch the node colors to the named colormap (a gradient or a
         palette, see `colormap_choices`) and refresh every view."""
         self.node_colormap.color_source.choice = name
+        self._node_colormap_choices[self.node_color_feature_key] = name
         if self.tracks is not None:
             self._refresh()
         self.refresh_track_id_color()
@@ -276,6 +296,7 @@ class TracksViewer:
     def set_edge_colormap_choice(self, name: str) -> None:
         """Switch the lineage view's edge colors to the named colormap."""
         self.edge_colormap.color_source.choice = name
+        self._edge_colormap_choices[self.edge_color_feature_key] = name
         if self.tracks is not None:
             self._refresh()
         self.colormap_updated.emit()
