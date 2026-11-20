@@ -776,7 +776,9 @@ class TestTracksListExport:
             tracks_list.show_export_dialog(item)
             mock_export.assert_called_once()
 
-    def test_show_export_dialog_emits_request_colormap(self, tracks_list, motile_run):
+    def test_show_export_dialog_emits_request_node_colormap(
+        self, tracks_list, motile_run
+    ):
         tracks_list.add_tracks(motile_run, "run1", select=False)
         item = tracks_list.tracks_list.item(0)
 

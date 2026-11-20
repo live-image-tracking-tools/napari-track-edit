@@ -709,3 +709,15 @@ class TestRememberedColormap:
         tracks_viewer.set_edge_color_feature("iou")
 
         assert tracks_viewer.edge_colormap.color_source.choice == "turbo"
+
+
+def test_new_tracks_forget_picked_colormaps(visualization_widget, solution_tracks_2d):
+    _widget, tracks_viewer = visualization_widget
+    time_key = tracks_viewer.tracks.features.time_key
+    tracks_viewer.set_node_color_feature(time_key)
+    tracks_viewer.set_node_colormap_choice("magma")
+
+    tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="other")
+    tracks_viewer.set_node_color_feature(solution_tracks_2d.features.time_key)
+
+    assert tracks_viewer.node_colormap.color_source.choice == GRADIENTS[0]

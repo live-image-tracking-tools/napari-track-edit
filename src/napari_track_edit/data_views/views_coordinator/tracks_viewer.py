@@ -494,6 +494,11 @@ class TracksViewer:
         # Forget outgoing tracks first, because they might have a different value bound
         # to tracklet_key
         self.node_colormap.set_tracks(None)
+        # colormaps picked for the outgoing tracks' features: another dataset's
+        # feature of the same name may need another palette (e.g. more
+        # categories than tab10 has colors)
+        self._node_colormap_choices.clear()
+        self._edge_colormap_choices.clear()
         self.set_node_color_feature(tracks.features.tracklet_key, refresh=False)
         self.node_colormap.set_tracks(tracks)
         self.edge_colormap.set_tracks(None)
@@ -554,6 +559,8 @@ class TracksViewer:
         # node_color_feature_key keeps naming a feature of tracks that are gone
         self.node_colormap.set_tracks(None)
         self.node_color_feature_key = None
+        self._node_colormap_choices.clear()
+        self._edge_colormap_choices.clear()
         self.edge_colormap.set_tracks(None)
         self.edge_colormap.set_feature(SAME_AS_NODES)
         self.edge_color_feature_key = SAME_AS_NODES
