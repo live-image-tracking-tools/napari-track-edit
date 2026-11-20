@@ -43,7 +43,7 @@ Using groups
 - **Display**: set the ``Display Mode`` in the ``Visualization`` widget to ``Group``
   (or press ``Q`` until the mode is 'Group') to restrict the napari layers to the nodes in
   the currently selected group. See :ref:`display-modes`.
-- **Color**: groups are also available in the ``Color by`` dropdown menu of the
+- **Color**: groups are also available in the ``Color nodes by`` dropdown menu of the
   ``Visualization`` widget, to highlight the nodes in a group in all views.
 - **Export**: exporting a group writes the nodes in that group together with all their
   ancestors, so that the exported lineages stay intact. This way you can analyze a subset

@@ -68,7 +68,7 @@ def get_tracklets(
 
 def extract_sorted_tracks(
     tracks: Tracks,
-    colormap: NodeColormap,
+    node_colormap: NodeColormap,
     prev_axis_order: list[int] | None = None,
     edge_colormap: EdgeColormap | None = None,
 ) -> pd.DataFrame | None:
@@ -80,9 +80,9 @@ def extract_sorted_tracks(
     Args:
         tracks (funtracks.data_model.Tracks): A tracks object containing a graph
             to be converted into a dataframe.
-        colormap (NodeColormap): Colors tree-view nodes per node via
-            colormap.get_colors(node_ids), so the tree follows whichever
-            feature the colormap is coloring by, like every other view.
+        node_colormap (NodeColormap): Colors tree-view nodes per node via
+            node_colormap.get_colors(node_ids), so the tree follows whichever
+            feature it is coloring by, like every other view.
         prev_axis_order (list[int], Optional). The previous axis order.
         edge_colormap (EdgeColormap, Optional): When it is coloring by an edge
             feature, each row gets an 'edge_color' (0-255 RGBA) for the edge
@@ -163,7 +163,7 @@ def extract_sorted_tracks(
     # tracklet). Scaled to the 0-255 RGBA the tree plot expects here, vectorized:
     # per node inside the loop below that costs ~17ms on a 14k-node graph.
     node_to_color = dict(
-        zip(node_ids_list, colormap.get_colors(node_ids_list) * 255, strict=True)
+        zip(node_ids_list, node_colormap.get_colors(node_ids_list) * 255, strict=True)
     )
     color_edges = edge_colormap is not None and edge_colormap.active
     node_to_edge_color = (
@@ -324,10 +324,6 @@ def get_sorted_track_ids(
         child_to_parent: precomputed mapping from child node_id to parent node_id.
         parent_to_children: precomputed mapping from parent node_id to child node_ids.
         prev_axis_order (list[int], Optional). The previous axis order.
-        edge_colormap (EdgeColormap, Optional): When it is coloring by an edge
-            feature, each row gets an 'edge_color' (0-255 RGBA) for the edge
-            into that node; otherwise there is no such column and the tree
-            colors edges like their nodes.
 
     Returns:
         list[Any] of ordered tracklet_ids.

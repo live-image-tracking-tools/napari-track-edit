@@ -109,12 +109,15 @@ class MergeTrackIDDialog(QDialog):
     :attr:`track_id` after the dialog closes, and is None if the user cancelled.
     """
 
-    def __init__(self, track_ids: list[int], times: list[int], colormap, parent=None):
+    def __init__(
+        self, track_ids: list[int], times: list[int], node_colormap, parent=None
+    ):
         """
         Args:
             track_ids: The tracklet IDs of the nodes that will be merged.
             times: The time points in which this set of tracklet IDs is merged.
-            colormap: The viewer colormap, used to color each tracklet ID button.
+            node_colormap: The viewer's node colormap, used to color each
+                tracklet ID button.
             parent: The parent widget of the dialog. Defaults to None.
         """
 
@@ -139,7 +142,7 @@ class MergeTrackIDDialog(QDialog):
         track_id_layout = QHBoxLayout()
         for track_id in track_ids:
             button = QPushButton(str(track_id))
-            button.setStyleSheet(_track_id_button_style(colormap.map(track_id)))
+            button.setStyleSheet(_track_id_button_style(node_colormap.map(track_id)))
             button.clicked.connect(partial(self._select, track_id))
             track_id_layout.addWidget(button)
             self.track_id_btns[track_id] = button
@@ -159,7 +162,7 @@ class MergeTrackIDDialog(QDialog):
 
 
 def select_merge_track_id(
-    track_ids: list[int], times: list[int], colormap
+    track_ids: list[int], times: list[int], node_colormap
 ) -> int | None:
     """
     Ask the user which of the given tracklet IDs the merged node should keep.
@@ -167,12 +170,13 @@ def select_merge_track_id(
     Args:
         track_ids: The tracklet IDs of the nodes that will be merged.
         times: The time points in which this set of tracklet IDs is merged.
-        colormap: The viewer colormap, used to color each tracklet ID button.
+        node_colormap: The viewer's node colormap, used to color each tracklet
+            ID button.
 
     Returns:
         The chosen tracklet ID, or None if the user cancelled.
     """
 
-    dialog = MergeTrackIDDialog(track_ids, times, colormap)
+    dialog = MergeTrackIDDialog(track_ids, times, node_colormap)
     dialog.exec_()
     return dialog.track_id

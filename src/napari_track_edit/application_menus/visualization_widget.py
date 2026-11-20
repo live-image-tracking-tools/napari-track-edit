@@ -160,8 +160,8 @@ class FeatureColorByWidget(QWidget):
 
 
 class NodeColorByWidget(FeatureColorByWidget):
-    """ "Color nodes by": the node feature that colors the labels, points,
-    tracks, tree and table (see `TracksViewer.set_node_color_feature`).
+    """The "Color nodes by" dropdown: the node feature that colors the labels,
+    points, tracks, tree and table (see `TracksViewer.set_node_color_feature`).
 
     Offers "None" (one flat color), then the categorical features and the
     numeric ones, shown as a gradient (see `node_color_feature_keys`).
@@ -181,8 +181,8 @@ class NodeColorByWidget(FeatureColorByWidget):
 
 
 class EdgeColorByWidget(FeatureColorByWidget):
-    """ "Color edges by": the edge feature that colors the edges in the lineage
-    view (see `TracksViewer.set_edge_color_feature`).
+    """The "Color edges by" dropdown: the edge feature that colors the edges in
+    the lineage view (see `TracksViewer.set_edge_color_feature`).
 
     Offers "Same as nodes" (each edge in its child node's color, the default),
     "None" (one flat color), then the bool and numeric edge features (see

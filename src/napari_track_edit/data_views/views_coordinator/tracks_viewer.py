@@ -240,9 +240,11 @@ class TracksViewer:
         self, feature_key: str | None, refresh: bool = True
     ) -> None:
         """Color the lineage view's edges by the given edge feature, one flat
-        color (None), or like their nodes (SAME_AS_NODES). Only the tree draws edges on their own: the napari
-        Tracks layer can only blend between its vertices' colors, so it keeps
-        following the node colors.
+        color (None), or like their nodes (SAME_AS_NODES).
+
+        Only the tree draws edges on their own: the napari Tracks layer can only
+        blend between its vertices' colors, so it keeps following the node
+        colors.
 
         Args:
             feature_key: An edge feature key, None, or SAME_AS_NODES.
@@ -742,13 +744,14 @@ class TracksViewer:
 
     @staticmethod
     def _ask_merge_track_ids(
-        options: dict[int, list[int]], colormap
+        options: dict[int, list[int]], node_colormap
     ) -> dict[int, int] | None:
         """Ask the user which tracklet id to keep in each set of nodes to merge.
 
         Args:
             options: A mapping from time point to the tracklet ids to choose from.
-            colormap: The colormap used to color the tracklet id options.
+            node_colormap: The node colormap used to color the tracklet id
+                options.
 
         Returns:
             A mapping from time point to the chosen tracklet id, or None if the user
@@ -762,7 +765,7 @@ class TracksViewer:
 
         track_id_per_time: dict[int, int] = {}
         for track_ids, times in times_per_option.items():
-            track_id = select_merge_track_id(list(track_ids), times, colormap)
+            track_id = select_merge_track_id(list(track_ids), times, node_colormap)
             if track_id is None:
                 return None
             for time in times:

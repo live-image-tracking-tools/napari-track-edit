@@ -673,8 +673,9 @@ class EdgeColormap:
 
     `feature_key` SAME_AS_NODES (the default) means edges are not colored on
     their own at all (`active` is False) and the tree draws them like their
-    nodes; None means one flat color, as for nodes. Like `NodeColormap`, colors are computed once per `set_tracks` and only
-    read afterwards; the gradient limits are refit there too.
+    nodes; None means one flat color, as for nodes. Like `NodeColormap`,
+    colors are computed once per `set_tracks` and only read afterwards; the
+    gradient limits are refit there too.
     """
 
     def __init__(self):
