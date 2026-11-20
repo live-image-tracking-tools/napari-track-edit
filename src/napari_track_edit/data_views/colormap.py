@@ -337,17 +337,17 @@ class PaletteColorSource:
         colors = np.empty((len(arr), 4))
         colors[:] = (*GREY, 1.0)
         palette = palette_colors(self.palette, self._n_colors)[self._order]
-        missing = np.array([v is None for v in arr], dtype=bool)
-        if (~missing).any():
-            # one dict lookup per distinct value, not per node
-            uniq, inverse = np.unique(arr[~missing], return_inverse=True)
-            slots = np.array([self._slots.get(v, -1) for v in uniq])
-            rgb = np.where(
-                (slots >= 0)[:, np.newaxis],
-                palette[np.maximum(slots, 0) % len(palette)],
-                np.asarray(GREY),
-            )
-            colors[~missing, :3] = rgb[inverse]
+        # a dict lookup per value rather than np.unique, which sorts and so
+        # raises on values that do not compare (text next to a NaN, mixed
+        # types). Missing and unseen values get -1 and stay GREY.
+        slots = self._slots
+        index = np.fromiter(
+            (-1 if _is_missing(v) else slots.get(v, -1) for v in arr),
+            dtype=np.int64,
+            count=len(arr),
+        )
+        known = index >= 0
+        colors[known, :3] = palette[index[known] % len(palette)]
         return colors[0] if scalar else colors
 
     choices = CATEGORICAL_PALETTES
@@ -376,9 +376,19 @@ class PaletteColorSource:
         self._order = order
 
 
+def _is_missing(value) -> bool:
+    """None, or a float NaN: what an empty cell of an imported text column
+    holds."""
+    return value is None or (
+        isinstance(value, float | np.floating) and bool(np.isnan(value))
+    )
+
+
 def _categories(values) -> list:
     """The distinct non-missing values, sorted (as text if they do not sort)."""
-    distinct = {v for v in np.asarray(values, dtype=object).ravel() if v is not None}
+    distinct = {
+        v for v in np.asarray(values, dtype=object).ravel() if not _is_missing(v)
+    }
     try:
         return sorted(distinct)
     except TypeError:

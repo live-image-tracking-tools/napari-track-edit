@@ -634,3 +634,43 @@ class TestColormapPicker:
         widget, _tracks_viewer = visualization_widget
 
         assert widget.edge_color_by_widget.colormap_combo.isHidden()
+
+
+class TestPickerRebuilds:
+    def test_an_edit_does_not_rebuild_unchanged_combos(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.time_key)
+        row = widget.node_color_by_widget
+        cleared = []
+        row.combo.clear = lambda: cleared.append("feature")
+        row.colormap_combo.clear = lambda: cleared.append("colormap")
+
+        tracks_viewer._refresh()  # what every edit does
+
+        assert cleared == []
+
+
+class TestTrackIdSwatch:
+    def test_picking_an_id_palette_recolors_the_swatch(self, visualization_widget):
+        _widget, tracks_viewer = visualization_widget
+        tracks_viewer.set_track_id_color(2)
+        tracks_viewer.selected_track = 2
+        before = np.asarray(tracks_viewer.track_id_color).copy()
+
+        tracks_viewer.set_node_colormap_choice("hues")
+
+        after = np.asarray(tracks_viewer.track_id_color)
+        assert not np.allclose(after, before)
+        assert np.allclose(after, tracks_viewer.node_colormap.map(2))
+
+    def test_merge_buttons_use_id_colors_while_coloring_by_another_feature(
+        self, visualization_widget
+    ):
+        _widget, tracks_viewer = visualization_widget
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.time_key)
+
+        colors = tracks_viewer.track_id_colors()
+
+        # two tracklet ids get two different colors, not two ends of a gradient
+        assert not np.allclose(colors.map(2), colors.map(3))
+        assert colors is not tracks_viewer.node_colormap

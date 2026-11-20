@@ -179,6 +179,9 @@ class FeatureColorByWidget(QWidget):
 
         self.tracks_viewer = tracks_viewer
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        # what the two combos currently list, so _populate can skip rebuilding
+        self._shown_entries: list = []
+        self._shown_colormaps: tuple[list, list] = ([], [])
 
         self.combo = QComboBox()
         self.combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -229,11 +232,16 @@ class FeatureColorByWidget(QWidget):
         """Rebuild the entries and show the feature currently in use."""
 
         keys = self._keys()
+        entries = [(self._display_name(key), key) for key in keys]
         current = self._current()
         with QSignalBlocker(self.combo):
-            self.combo.clear()
-            for key in keys:
-                self.combo.addItem(self._display_name(key), key)
+            # rebuilt only when the entries changed: this runs after every
+            # edit, and clearing the combo would close it if it is open
+            if entries != self._shown_entries:
+                self.combo.clear()
+                for name, key in entries:
+                    self.combo.addItem(name, key)
+                self._shown_entries = entries
             self.combo.setCurrentIndex(keys.index(current) if current in keys else 0)
         self.combo.setEnabled(self.tracks_viewer.tracks is not None)
         self._populate_colormaps()
@@ -242,11 +250,21 @@ class FeatureColorByWidget(QWidget):
         """List the current feature's colormaps and show the one in use."""
         source = self._color_source()
         choices = colormap_choices(source)
+        previews = [np.asarray(source.preview(name)) for name in choices]
         with QSignalBlocker(self.colormap_combo):
-            self.colormap_combo.clear()
-            for name in choices:
-                # the colors only, no name
-                self.colormap_combo.add_preview(source.preview(name), name)
+            # as for the feature combo: only rebuilt when something changed
+            # (a shuffle changes the "random" id preview, so compare colors)
+            shown_names, shown_previews = self._shown_colormaps
+            unchanged = list(choices) == shown_names and all(
+                a.shape == b.shape and np.array_equal(a, b)
+                for a, b in zip(previews, shown_previews, strict=True)
+            )
+            if not unchanged:
+                self.colormap_combo.clear()
+                for name, preview in zip(choices, previews, strict=True):
+                    # the colors only, no name
+                    self.colormap_combo.add_preview(preview, name)
+                self._shown_colormaps = (list(choices), previews)
             if choices and source.choice in choices:
                 self.colormap_combo.setCurrentIndex(choices.index(source.choice))
         self.colormap_combo.setVisible(

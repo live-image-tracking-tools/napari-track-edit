@@ -31,9 +31,10 @@ GRADIENTS: tuple[str, ...] = (
 
 # Palettes generated for any number of colors: evenly spaced bright hues in a
 # fixed random order, so neighbouring categories (or ids) do not get
-# neighbouring hues. "purple-orange" keeps to blue-purple and magenta-orange
-# hues; "varied" also varies the saturation, for more contrast between
-# colors with similar hues. Contributed by Caroline Malin-Mayor.
+# neighbouring hues. "purple-orange" keeps to blue-purple (hue 0.65-0.78) and
+# red-orange (hue 0.02-0.15) hues, as in the original; "varied" also varies the
+# saturation, for more contrast between colors with similar hues. Contributed
+# by Caroline Malin-Mayor.
 GENERATED_PALETTES: dict[str, dict] = {
     "hues": {},
     "hues varied": {"vary_saturation": True},

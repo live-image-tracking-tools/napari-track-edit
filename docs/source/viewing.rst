@@ -192,9 +192,13 @@ The remaining options apply to all tracks:
   node feature (categories or a gradient), and a true/false feature in two colors. The
   napari Tracks layer always follows the node colors.
 - Next to each of these two dropdowns, a colormap dropdown lets you pick the colormap for
-  a gradient (viridis, magma, turbo, ...) or the palette for categories (tab10, tab20). It
-  is hidden when there is nothing to choose, for example for tracklet IDs. The ``shuffle
-  colors`` button of the labels layer steps through the same list for the node colors.
+  a gradient (viridis, magma, turbo, ...), the palette for categories (tab10, tab20, or
+  generated palettes of bright hues), or the colors for tracklet and lineage IDs (random,
+  or one of the generated palettes). It is hidden when there is nothing to choose: for
+  ``None``, groups and true/false features. The ``shuffle colors`` button of the labels
+  layer gives the nodes new colors of the same kind: categories and IDs keep their palette
+  and get its colors in a new order, a gradient switches to the next colormap, and
+  ``None`` stays grey.
 - ``Orthogonal views``: show orthogonal views of the data next to the main view.
   Press ``T`` to center all views on the mouse cursor. For 2D + time data, the ortho views
   show the time axis.

@@ -1343,3 +1343,21 @@ class TestIdPalettes:
 
         assert source.choice == "hues varied"
         assert not np.allclose(source.map(np.arange(1, 10)), before)
+
+
+class TestPaletteMissingValues:
+    def test_nan_next_to_text_is_grey_and_does_not_raise(self):
+        # an imported text column with empty cells holds NaN floats
+        values = np.asarray(["a", np.nan, "b", None], dtype=object)
+        source = PaletteColorSource.for_values(values)
+
+        colors = source.map(values)
+
+        assert np.allclose(colors[1], (*GREY, 1.0))
+        assert np.allclose(colors[3], (*GREY, 1.0))
+        assert not np.allclose(colors[0], colors[2])
+
+    def test_nan_is_not_a_category(self):
+        source = PaletteColorSource.for_values(np.asarray(["a", np.nan], dtype=object))
+
+        assert len(source._slots) == 1

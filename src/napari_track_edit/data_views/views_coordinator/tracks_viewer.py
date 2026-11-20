@@ -23,6 +23,7 @@ from qtpy.QtWidgets import QMessageBox
 
 from napari_track_edit.data_views.colormap import (
     SAME_AS_NODES,
+    CategoricalColorSource,
     EdgeColormap,
     NodeColormap,
     edge_color_feature_available,
@@ -234,6 +235,7 @@ class TracksViewer:
         )
         if refresh and self.tracks is not None:
             self._refresh()
+        self.refresh_track_id_color()
         self.colormap_updated.emit()
 
     def set_edge_color_feature(
@@ -268,6 +270,7 @@ class TracksViewer:
         self.node_colormap.color_source.choice = name
         if self.tracks is not None:
             self._refresh()
+        self.refresh_track_id_color()
         self.colormap_updated.emit()
 
     def set_edge_colormap_choice(self, name: str) -> None:
@@ -323,6 +326,21 @@ class TracksViewer:
             self.selected_track = self.tracks.get_next_track_id()
         self.set_track_id_color(self.selected_track)
         self.update_track_id.emit()
+
+    def refresh_track_id_color(self) -> None:
+        """Recolor the selected tracklet's swatch after the node colors changed
+        (another feature, colormap or shuffle)."""
+        self.set_track_id_color(self.selected_track)
+        self.update_track_id.emit()
+
+    def track_id_colors(self):
+        """Something with `.map(track_id)` that gives each tracklet id its
+        color, for the merge dialog's tracklet buttons: the node colors while
+        they color by tracklet id, otherwise napari's random id colors - the
+        node colors would read the ids as values of another feature."""
+        if self.node_colormap.colors_by_track_id:
+            return self.node_colormap
+        return CategoricalColorSource()
 
     def set_track_id_color(self, track_id: int) -> None:
         """Update self.track_id_color with the rgba color of the given track_id.
@@ -750,7 +768,9 @@ class TracksViewer:
         nodes = [int(node) for node in self.selected_nodes.as_list]
         try:
             options = get_track_id_options(self.tracks, nodes)
-            track_id_per_time = self._ask_merge_track_ids(options, self.node_colormap)
+            track_id_per_time = self._ask_merge_track_ids(
+                options, self.track_id_colors()
+            )
             if track_id_per_time is None:
                 return  # the user cancelled, so merge nothing at all
             UserMergeNodes(self.tracks, nodes, track_ids=track_id_per_time)

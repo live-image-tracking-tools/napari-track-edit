@@ -491,6 +491,7 @@ class TrackLabels(ContourLabels):
 
         self.tracks_viewer.node_colormap.color_source.shuffle()
         self.tracks_viewer._refresh()
+        self.tracks_viewer.refresh_track_id_color()
 
     def update_selected_label(self):
         """Update the selected label in the labels layer"""
