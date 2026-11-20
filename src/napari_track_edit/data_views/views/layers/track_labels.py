@@ -172,13 +172,11 @@ def _new_label(layer: TrackLabels, new_track_id=True):
     if new_track_id or layer.tracks_viewer.selected_track is None:
         layer.tracks_viewer.set_new_track_id()
     layer.selected_label = new_selected_label
-    layer.track_colormap.add_node(
-        new_selected_label, layer.tracks_viewer.selected_track
-    )
+    layer.node_colormap.add_node(new_selected_label, layer.tracks_viewer.selected_track)
     # to refresh, otherwise you paint with a transparent label until you
     # release the mouse
     with layer.events.selected_label.blocker():
-        layer.colormap = layer.track_colormap.to_direct_colormap()
+        layer.colormap = layer.node_colormap.to_direct_colormap()
 
 
 class TrackLabels(ContourLabels):
@@ -199,16 +197,16 @@ class TrackLabels(ContourLabels):
         tracks_viewer: TracksViewer,
     ):
         self.tracks_viewer = tracks_viewer
-        # tracks_viewer.colormap is shared: tracks_viewer already called
+        # tracks_viewer.node_colormap is shared: tracks_viewer already called
         # set_tracks() with the current Tracks object before constructing this
         # layer (see TracksViewer.update_tracks), so no need to do it again here.
-        self.track_colormap = self.tracks_viewer.colormap
+        self.node_colormap = self.tracks_viewer.node_colormap
 
         super().__init__(
             data=data,
             name=name,
             opacity=opacity,
-            colormap=self.track_colormap.to_direct_colormap(),
+            colormap=self.node_colormap.to_direct_colormap(),
             scale=scale,
         )
 
@@ -444,12 +442,12 @@ class TrackLabels(ContourLabels):
     def _refresh(self):
         """Refresh the data in the labels layer"""
         self.data = self.tracks_viewer.tracks.segmentation
-        # No set_tracks() here: TracksViewer._refresh already synced track_colormap
+        # No set_tracks() here: TracksViewer._refresh already synced node_colormap
         # before calling this, and the other caller (_on_paint's revert path) never
         # changes the node/track-id set - it just undoes a rejected paint - so the
         # cached colors are already correct. Just rebuild the napari-facing colormap
         # from that cached state.
-        self.colormap = self.track_colormap.to_direct_colormap()
+        self.colormap = self.node_colormap.to_direct_colormap()
         self.refresh()
 
     def update_label_colormap(self, visible: list[int] | str) -> None:
@@ -458,11 +456,9 @@ class TrackLabels(ContourLabels):
         """
 
         highlighted = set(self.tracks_viewer.selected_nodes)
-        foreground = self.track_colormap.nodes if visible == "all" else visible
+        foreground = self.node_colormap.nodes if visible == "all" else visible
         self.background = (
-            []
-            if visible == "all"
-            else self.track_colormap.nodes - visible - highlighted
+            [] if visible == "all" else self.node_colormap.nodes - visible - highlighted
         )
 
         self.filled_labels = []
@@ -475,26 +471,27 @@ class TrackLabels(ContourLabels):
         # special case: 3D rendering + partially filled contours -> set background opacity
         # to 0
         if self._slice.slice_input.ndisplay == 3 and self.contour > 0:
-            self.track_colormap.set_alpha(self.background, 0)
+            self.node_colormap.set_alpha(self.background, 0)
         else:
             # set normal background opacity
-            self.track_colormap.set_alpha(self.background, self.background_opacity)
-        self.track_colormap.set_alpha(foreground, self.foreground_opacity)
-        self.track_colormap.set_alpha(highlighted, self.highlight_opacity)
+            self.node_colormap.set_alpha(self.background, self.background_opacity)
+        self.node_colormap.set_alpha(foreground, self.foreground_opacity)
+        self.node_colormap.set_alpha(highlighted, self.highlight_opacity)
 
         # Setting colormap also emits `selected_label`, which triggers
         # `_ensure_valid_label` and would rebuild the colormap a second time; that
         # validation is only needed when the painting label changes, not on a
         # highlight/opacity refresh, so block it here.
         with self.events.selected_label.blocker():
-            self.colormap = self.track_colormap.to_direct_colormap()
+            self.colormap = self.node_colormap.to_direct_colormap()
 
     def new_colormap(self):
         """Override existing function to generate new colormap on tracks_viewer and
         emit refresh signal to update colors in all layers/widgets"""
 
-        self.tracks_viewer.colormap.color_source.shuffle()
+        self.tracks_viewer.node_colormap.color_source.shuffle()
         self.tracks_viewer._refresh()
+        self.tracks_viewer.refresh_track_id_color()
 
     def update_selected_label(self):
         """Update the selected label in the labels layer"""
@@ -635,11 +632,11 @@ class TrackLabels(ContourLabels):
         # update color and emit signal
         self.tracks_viewer.set_track_id_color(self.tracks_viewer.selected_track)
         if update_colormap:
-            self.track_colormap.add_node(
+            self.node_colormap.add_node(
                 self.selected_label, self.tracks_viewer.selected_track
             )
             with self.events.selected_label.blocker():
-                self.colormap = self.track_colormap.to_direct_colormap()  # refresh
+                self.colormap = self.node_colormap.to_direct_colormap()  # refresh
         self.tracks_viewer.update_track_id.emit()
 
     @napari.layers.Labels.n_edit_dimensions.setter

@@ -1,9 +1,12 @@
 import contextlib
 
 import napari
+import numpy as np
 from psygnal import Signal
-from qtpy.QtCore import QSignalBlocker
+from qtpy.QtCore import QSignalBlocker, QSize, Qt
+from qtpy.QtGui import QIcon, QImage, QPixmap
 from qtpy.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -12,6 +15,10 @@ from qtpy.QtWidgets import (
     QLabel,
     QRadioButton,
     QSizePolicy,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionComboBox,
+    QStylePainter,
     QVBoxLayout,
     QWidget,
 )
@@ -19,8 +26,11 @@ from superqt import QLabeledDoubleSlider
 
 from napari_track_edit._nte_app import NTEApp
 from napari_track_edit.data_views.colormap import (
-    categorical_feature_keys,
+    SAME_AS_NODES,
+    colormap_choices,
+    edge_color_feature_keys,
     feature_display_name,
+    node_color_feature_keys,
 )
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
@@ -77,35 +87,118 @@ class VisualizationConfigWidget(QWidget):
         layout.addStretch(0)
 
 
-class ColorByWidget(QWidget):
-    """A "Color by" label and the dropdown picking the feature to color by.
+_PREVIEW_ROLE = Qt.UserRole + 1  # item data role holding a colormap's preview
+_ARROW_WIDTH = 20  # room left for a combo box's drop-down arrow
 
-    Selecting an entry goes through `TracksViewer.set_color_feature`, which
-    updates the shared colormap *and* rebuilds the labels, points, tracks,
-    tree and table.
 
-    Currently, only categorical features are offered (see `categorical_feature_keys`),
-    plus "None", which paints every node one flat color.
+def _preview_pixmap(colors: np.ndarray) -> QPixmap:
+    """A strip showing `colors` (N, 3, floats in 0-1) side by side: a smooth
+    gradient for many colors, swatches for a palette. Drawn stretched to
+    whatever space it is given (see `_ColormapCombo`)."""
+    width, height = 256, 1
+    columns = np.floor(np.linspace(0, len(colors), width, endpoint=False)).astype(int)
+    rgb = (np.clip(colors[columns], 0, 1) * 255).astype(np.uint8)
+    pixels = np.ascontiguousarray(np.repeat(rgb[np.newaxis], height, axis=0))
+    image = QImage(pixels.data, width, height, 3 * width, QImage.Format_RGB888)
+    return QPixmap.fromImage(image.copy())
+
+
+class _PreviewDelegate(QStyledItemDelegate):
+    """Draws a colormap preview across the whole row of the picker's list.
+
+    A preview set as an item icon is squeezed into the small square icon area
+    napari's style allows, so it is drawn here instead.
     """
+
+    ROW_HEIGHT = 24
+
+    def paint(self, painter, option, index) -> None:
+        # the row background (hover, selection) without any text or icon
+        self.initStyleOption(option, index)
+        option.text = ""
+        option.icon = QIcon()
+        style = option.widget.style() if option.widget else QApplication.style()
+        style.drawControl(QStyle.CE_ItemViewItem, option, painter, option.widget)
+        pixmap = index.data(_PREVIEW_ROLE)
+        if pixmap is not None:
+            painter.drawPixmap(option.rect.adjusted(8, 5, -8, -5), pixmap)
+
+    def sizeHint(self, option, index) -> QSize:
+        hint = super().sizeHint(option, index)
+        return QSize(hint.width(), max(hint.height(), self.ROW_HEIGHT))
+
+
+class _ColormapCombo(QComboBox):
+    """A combo box showing colormap previews instead of names, both in its
+    list and in the closed box."""
+
+    def __init__(self):
+        super().__init__()
+        self.setItemDelegate(_PreviewDelegate(self))
+
+    def add_preview(self, colors: np.ndarray, name: str) -> None:
+        self.addItem("", name)
+        self.setItemData(self.count() - 1, _preview_pixmap(colors), _PREVIEW_ROLE)
+
+    def paintEvent(self, event) -> None:
+        painter = QStylePainter(self)
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        option.currentText = ""
+        option.currentIcon = QIcon()
+        painter.drawComplexControl(QStyle.CC_ComboBox, option)
+        pixmap = self.currentData(_PREVIEW_ROLE)
+        if pixmap is not None:
+            # everything left of the drop-down arrow. Not the style's edit
+            # field or arrow rects: under napari's stylesheet those leave a
+            # strip a fraction of the box wide.
+            field = self.rect().adjusted(8, 7, -(8 + _ARROW_WIDTH), -7)
+            painter.drawPixmap(field, pixmap)
+
+
+class FeatureColorByWidget(QWidget):
+    """A "Color ... by" label and the dropdown picking the feature to color by.
+
+    Shared by `NodeColorByWidget` and `EdgeColorByWidget`, which say which
+    features to offer (`_keys`), what to call them (`_display_name`), and how
+    to read and set the one in use on the `TracksViewer` (`_current`,
+    `_apply`).
+
+    Next to it, a colormap picker (`colormap_combo`) lists the colormaps the
+    current feature's colors can switch between (gradients for numbers,
+    palettes for categories; see `colormap_choices`), and is hidden when there
+    are none. napari's "shuffle colors" button steps through the same list
+    for node colors, and the picker follows.
+    """
+
+    LABEL = ""
+    TOOLTIP = ""
 
     def __init__(self, tracks_viewer: TracksViewer):
         super().__init__()
 
         self.tracks_viewer = tracks_viewer
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        # what the two combos currently list, so _populate can skip rebuilding
+        self._shown_entries: list = []
+        self._shown_colormaps: tuple[list, list] = ([], [])
 
         self.combo = QComboBox()
         self.combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.combo.setToolTip(
-            "Node feature used to color the labels, points, tracks, tree and table."
-        )
+        self.combo.setToolTip(self.TOOLTIP)
         self.combo.currentIndexChanged.connect(self._on_selected)
+
+        self.colormap_combo = _ColormapCombo()
+        self.colormap_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.colormap_combo.currentIndexChanged.connect(self._on_colormap_selected)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 0, 8, 0)
         layout.setSpacing(8)
-        layout.addWidget(QLabel("Color by"))
-        layout.addWidget(self.combo, stretch=1)
+        self.label = QLabel(self.LABEL)
+        layout.addWidget(self.label)
+        layout.addWidget(self.combo, stretch=2)
+        layout.addWidget(self.colormap_combo, stretch=1)
 
         self.tracks_viewer.tracks_updated.connect(self._populate)
         self.tracks_viewer.colormap_updated.connect(self._populate)
@@ -116,26 +209,158 @@ class ColorByWidget(QWidget):
         self._populate()
         super().showEvent(event)
 
+    def _keys(self) -> list[str | None]:
+        raise NotImplementedError
+
+    def _display_name(self, key: str | None) -> str:
+        return feature_display_name(self.tracks_viewer.tracks, key)
+
+    def _current(self) -> str | None:
+        raise NotImplementedError
+
+    def _apply(self, key: str | None) -> None:
+        raise NotImplementedError
+
+    def _color_source(self):
+        """The color source of the feature in use, or None."""
+        raise NotImplementedError
+
+    def _apply_colormap(self, name: str) -> None:
+        raise NotImplementedError
+
     def _populate(self, *_args) -> None:
         """Rebuild the entries and show the feature currently in use."""
 
-        keys = [None, *categorical_feature_keys(self.tracks_viewer.tracks)]
-        current = self.tracks_viewer.color_feature_key
+        keys = self._keys()
+        entries = [(self._display_name(key), key) for key in keys]
+        current = self._current()
         with QSignalBlocker(self.combo):
-            self.combo.clear()
-            for key in keys:
-                self.combo.addItem(
-                    feature_display_name(self.tracks_viewer.tracks, key), key
-                )
+            # rebuilt only when the entries changed: this runs after every
+            # edit, and clearing the combo would close it if it is open
+            if entries != self._shown_entries:
+                self.combo.clear()
+                for name, key in entries:
+                    self.combo.addItem(name, key)
+                self._shown_entries = entries
             self.combo.setCurrentIndex(keys.index(current) if current in keys else 0)
         self.combo.setEnabled(self.tracks_viewer.tracks is not None)
+        self._populate_colormaps()
+
+    def _populate_colormaps(self) -> None:
+        """List the current feature's colormaps and show the one in use."""
+        source = self._color_source()
+        choices = colormap_choices(source)
+        previews = [np.asarray(source.preview(name)) for name in choices]
+        with QSignalBlocker(self.colormap_combo):
+            # as for the feature combo: only rebuilt when something changed
+            # (a shuffle changes the "random" id preview, so compare colors)
+            shown_names, shown_previews = self._shown_colormaps
+            unchanged = list(choices) == shown_names and all(
+                a.shape == b.shape and np.array_equal(a, b)
+                for a, b in zip(previews, shown_previews, strict=True)
+            )
+            if not unchanged:
+                self.colormap_combo.clear()
+                for name, preview in zip(choices, previews, strict=True):
+                    # the colors only, no name
+                    self.colormap_combo.add_preview(preview, name)
+                self._shown_colormaps = (list(choices), previews)
+            if choices and source.choice in choices:
+                self.colormap_combo.setCurrentIndex(choices.index(source.choice))
+        self.colormap_combo.setVisible(
+            bool(choices) and self.tracks_viewer.tracks is not None
+        )
+
+    def _on_colormap_selected(self, index: int) -> None:
+        if index < 0:
+            return
+        name = self.colormap_combo.itemData(index)
+        source = self._color_source()
+        if source is not None and name != getattr(source, "choice", None):
+            self._apply_colormap(name)
 
     def _on_selected(self, index: int) -> None:
         if index < 0:
             return
         feature_key = self.combo.itemData(index)
-        if feature_key != self.tracks_viewer.color_feature_key:
-            self.tracks_viewer.set_color_feature(feature_key)
+        if feature_key != self._current():
+            self._apply(feature_key)
+
+    def cleanup(self) -> None:
+        """Stop following the TracksViewer, which outlives this widget."""
+        for signal in (
+            self.tracks_viewer.tracks_updated,
+            self.tracks_viewer.colormap_updated,
+        ):
+            with contextlib.suppress(ValueError, KeyError, RuntimeError):
+                signal.disconnect(self._populate)
+
+
+class NodeColorByWidget(FeatureColorByWidget):
+    """The "Color nodes by" dropdown: the node feature that colors the labels,
+    points, tracks, tree and table (see `TracksViewer.set_node_color_feature`).
+
+    Offers "None" (one flat color), then the categorical features and the
+    numeric ones, shown as a gradient (see `node_color_feature_keys`).
+    """
+
+    LABEL = "Color nodes by"
+    TOOLTIP = "Node feature used to color the labels, points, tracks, tree and table."
+
+    def _keys(self) -> list[str | None]:
+        return [None, *node_color_feature_keys(self.tracks_viewer.tracks)]
+
+    def _current(self) -> str | None:
+        return self.tracks_viewer.node_color_feature_key
+
+    def _apply(self, key: str | None) -> None:
+        self.tracks_viewer.set_node_color_feature(key)
+
+    def _color_source(self):
+        return self.tracks_viewer.node_colormap.color_source
+
+    def _apply_colormap(self, name: str) -> None:
+        self.tracks_viewer.set_node_colormap_choice(name)
+
+
+class EdgeColorByWidget(FeatureColorByWidget):
+    """The "Color edges by" dropdown: the edge feature that colors the edges in
+    the lineage view (see `TracksViewer.set_edge_color_feature`).
+
+    Offers "Same as nodes" (each edge in its child node's color, the default),
+    "None" (one flat color), then the bool and numeric edge features (see
+    `edge_color_feature_keys`).
+    """
+
+    LABEL = "Color edges by"
+    TOOLTIP = (
+        "Edge feature used to color the edges in the lineage view. The napari "
+        "Tracks layer keeps the node colors."
+    )
+
+    def _keys(self) -> list[str | None]:
+        return [
+            SAME_AS_NODES,
+            None,
+            *edge_color_feature_keys(self.tracks_viewer.tracks),
+        ]
+
+    def _display_name(self, key: str | None) -> str:
+        if key == SAME_AS_NODES:
+            return "Same as nodes"
+        return super()._display_name(key)
+
+    def _current(self) -> str | None:
+        return self.tracks_viewer.edge_color_feature_key
+
+    def _apply(self, key: str | None) -> None:
+        self.tracks_viewer.set_edge_color_feature(key)
+
+    def _color_source(self):
+        return self.tracks_viewer.edge_colormap.color_source
+
+    def _apply_colormap(self, name: str) -> None:
+        self.tracks_viewer.set_edge_colormap_choice(name)
 
 
 class ModeWidget(QWidget):
@@ -233,14 +458,16 @@ class VisualizationWidget(QWidget):
 
         self.background_widget.setEnabled(False)  # initially disabled
 
-        self.color_by_widget = ColorByWidget(self.tracks_viewer)
+        self.node_color_by_widget = NodeColorByWidget(self.tracks_viewer)
+        self.edge_color_by_widget = EdgeColorByWidget(self.tracks_viewer)
 
         main_layout.addWidget(self.mode_widget)
         main_layout.addWidget(self.highlight_widget)
         main_layout.addWidget(self.foreground_widget)
         main_layout.addWidget(self.background_widget)
 
-        main_layout.addWidget(self.color_by_widget)
+        main_layout.addWidget(self.node_color_by_widget)
+        main_layout.addWidget(self.edge_color_by_widget)
 
         self.show_ortho_views = QCheckBox("Orthogonal views")
         self.show_ortho_views.toggled.connect(self.toggle_ortho_views)
@@ -262,13 +489,10 @@ class VisualizationWidget(QWidget):
         Called by MenuManager when the dock is destroyed.
         """
 
-        for signal, slot in (
-            (self.tracks_viewer.mode_updated, self._update_widget_availability),
-            (self.tracks_viewer.tracks_updated, self.color_by_widget._populate),
-            (self.tracks_viewer.colormap_updated, self.color_by_widget._populate),
-        ):
-            with contextlib.suppress(ValueError, KeyError, RuntimeError):
-                signal.disconnect(slot)
+        with contextlib.suppress(ValueError, KeyError, RuntimeError):
+            self.tracks_viewer.mode_updated.disconnect(self._update_widget_availability)
+        self.node_color_by_widget.cleanup()
+        self.edge_color_by_widget.cleanup()
 
     def toggle_viewer_text_overlay(self, checked: bool):
         """Change the visibility of the text overlay"""

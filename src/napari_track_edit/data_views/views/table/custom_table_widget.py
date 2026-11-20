@@ -22,7 +22,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from napari_track_edit.data_views.colormap import TrackColormap
+from napari_track_edit.data_views.colormap import NodeColormap
 from napari_track_edit.data_views.keybindings_config import (
     TRACKS_VIEWER_KEY_ACTIONS,
     resolve_key_action,
@@ -56,7 +56,9 @@ class TrackTableModel(QAbstractTableModel):
         self._bg: list[QColor] = []
         self._fg: list[QColor] = []
 
-    def set_table(self, table: dict[str, np.ndarray], colormap: TrackColormap) -> None:
+    def set_table(
+        self, table: dict[str, np.ndarray], node_colormap: NodeColormap
+    ) -> None:
         """Replace the table contents and precompute per-row colors."""
         self.beginResetModel()
         self._table = table
@@ -68,11 +70,11 @@ class TrackTableModel(QAbstractTableModel):
         self._bg = []
         self._fg = []
         ids = table.get("ID")
-        if ids is not None and len(ids) > 0 and colormap is not None:
+        if ids is not None and len(ids) > 0 and node_colormap is not None:
             # Single vectorized get_colors call over all row node ids:
             # per-node lookups have a large fixed overhead, so mapping
             # row-by-row is O(rows) slow. Map once, then build per-row QColors.
-            mapped = colormap.get_colors(np.asarray(ids))
+            mapped = node_colormap.get_colors(np.asarray(ids))
             for rgba in mapped:
                 if rgba[3] == 0:
                     rgba = [0, 0, 0, 0]
@@ -587,9 +589,9 @@ class ColoredTableWidget(QWidget):
             self._id_to_row = {}
 
         # Hand the data to the lazy model (no per-cell widgets are created).
-        # tracks_viewer.colormap is kept in sync (set_tracks) by TracksViewer
+        # tracks_viewer.node_colormap is kept in sync (set_tracks) by TracksViewer
         # itself on every tracks update/refresh.
-        self._model.set_table(table, self.tracks_viewer.colormap)
+        self._model.set_table(table, self.tracks_viewer.node_colormap)
 
     def _sort_table(self, column_index: int) -> None:
         """Sorts the table in ascending or descending order

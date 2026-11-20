@@ -408,6 +408,25 @@ class TestRetrieveExistingGroups:
         assert 1 in button.collection
         assert 2 in button.collection
 
+    def test_bool_edge_feature_is_not_a_group(self, viewer, solution_tracks_2d):
+        """A bool edge feature has no node column; reading it as a group raised
+        KeyError when the tracks were shown."""
+        from funtracks.features import Feature
+
+        solution_tracks_2d.add_feature(
+            "confident",
+            Feature(
+                feature_type="edge", value_type="bool", num_values=1, default_value=None
+            ),
+        )
+        tracks_viewer = TracksViewer.get_instance(viewer)
+        tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="test")
+
+        widget = CollectionWidget(tracks_viewer)
+        widget.retrieve_existing_groups()  # must not raise
+
+        assert widget.collection_list.count() == 0
+
     def test_refresh_removes_deleted_nodes(
         self, viewer, solution_tracks_2d, qtbot, click_node
     ):
@@ -549,11 +568,14 @@ def test_deleting_the_group_being_colored_by_falls_back_to_track_ids(
 
     widget.group_name.setText("colored_group")
     qtbot.mouseClick(widget.new_group_button, Qt.MouseButton.LeftButton)
-    tracks_viewer.set_color_feature("colored_group")
+    tracks_viewer.set_node_color_feature("colored_group")
 
     item = widget.collection_list.item(0)
     button = widget.collection_list.itemWidget(item)
     qtbot.mouseClick(button.delete, Qt.MouseButton.LeftButton)
 
-    assert tracks_viewer.color_feature_key == tracks_viewer.tracks.features.tracklet_key
+    assert (
+        tracks_viewer.node_color_feature_key
+        == tracks_viewer.tracks.features.tracklet_key
+    )
     tracks_viewer._refresh()  # must not raise

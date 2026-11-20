@@ -60,7 +60,7 @@ def test_merge_one_set(tracks_viewer_setup, click_node):
     with patch(DIALOG, return_value=3) as dialog:
         tracks_viewer.merge_horizontally()
 
-    dialog.assert_called_once_with([2, 3], [1], tracks_viewer.colormap)
+    dialog.assert_called_once_with([2, 3], [1], tracks_viewer.node_colormap)
     assert not tracks.graph_solution.has_node(2)
     assert tracks.graph_solution.has_node(3)
 
@@ -85,8 +85,8 @@ def test_two_sets_with_different_track_ids(tracks_viewer_setup, click_node):
         tracks_viewer.merge_horizontally()
 
     assert dialog.call_count == 2
-    assert dialog.call_args_list[0].args == ([2, 3], [1], tracks_viewer.colormap)
-    assert dialog.call_args_list[1].args == ([3, 4], [4], tracks_viewer.colormap)
+    assert dialog.call_args_list[0].args == ([2, 3], [1], tracks_viewer.node_colormap)
+    assert dialog.call_args_list[1].args == ([3, 4], [4], tracks_viewer.node_colormap)
     assert not tracks.graph_solution.has_node(2)
     assert tracks.graph_solution.has_node(3)
     assert not tracks.graph_solution.has_node(5)
@@ -106,7 +106,7 @@ def test_two_sets_with_same_track_ids(tracks_viewer_setup, click_node):
     ):
         tracks_viewer.merge_horizontally()
 
-    dialog.assert_called_once_with([2, 3], [1, 4], tracks_viewer.colormap)
+    dialog.assert_called_once_with([2, 3], [1, 4], tracks_viewer.node_colormap)
     assert merge.call_args.kwargs["track_ids"] == {1: 3, 4: 3}
 
 
@@ -129,13 +129,13 @@ def test_dialog_buttons_are_colored(tracks_viewer_setup, qtbot):
     """Each tracklet ID gets its own button, bordered in that tracklet's color."""
     tracks_viewer, _ = tracks_viewer_setup
 
-    dialog = MergeTrackIDDialog([2, 3], [1], tracks_viewer.colormap)
+    dialog = MergeTrackIDDialog([2, 3], [1], tracks_viewer.node_colormap)
     qtbot.addWidget(dialog)
 
     assert sorted(dialog.track_id_btns) == [2, 3]
     for track_id, button in dialog.track_id_btns.items():
         assert button.text() == str(track_id)
-        color = tracks_viewer.colormap.map(track_id)
+        color = tracks_viewer.node_colormap.map(track_id)
         rgb = ", ".join(str(int(channel * 255)) for channel in color[:3])
         assert f"border: 3px solid rgb({rgb})" in button.styleSheet()
 
@@ -143,7 +143,7 @@ def test_dialog_buttons_are_colored(tracks_viewer_setup, qtbot):
 def test_dialog_returns_clicked_track_id(tracks_viewer_setup, qtbot):
     tracks_viewer, _ = tracks_viewer_setup
 
-    dialog = MergeTrackIDDialog([2, 3], [1], tracks_viewer.colormap)
+    dialog = MergeTrackIDDialog([2, 3], [1], tracks_viewer.node_colormap)
     qtbot.addWidget(dialog)
     qtbot.mouseClick(dialog.track_id_btns[3], Qt.MouseButton.LeftButton)
 
@@ -154,7 +154,7 @@ def test_dialog_returns_clicked_track_id(tracks_viewer_setup, qtbot):
 def test_dialog_cancel_returns_none(tracks_viewer_setup, qtbot):
     tracks_viewer, _ = tracks_viewer_setup
 
-    dialog = MergeTrackIDDialog([2, 3], [1], tracks_viewer.colormap)
+    dialog = MergeTrackIDDialog([2, 3], [1], tracks_viewer.node_colormap)
     qtbot.addWidget(dialog)
     qtbot.mouseClick(dialog.cancel_btn, Qt.MouseButton.LeftButton)
 

@@ -13,7 +13,7 @@ from qtpy.QtWidgets import (
     QVBoxLayout,
 )
 
-from napari_track_edit.data_views.colormap import TrackColormap
+from napari_track_edit.data_views.colormap import NodeColormap
 from napari_track_edit.import_export.sql_io import (
     SQL_SUFFIX,
     is_same_database,
@@ -195,7 +195,7 @@ class ExportDialog:
         parent,
         tracks: Tracks,
         name: str,
-        colormap: TrackColormap,
+        node_colormap: NodeColormap,
         nodes_to_keep: set[int] | None = None,
     ):
         """Export tracks to CSV, geff or a SQL database, with the option to export
@@ -292,7 +292,7 @@ class ExportDialog:
             # get_colors, not map: map takes feature values, which are only
             # track ids while the colormap is coloring by track id. get_colors
             # takes node ids and returns whatever each node is showing.
-            colors = colormap.get_colors(nodes) if len(nodes) > 0 else []
+            colors = node_colormap.get_colors(nodes) if len(nodes) > 0 else []
             color_dict = {
                 **dict(zip(nodes, colors, strict=True)),
                 None: [0, 0, 0, 0],

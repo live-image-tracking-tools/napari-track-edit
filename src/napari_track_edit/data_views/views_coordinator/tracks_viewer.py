@@ -22,9 +22,15 @@ from psygnal import Signal
 from qtpy.QtWidgets import QMessageBox
 
 from napari_track_edit.data_views.colormap import (
-    TrackColormap,
-    color_feature_available,
-    make_color_source,
+    SAME_AS_NODES,
+    CategoricalColorSource,
+    EdgeColormap,
+    NodeColormap,
+    colormap_choices,
+    edge_color_feature_available,
+    make_edge_color_source,
+    make_node_color_source,
+    node_color_feature_available,
 )
 from napari_track_edit.data_views.dims_utils import TracksDims
 from napari_track_edit.data_views.keybindings_config import (
@@ -61,6 +67,13 @@ BASE_TEXT = (
     "\n"
     "Current display mode : "
 )
+
+
+def _restore_choice(source, choice) -> None:
+    """Switch `source` to the colormap `choice` that was picked for its feature
+    before, if it still offers it."""
+    if choice is not None and choice in colormap_choices(source):
+        source.choice = choice
 
 
 class TracksViewer:
@@ -113,8 +126,15 @@ class TracksViewer:
         qt_window = getattr(getattr(viewer, "window", None), "_qt_window", None)
         if qt_window is not None:
             qt_window.destroyed.connect(_clear_if_current)
-        self.colormap = TrackColormap()
-        self.color_feature_key: str | None = None
+        self.node_colormap = NodeColormap()
+        self.node_color_feature_key: str | None = None
+        # edges in the lineage view; SAME_AS_NODES: drawn like their nodes
+        self.edge_colormap = EdgeColormap()
+        self.edge_color_feature_key: str | None = SAME_AS_NODES
+        # the colormap picked for each feature, restored when it is picked
+        # again (see set_node_colormap_choice)
+        self._node_colormap_choices: dict = {}
+        self._edge_colormap_choices: dict = {}
 
         self.symbolmap: dict[NodeType, str] = {
             NodeType.END: "x",
@@ -135,7 +155,9 @@ class TracksViewer:
         self.tracks_list = TracksList()
         self.tracks_list.view_tracks.connect(self.update_tracks)
         self.tracks_list.tracks_cleared.connect(self.clear_tracks)
-        self.tracks_list.request_colormap.connect(self.set_colormap_to_trackslist)
+        self.tracks_list.request_node_colormap.connect(
+            self.set_node_colormap_to_trackslist
+        )
         self.selected_track = None
         self.track_id_color = [0, 0, 0, 0]
         self.force = False
@@ -195,44 +217,107 @@ class TracksViewer:
     def _on_collection_widget_destroyed(self):
         self.collection_widget = None
 
-    def set_colormap_to_trackslist(self):
+    def set_node_colormap_to_trackslist(self):
         """Set the current colormap on the TracksList, so that it can be exported."""
-        self.tracks_list.colormap = self.colormap
+        self.tracks_list.node_colormap = self.node_colormap
 
-    def set_color_feature(self, feature_key: str | None, refresh: bool = True) -> None:
+    def set_node_color_feature(
+        self, feature_key: str | None, refresh: bool = True
+    ) -> None:
         """Color every view by the given node feature and trigger refresh so that the
         update is immediately visible.
 
         Args:
             feature_key: A node feature key, or None for the default (the
-                tracklet id - see `TrackColormap.feature_key`).
+                tracklet id - see `NodeColormap.feature_key`).
             refresh: Set False while tracks are being swapped in, where the
                 caller rebuilds the views itself anyway.
         """
 
         # Fall back before committing anything: a feature the graph has no
-        # column for raises in the colormap, and self.color_feature_key would
+        # column for raises in the colormap, and self.node_color_feature_key would
         # otherwise already hold the bad key, so every later _refresh raises too.
-        if self.tracks is not None and not color_feature_available(
+        if self.tracks is not None and not node_color_feature_available(
             self.tracks, feature_key
         ):
             feature_key = self.tracks.features.tracklet_key
 
-        self.color_feature_key = feature_key
-        self.colormap.set_feature(
-            feature_key, make_color_source(self.tracks, feature_key)
+        self.node_color_feature_key = feature_key
+        source = make_node_color_source(self.tracks, feature_key)
+        _restore_choice(source, self._node_colormap_choices.get(feature_key))
+        self.node_colormap.set_feature(feature_key, source)
+        if refresh and self.tracks is not None:
+            self._refresh()
+        self.refresh_track_id_color()
+        self.colormap_updated.emit()
+
+    def set_edge_color_feature(
+        self, feature_key: str | None, refresh: bool = True
+    ) -> None:
+        """Color the lineage view's edges by the given edge feature, one flat
+        color (None), or like their nodes (SAME_AS_NODES).
+
+        Only the tree draws edges on their own: the napari Tracks layer can only
+        blend between its vertices' colors, so it keeps following the node
+        colors.
+
+        Args:
+            feature_key: An edge feature key, None, or SAME_AS_NODES.
+            refresh: Set False while tracks are being swapped in, where the
+                caller rebuilds the views itself anyway.
+        """
+        if self.tracks is not None and not edge_color_feature_available(
+            self.tracks, feature_key
+        ):
+            feature_key = SAME_AS_NODES
+
+        self.edge_color_feature_key = feature_key
+        source = (
+            None
+            if feature_key == SAME_AS_NODES
+            else make_edge_color_source(self.tracks, feature_key)
         )
+        _restore_choice(source, self._edge_colormap_choices.get(feature_key))
+        self.edge_colormap.set_feature(feature_key, source)
         if refresh and self.tracks is not None:
             self._refresh()
         self.colormap_updated.emit()
 
-    def _validate_color_feature(self) -> None:
+    def set_node_colormap_choice(self, name: str) -> None:
+        """Switch the node colors to the named colormap (a gradient or a
+        palette, see `colormap_choices`) and refresh every view."""
+        self.node_colormap.color_source.choice = name
+        self._node_colormap_choices[self.node_color_feature_key] = name
+        if self.tracks is not None:
+            self._refresh()
+        self.refresh_track_id_color()
+        self.colormap_updated.emit()
+
+    def set_edge_colormap_choice(self, name: str) -> None:
+        """Switch the lineage view's edge colors to the named colormap."""
+        self.edge_colormap.color_source.choice = name
+        self._edge_colormap_choices[self.edge_color_feature_key] = name
+        if self.tracks is not None:
+            self._refresh()
+        self.colormap_updated.emit()
+
+    def _validate_node_color_feature(self) -> None:
         """Fall back to track ids if the feature being colored by is gone."""
 
-        if self.tracks is None or self.color_feature_key is None:
+        if self.tracks is None or self.node_color_feature_key is None:
             return
-        if not color_feature_available(self.tracks, self.color_feature_key):
-            self.set_color_feature(self.tracks.features.tracklet_key, refresh=False)
+        if not node_color_feature_available(self.tracks, self.node_color_feature_key):
+            self.set_node_color_feature(
+                self.tracks.features.tracklet_key, refresh=False
+            )
+
+    def _validate_edge_color_feature(self) -> None:
+        """Fall back to node colors if the edge feature being colored by is gone."""
+
+        if self.tracks is None:
+            return
+        if not edge_color_feature_available(self.tracks, self.edge_color_feature_key):
+            self.set_edge_color_feature(SAME_AS_NODES, refresh=False)
 
     def set_keybinds(self):
         bind_keymap(self.viewer, KEYMAP, self)
@@ -263,6 +348,21 @@ class TracksViewer:
         self.set_track_id_color(self.selected_track)
         self.update_track_id.emit()
 
+    def refresh_track_id_color(self) -> None:
+        """Recolor the selected tracklet's swatch after the node colors changed
+        (another feature, colormap or shuffle)."""
+        self.set_track_id_color(self.selected_track)
+        self.update_track_id.emit()
+
+    def track_id_colors(self):
+        """Something with `.map(track_id)` that gives each tracklet id its
+        color, for the merge dialog's tracklet buttons: the node colors while
+        they color by tracklet id, otherwise napari's random id colors - the
+        node colors would read the ids as values of another feature."""
+        if self.node_colormap.colors_by_track_id:
+            return self.node_colormap
+        return CategoricalColorSource()
+
     def set_track_id_color(self, track_id: int) -> None:
         """Update self.track_id_color with the rgba color of the given track_id.
 
@@ -271,8 +371,8 @@ class TracksViewer:
         """
 
         self.track_id_color = (
-            self.colormap.map(track_id)
-            if track_id is not None and self.colormap.colors_by_track_id
+            self.node_colormap.map(track_id)
+            if track_id is not None and self.node_colormap.colors_by_track_id
             else [0, 0, 0, 0]
         )
 
@@ -317,13 +417,14 @@ class TracksViewer:
 
         if refresh_view:
             self.track_df, self.axis_order = extract_sorted_tracks(
-                self.tracks, self.colormap
+                self.tracks, self.node_colormap, edge_colormap=self.edge_colormap
             )
         else:
             self.track_df, self.axis_order = extract_sorted_tracks(
                 self.tracks,
-                self.colormap,
+                self.node_colormap,
                 self.axis_order,
+                edge_colormap=self.edge_colormap,
             )
 
     def _refresh(self, node: str | None = None, refresh_view: bool = False) -> None:
@@ -340,8 +441,10 @@ class TracksViewer:
         ):
             self.selected_nodes.reset()
 
-        self._validate_color_feature()
-        self.colormap.set_tracks(self.tracks)
+        self._validate_node_color_feature()
+        self.node_colormap.set_tracks(self.tracks)
+        self._validate_edge_color_feature()
+        self.edge_colormap.set_tracks(self.tracks)
         self.tracking_layers._refresh()
 
         self.update_track_df(initialization=False, refresh_view=refresh_view)
@@ -390,9 +493,17 @@ class TracksViewer:
         self.tracks = tracks
         # Forget outgoing tracks first, because they might have a different value bound
         # to tracklet_key
-        self.colormap.set_tracks(None)
-        self.set_color_feature(tracks.features.tracklet_key, refresh=False)
-        self.colormap.set_tracks(tracks)
+        self.node_colormap.set_tracks(None)
+        # colormaps picked for the outgoing tracks' features: another dataset's
+        # feature of the same name may need another palette (e.g. more
+        # categories than tab10 has colors)
+        self._node_colormap_choices.clear()
+        self._edge_colormap_choices.clear()
+        self.set_node_color_feature(tracks.features.tracklet_key, refresh=False)
+        self.node_colormap.set_tracks(tracks)
+        self.edge_colormap.set_tracks(None)
+        self.set_edge_color_feature(SAME_AS_NODES, refresh=False)
+        self.edge_colormap.set_tracks(tracks)
         self.selected_nodes.deleted_items.clear()  # Reset deleted nodes when switching tracks
 
         # listen to refresh signals from the tracks
@@ -445,9 +556,14 @@ class TracksViewer:
 
         # the mirror of what update_tracks does on the way in: without this the
         # colormap keeps the outgoing tracks and a color per node alive, and
-        # color_feature_key keeps naming a feature of tracks that are gone
-        self.colormap.set_tracks(None)
-        self.color_feature_key = None
+        # node_color_feature_key keeps naming a feature of tracks that are gone
+        self.node_colormap.set_tracks(None)
+        self.node_color_feature_key = None
+        self._node_colormap_choices.clear()
+        self._edge_colormap_choices.clear()
+        self.edge_colormap.set_tracks(None)
+        self.edge_colormap.set_feature(SAME_AS_NODES)
+        self.edge_color_feature_key = SAME_AS_NODES
 
         # remove the layers before clearing the selection: clearing emits
         # selection_updated, and the update_selection that follows would otherwise
@@ -680,7 +796,9 @@ class TracksViewer:
         nodes = [int(node) for node in self.selected_nodes.as_list]
         try:
             options = get_track_id_options(self.tracks, nodes)
-            track_id_per_time = self._ask_merge_track_ids(options, self.colormap)
+            track_id_per_time = self._ask_merge_track_ids(
+                options, self.track_id_colors()
+            )
             if track_id_per_time is None:
                 return  # the user cancelled, so merge nothing at all
             UserMergeNodes(self.tracks, nodes, track_ids=track_id_per_time)
@@ -689,13 +807,14 @@ class TracksViewer:
 
     @staticmethod
     def _ask_merge_track_ids(
-        options: dict[int, list[int]], colormap
+        options: dict[int, list[int]], node_colormap
     ) -> dict[int, int] | None:
         """Ask the user which tracklet id to keep in each set of nodes to merge.
 
         Args:
             options: A mapping from time point to the tracklet ids to choose from.
-            colormap: The colormap used to color the tracklet id options.
+            node_colormap: The node colormap used to color the tracklet id
+                options.
 
         Returns:
             A mapping from time point to the chosen tracklet id, or None if the user
@@ -709,7 +828,7 @@ class TracksViewer:
 
         track_id_per_time: dict[int, int] = {}
         for track_ids, times in times_per_option.items():
-            track_id = select_merge_track_id(list(track_ids), times, colormap)
+            track_id = select_merge_track_id(list(track_ids), times, node_colormap)
             if track_id is None:
                 return None
             for time in times:

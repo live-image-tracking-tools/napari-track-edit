@@ -1,9 +1,21 @@
 import numpy as np
 import pytest
 from napari_orthogonal_views.ortho_view_manager import _VIEWER_MANAGERS
+from qtpy.QtCore import Qt
 
 from napari_track_edit.application_menus.visualization_widget import (
     VisualizationWidget,
+)
+from napari_track_edit.data_views.colormap import (
+    GREY,
+    SAME_AS_NODES,
+    FeatureComponent,
+)
+from napari_track_edit.data_views.palettes import (
+    CATEGORICAL_PALETTES,
+    GRADIENTS,
+    ID_PALETTES,
+    RANDOM_IDS,
 )
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 
@@ -351,46 +363,88 @@ class TestColorByWidget:
         )
         return "my_group"
 
-    def test_lists_none_track_and_lineage(self, visualization_widget):
-        widget, _tracks_viewer = visualization_widget
-        combo = widget.color_by_widget.combo
+    def test_lists_none_track_lineage_and_numeric_features(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        combo = widget.node_color_by_widget.combo
 
         labels = [combo.itemText(i) for i in range(combo.count())]
 
-        assert labels == ["None", "Tracklet ID", "Lineage ID"]
+        time_name = tracks_viewer.tracks.features["t"].get("display_name", "t")
+        # the 3D fixture's stacked position, one entry per axis
+        assert labels == [
+            "None",
+            "Tracklet ID",
+            "Lineage ID",
+            time_name,
+            "z",
+            "y",
+            "x",
+        ]
+
+    def test_lists_text_features(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        tracks_viewer.tracks.add_feature(
+            "label",
+            {
+                "feature_type": "node",
+                "value_type": "str",
+                "num_values": 1,
+                "display_name": "Label",
+                "default_value": None,
+            },
+        )
+
+        widget.node_color_by_widget._populate()
+
+        assert widget.node_color_by_widget.combo.findData("label") != -1
+
+    def test_picking_a_position_axis_sets_it_on_the_viewer(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        combo = widget.node_color_by_widget.combo
+        index = [combo.itemText(i) for i in range(combo.count())].index("y")
+
+        combo.setCurrentIndex(index)
+
+        position_key = tracks_viewer.tracks.features.position_key
+        assert tracks_viewer.node_color_feature_key == FeatureComponent(position_key, 1)
+        # and it shows as picked after the dropdown is rebuilt
+        widget.node_color_by_widget._populate()
+        assert combo.currentText() == "y"
 
     def test_starts_on_the_feature_in_use(self, visualization_widget):
         widget, tracks_viewer = visualization_widget
-        combo = widget.color_by_widget.combo
+        combo = widget.node_color_by_widget.combo
 
-        assert combo.itemData(combo.currentIndex()) == tracks_viewer.color_feature_key
+        assert (
+            combo.itemData(combo.currentIndex()) == tracks_viewer.node_color_feature_key
+        )
 
     def test_picking_a_feature_sets_it_on_the_viewer(self, visualization_widget):
         widget, tracks_viewer = visualization_widget
-        combo = widget.color_by_widget.combo
+        combo = widget.node_color_by_widget.combo
         lineage_key = tracks_viewer.tracks.features.lineage_key
 
         combo.setCurrentIndex(combo.findData(lineage_key))
 
-        assert tracks_viewer.color_feature_key == lineage_key
+        assert tracks_viewer.node_color_feature_key == lineage_key
 
     def test_picking_none_colors_every_node_the_same(self, visualization_widget):
         widget, tracks_viewer = visualization_widget
 
-        widget.color_by_widget.combo.setCurrentIndex(0)
+        widget.node_color_by_widget.combo.setCurrentIndex(0)
 
-        assert tracks_viewer.color_feature_key is None
+        assert tracks_viewer.node_color_feature_key is None
         nodes = list(tracks_viewer.tracks.graph_solution.node_ids())
-        colors = tracks_viewer.colormap.get_colors(nodes)
+        colors = tracks_viewer.node_colormap.get_colors(nodes)
         assert np.all(colors[:, :3] == colors[0, :3])
 
     def test_follows_a_change_made_elsewhere(self, visualization_widget):
         widget, tracks_viewer = visualization_widget
         lineage_key = tracks_viewer.tracks.features.lineage_key
 
-        tracks_viewer.set_color_feature(lineage_key)
+        tracks_viewer.set_node_color_feature(lineage_key)
 
-        combo = widget.color_by_widget.combo
+        combo = widget.node_color_by_widget.combo
         assert combo.itemData(combo.currentIndex()) == lineage_key
 
     def test_picks_up_a_group_added_after_it_was_built(
@@ -398,18 +452,272 @@ class TestColorByWidget:
     ):
         widget, _tracks_viewer = visualization_widget
 
-        widget.color_by_widget._populate()  # what showing the panel does
+        widget.node_color_by_widget._populate()  # what showing the panel does
 
-        assert widget.color_by_widget.combo.findData(group) != -1
+        assert widget.node_color_by_widget.combo.findData(group) != -1
 
     def test_repopulating_does_not_change_the_feature(
         self, visualization_widget, group
     ):
         widget, tracks_viewer = visualization_widget
-        tracks_viewer.set_color_feature(group)
+        tracks_viewer.set_node_color_feature(group)
 
-        widget.color_by_widget._populate()
+        widget.node_color_by_widget._populate()
 
-        assert tracks_viewer.color_feature_key == group
-        combo = widget.color_by_widget.combo
+        assert tracks_viewer.node_color_feature_key == group
+        combo = widget.node_color_by_widget.combo
         assert combo.itemData(combo.currentIndex()) == group
+
+
+class TestEdgeColorByWidget:
+    @pytest.fixture
+    def edge_feature(self, visualization_widget):
+        _widget, tracks_viewer = visualization_widget
+        tracks_viewer.tracks.add_feature(
+            "iou",
+            {
+                "feature_type": "edge",
+                "value_type": "float",
+                "num_values": 1,
+                "display_name": "IoU",
+                "default_value": None,
+            },
+        )
+        return "iou"
+
+    def test_starts_on_same_as_nodes(self, visualization_widget):
+        widget, _tracks_viewer = visualization_widget
+        combo = widget.edge_color_by_widget.combo
+
+        assert combo.itemText(combo.currentIndex()) == "Same as nodes"
+        assert combo.itemData(combo.currentIndex()) == SAME_AS_NODES
+
+    def test_lists_edge_features(self, visualization_widget, edge_feature):
+        widget, _tracks_viewer = visualization_widget
+        widget.edge_color_by_widget._populate()
+        combo = widget.edge_color_by_widget.combo
+
+        labels = [combo.itemText(i) for i in range(combo.count())]
+
+        assert labels == ["Same as nodes", "None", "IoU"]
+
+    def test_picking_a_feature_sets_it_on_the_viewer(
+        self, visualization_widget, edge_feature
+    ):
+        widget, tracks_viewer = visualization_widget
+        widget.edge_color_by_widget._populate()
+        combo = widget.edge_color_by_widget.combo
+
+        combo.setCurrentIndex(combo.findData(edge_feature))
+
+        assert tracks_viewer.edge_color_feature_key == edge_feature
+        # the node dropdown is not affected
+        assert (
+            tracks_viewer.node_color_feature_key
+            == tracks_viewer.tracks.features.tracklet_key
+        )
+
+
+class TestColormapPicker:
+    def test_lists_id_palettes_for_track_ids(self, visualization_widget):
+        widget, _tracks_viewer = visualization_widget
+
+        picker = widget.node_color_by_widget.colormap_combo
+        assert not picker.isHidden()
+        assert [picker.itemData(i) for i in range(picker.count())] == list(ID_PALETTES)
+        assert picker.currentData() == RANDOM_IDS
+
+    def test_shuffle_keeps_none_grey(self, visualization_widget):
+        _widget, tracks_viewer = visualization_widget
+        tracks_viewer.set_node_color_feature(None)
+
+        tracks_viewer.tracking_layers.seg_layer.new_colormap()  # "shuffle colors"
+
+        colors = tracks_viewer.node_colormap.get_colors([1, 2, 3])
+        assert np.allclose(colors[:, :3], GREY)
+
+    def test_hidden_for_none(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+
+        tracks_viewer.set_node_color_feature(None)
+
+        assert widget.node_color_by_widget.colormap_combo.isHidden()
+
+    def test_lists_gradients_for_a_numeric_feature(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.time_key)
+
+        picker = widget.node_color_by_widget.colormap_combo
+        assert not picker.isHidden()
+        assert [picker.itemData(i) for i in range(picker.count())] == list(GRADIENTS)
+        assert picker.currentData() == GRADIENTS[0]
+        assert picker.itemText(0) == ""  # colors only
+        assert picker.itemData(0, Qt.UserRole + 1) is not None  # its preview
+
+    def test_picking_a_colormap_recolors(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.time_key)
+        before = tracks_viewer.node_colormap.get_colors([1, 2, 3])
+
+        picker = widget.node_color_by_widget.colormap_combo
+        picker.setCurrentIndex(picker.findData("magma"))
+
+        assert tracks_viewer.node_colormap.color_source.choice == "magma"
+        assert not np.allclose(
+            tracks_viewer.node_colormap.get_colors([1, 2, 3]), before
+        )
+
+    def test_shuffle_button_moves_the_picker(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.time_key)
+
+        tracks_viewer.tracking_layers.seg_layer.new_colormap()  # "shuffle colors"
+
+        assert widget.node_color_by_widget.colormap_combo.currentData() == GRADIENTS[1]
+
+    def test_lists_palettes_for_a_categorical_feature(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        tracks = tracks_viewer.tracks
+        tracks.add_feature(
+            "label",
+            {
+                "feature_type": "node",
+                "value_type": "str",
+                "num_values": 1,
+                "display_name": "Label",
+                "default_value": None,
+            },
+        )
+        for node in tracks.graph_solution.node_ids():
+            tracks.graph_solution.nodes[node]["label"] = "a" if node == 1 else "b"
+
+        tracks_viewer.set_node_color_feature("label")
+        picker = widget.node_color_by_widget.colormap_combo
+        picker.setCurrentIndex(picker.findData(CATEGORICAL_PALETTES[1]))
+
+        assert [picker.itemData(i) for i in range(picker.count())] == list(
+            CATEGORICAL_PALETTES
+        )
+        assert (
+            tracks_viewer.node_colormap.color_source.choice == CATEGORICAL_PALETTES[1]
+        )
+
+    def test_edge_picker_sets_the_edge_colormap(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        tracks = tracks_viewer.tracks
+        tracks.add_feature(
+            "iou",
+            {
+                "feature_type": "edge",
+                "value_type": "float",
+                "num_values": 1,
+                "display_name": "IoU",
+                "default_value": None,
+            },
+        )
+        tracks_viewer.set_edge_color_feature("iou")
+        node_choice_before = getattr(
+            tracks_viewer.node_colormap.color_source, "choice", None
+        )
+
+        picker = widget.edge_color_by_widget.colormap_combo
+        picker.setCurrentIndex(picker.findData("turbo"))
+
+        assert tracks_viewer.edge_colormap.color_source.choice == "turbo"
+        assert (
+            getattr(tracks_viewer.node_colormap.color_source, "choice", None)
+            == node_choice_before
+        )
+
+    def test_edge_picker_hidden_for_same_as_nodes(self, visualization_widget):
+        widget, _tracks_viewer = visualization_widget
+
+        assert widget.edge_color_by_widget.colormap_combo.isHidden()
+
+
+class TestPickerRebuilds:
+    def test_an_edit_does_not_rebuild_unchanged_combos(self, visualization_widget):
+        widget, tracks_viewer = visualization_widget
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.time_key)
+        row = widget.node_color_by_widget
+        cleared = []
+        row.combo.clear = lambda: cleared.append("feature")
+        row.colormap_combo.clear = lambda: cleared.append("colormap")
+
+        tracks_viewer._refresh()  # what every edit does
+
+        assert cleared == []
+
+
+class TestTrackIdSwatch:
+    def test_picking_an_id_palette_recolors_the_swatch(self, visualization_widget):
+        _widget, tracks_viewer = visualization_widget
+        tracks_viewer.set_track_id_color(2)
+        tracks_viewer.selected_track = 2
+        before = np.asarray(tracks_viewer.track_id_color).copy()
+
+        tracks_viewer.set_node_colormap_choice("hues")
+
+        after = np.asarray(tracks_viewer.track_id_color)
+        assert not np.allclose(after, before)
+        assert np.allclose(after, tracks_viewer.node_colormap.map(2))
+
+    def test_merge_buttons_use_id_colors_while_coloring_by_another_feature(
+        self, visualization_widget
+    ):
+        _widget, tracks_viewer = visualization_widget
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.time_key)
+
+        colors = tracks_viewer.track_id_colors()
+
+        # two tracklet ids get two different colors, not two ends of a gradient
+        assert not np.allclose(colors.map(2), colors.map(3))
+        assert colors is not tracks_viewer.node_colormap
+
+
+class TestRememberedColormap:
+    def test_switching_back_to_a_feature_restores_its_colormap(
+        self, visualization_widget
+    ):
+        _widget, tracks_viewer = visualization_widget
+        time_key = tracks_viewer.tracks.features.time_key
+        tracks_viewer.set_node_color_feature(time_key)
+        tracks_viewer.set_node_colormap_choice("magma")
+
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.tracklet_key)
+        tracks_viewer.set_node_color_feature(time_key)
+
+        assert tracks_viewer.node_colormap.color_source.choice == "magma"
+
+    def test_edges_remember_their_own_colormap(self, visualization_widget):
+        _widget, tracks_viewer = visualization_widget
+        tracks_viewer.tracks.add_feature(
+            "iou",
+            {
+                "feature_type": "edge",
+                "value_type": "float",
+                "num_values": 1,
+                "display_name": "IoU",
+                "default_value": None,
+            },
+        )
+        tracks_viewer.set_edge_color_feature("iou")
+        tracks_viewer.set_edge_colormap_choice("turbo")
+
+        tracks_viewer.set_edge_color_feature(SAME_AS_NODES)
+        tracks_viewer.set_edge_color_feature("iou")
+
+        assert tracks_viewer.edge_colormap.color_source.choice == "turbo"
+
+
+def test_new_tracks_forget_picked_colormaps(visualization_widget, solution_tracks_2d):
+    _widget, tracks_viewer = visualization_widget
+    time_key = tracks_viewer.tracks.features.time_key
+    tracks_viewer.set_node_color_feature(time_key)
+    tracks_viewer.set_node_colormap_choice("magma")
+
+    tracks_viewer.update_tracks(tracks=solution_tracks_2d, name="other")
+    tracks_viewer.set_node_color_feature(solution_tracks_2d.features.time_key)
+
+    assert tracks_viewer.node_colormap.color_source.choice == GRADIENTS[0]

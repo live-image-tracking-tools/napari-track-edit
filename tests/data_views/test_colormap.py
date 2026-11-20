@@ -7,10 +7,21 @@ from napari_track_edit.data_views.colormap import (
     BinaryColorSource,
     CategoricalColorSource,
     ConstantColorSource,
-    TrackColormap,
-    categorical_feature_keys,
+    EdgeColormap,
+    FeatureComponent,
+    GradientColorSource,
+    NodeColormap,
+    PaletteColorSource,
+    edge_color_feature_keys,
     feature_display_name,
-    make_color_source,
+    make_node_color_source,
+    node_categorical_feature_keys,
+    node_value_feature_keys,
+)
+from napari_track_edit.data_views.palettes import (
+    hue_palette,
+    palette_colors,
+    palette_for,
 )
 
 
@@ -30,6 +41,69 @@ def _tracks_subset(tracks, nodes):
             return tracks.get_nodes_attr(nodes, attr)
 
     return TracksSubset()
+
+
+class TestGradientColorSource:
+    def test_ends_of_the_range_get_the_ends_of_the_colormap(self):
+        source = GradientColorSource(limits=(0.0, 10.0))
+
+        colors = source.map(np.asarray([0.0, 10.0]))
+
+        assert np.allclose(colors, source.colormap.map(np.asarray([0.0, 1.0])))
+
+    def test_values_outside_the_limits_are_clipped(self):
+        source = GradientColorSource(limits=(0.0, 10.0))
+
+        colors = source.map(np.asarray([-5.0, 0.0, 10.0, 50.0]))
+
+        assert np.allclose(colors[0], colors[1])
+        assert np.allclose(colors[2], colors[3])
+
+    def test_missing_values_are_grey(self):
+        source = GradientColorSource(limits=(0.0, 1.0))
+
+        colors = source.map(np.asarray([None, 0.5, np.nan], dtype=object))
+
+        assert np.allclose(colors[0], (*GREY, 1.0))
+        assert np.allclose(colors[2], (*GREY, 1.0))
+        assert not np.allclose(colors[1], (*GREY, 1.0))
+
+    def test_scalar_in_scalar_out(self):
+        source = GradientColorSource(limits=(0.0, 1.0))
+
+        assert source.map(0.5).shape == (4,)
+
+    def test_fit_sets_the_limits_to_the_finite_range(self):
+        source = GradientColorSource()
+
+        source.fit(np.asarray([3.0, None, 7.0, np.nan], dtype=object))
+
+        assert source.limits == (3.0, 7.0)
+
+    def test_fixed_limits_are_not_refit(self):
+        source = GradientColorSource(limits=(0.0, 100.0))
+
+        source.fit(np.asarray([3.0, 7.0]))
+
+        assert source.limits == (0.0, 100.0)
+
+    def test_one_value_everywhere_does_not_divide_by_zero(self):
+        source = GradientColorSource()
+        source.fit(np.asarray([4.0, 4.0]))
+
+        colors = source.map(np.asarray([4.0, 4.0]))
+
+        assert np.all(np.isfinite(colors))
+        assert np.allclose(colors[0], source.colormap.map(np.asarray([0.5]))[0])
+
+    def test_shuffle_switches_colormap(self):
+        source = GradientColorSource()
+        before = source.map(np.asarray([0.2]))
+
+        source.shuffle()
+
+        assert source.colormap.name != "viridis"
+        assert not np.allclose(source.map(np.asarray([0.2])), before)
 
 
 class TestCategoricalColorSource:
@@ -61,11 +135,11 @@ class TestCategoricalColorSource:
         assert not np.array_equal(colors[0], colors[1])
 
 
-class TestTrackColormapSetAlpha:
+class TestNodeColormapSetAlpha:
     def test_set_alpha_never_touches_node_colors(self, solution_tracks_2d, monkeypatch):
         # set_alpha is the hot path (fires on every selection/hover change);
         # it must never call color_source.map() or otherwise recompute colors.
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         calls = []
@@ -80,7 +154,7 @@ class TestTrackColormapSetAlpha:
     def test_set_alpha_ignores_nodes_removed_by_a_later_set_tracks(
         self, solution_tracks_2d
     ):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.set_tracks(_tracks_subset(solution_tracks_2d, [2, 3]))  # node 1 removed
@@ -89,9 +163,9 @@ class TestTrackColormapSetAlpha:
         assert cmap.get_alpha(1, default=None) is None
 
 
-class TestTrackColormapSetTracks:
+class TestNodeColormapSetTracks:
     def test_set_tracks_none_clears_mapping(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.set_tracks(None)
@@ -99,7 +173,7 @@ class TestTrackColormapSetTracks:
         assert list(cmap.nodes) == []
 
     def test_populates_a_color_per_node(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         nodes = solution_tracks_2d.graph_solution.node_ids()
@@ -109,7 +183,7 @@ class TestTrackColormapSetTracks:
 
     def test_nodes_sharing_a_track_id_share_a_color(self, solution_tracks_2d):
         # nodes 3, 4, 5 in solution_tracks_2d all belong to track_id 3
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         color_3 = cmap.get_color(3)
@@ -119,7 +193,7 @@ class TestTrackColormapSetTracks:
         assert np.array_equal(color_4, color_5)
 
     def test_different_track_ids_get_different_colors(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         color_1 = cmap.get_color(1)  # track_id 1
@@ -127,14 +201,14 @@ class TestTrackColormapSetTracks:
         assert not np.array_equal(color_1, color_3)
 
     def test_new_nodes_default_to_fully_opaque(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         for node in solution_tracks_2d.graph_solution.node_ids():
             assert cmap.get_alpha(node) == 1.0
 
     def test_preserves_alpha_for_nodes_still_present(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.set_alpha([1, 2], 0.3)
 
@@ -147,7 +221,7 @@ class TestTrackColormapSetTracks:
         assert cmap.get_alpha(3) == 1.0
 
     def test_drops_alpha_overrides_for_removed_nodes(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.set_alpha([1], 0.3)
 
@@ -157,9 +231,9 @@ class TestTrackColormapSetTracks:
         assert cmap.get_alpha(1, default=None) is None
 
 
-class TestTrackColormapGetColors:
+class TestNodeColormapGetColors:
     def test_matches_get_color_per_node(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         nodes = [1, 2, 3]
@@ -169,7 +243,7 @@ class TestTrackColormapGetColors:
             assert np.array_equal(colors[i], cmap.get_color(node))
 
     def test_unknown_node_is_transparent(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         colors = cmap.get_colors(np.asarray([999]))
@@ -179,7 +253,7 @@ class TestTrackColormapGetColors:
     def test_get_color_unknown_node_matches_get_colors(self, solution_tracks_2d):
         # get_color and get_colors must agree on unknown nodes: both transparent
         # black, not one returning None and the other a placeholder color.
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         assert np.array_equal(cmap.get_color(999), [0, 0, 0, 0])
@@ -188,7 +262,7 @@ class TestTrackColormapGetColors:
         # alpha is display state, reachable via get_alpha and folded in by
         # to_direct_colormap for the labels layer - it is not part of a node's
         # color, and no get_colors consumer wants it
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.set_alpha([1], 0.4)
 
@@ -198,9 +272,9 @@ class TestTrackColormapGetColors:
         assert cmap.get_alpha(1) == 0.4
 
 
-class TestTrackColormapColorAlphaSeparation:
+class TestNodeColormapColorAlphaSeparation:
     def test_set_alpha_does_not_change_color(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         rgb_before = cmap.get_color(1)[:3].copy()
 
@@ -210,7 +284,7 @@ class TestTrackColormapColorAlphaSeparation:
         assert cmap.get_alpha(1) == 0.2
 
     def test_set_alpha_ignores_unknown_nodes(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         # should not raise, and should not add the unknown node
@@ -221,7 +295,7 @@ class TestTrackColormapColorAlphaSeparation:
         # add_node never takes a color directly - a node's color is always
         # color_source.map(track_id), so that "what color is this node" stays
         # a pure function of its track id, not of which method last touched it.
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.add_node(999, 1)
@@ -231,7 +305,7 @@ class TestTrackColormapColorAlphaSeparation:
         )
 
     def test_add_node_on_new_node_defaults_to_opaque(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.add_node(999, 1)
@@ -243,7 +317,7 @@ class TestTrackColormapColorAlphaSeparation:
     ):
         # Recoloring is a color_source concern (e.g. shuffle), not a per-node
         # setter - existing alpha must survive a resync after a recolor.
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.set_alpha([1], 0.4)
 
@@ -253,7 +327,7 @@ class TestTrackColormapColorAlphaSeparation:
         assert cmap.get_alpha(1) == 0.4
 
     def test_remove_node_drops_both_color_and_alpha(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.remove_node(1)
@@ -263,16 +337,16 @@ class TestTrackColormapColorAlphaSeparation:
         assert cmap.get_alpha(1, default=None) is None
 
 
-class TestTrackColormapDefaultAlpha:
+class TestNodeColormapDefaultAlpha:
     def test_set_tracks_uses_configured_default_alpha(self, solution_tracks_2d):
-        cmap = TrackColormap(default_alpha=0.5)
+        cmap = NodeColormap(default_alpha=0.5)
         cmap.set_tracks(solution_tracks_2d)
 
         for node in solution_tracks_2d.graph_solution.node_ids():
             assert cmap.get_alpha(node) == 0.5
 
     def test_add_node_uses_configured_default_alpha(self, solution_tracks_2d):
-        cmap = TrackColormap(default_alpha=0.5)
+        cmap = NodeColormap(default_alpha=0.5)
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.add_node(999, 1)
@@ -280,10 +354,10 @@ class TestTrackColormapDefaultAlpha:
         assert cmap.get_alpha(999) == 0.5
 
 
-class TestTrackColormapMap:
+class TestNodeColormapMap:
     def test_map_delegates_to_color_source(self):
         source = ConstantColorSource(color=(0.5, 0.5, 0.5, 1.0))
-        cmap = TrackColormap(color_source=source)
+        cmap = NodeColormap(color_source=source)
 
         result = cmap.map(np.asarray([1, 2, 3]))
 
@@ -291,14 +365,14 @@ class TestTrackColormapMap:
         assert np.all(result == [0.5, 0.5, 0.5, 1.0])
 
     def test_default_color_source_is_track_id_based(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         colors = cmap.map(np.asarray([1, 3]))
         assert not np.array_equal(colors[0], colors[1])
 
 
-class TestTrackColormapFeatureKey:
+class TestNodeColormapFeatureKey:
     def test_defaults_to_track_id(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         # nodes 3, 4, 5 share track_id 3 -> should share a color by default
@@ -306,7 +380,7 @@ class TestTrackColormapFeatureKey:
 
     def test_can_color_by_a_different_feature(self, solution_tracks_2d):
         # nodes 4 and 5 both have area 16.0, despite different track ids (3, 5)
-        cmap = TrackColormap(feature_key="area")
+        cmap = NodeColormap(feature_key="area")
         cmap.set_tracks(solution_tracks_2d)
 
         assert np.array_equal(cmap.get_color(4), cmap.get_color(5))
@@ -314,7 +388,7 @@ class TestTrackColormapFeatureKey:
         assert not np.array_equal(cmap.get_color(3), cmap.get_color(4))
 
     def test_reassigning_feature_key_resyncs_colors(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         assert np.array_equal(cmap.get_color(3), cmap.get_color(4))  # by track id
 
@@ -324,7 +398,7 @@ class TestTrackColormapFeatureKey:
         assert not np.array_equal(cmap.get_color(3), cmap.get_color(4))
 
     def test_reassigning_color_source_resyncs_colors(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.color_source = ConstantColorSource(color=(0.2, 0.4, 0.6, 1.0))
@@ -332,12 +406,12 @@ class TestTrackColormapFeatureKey:
         assert np.allclose(cmap.get_color(1)[:3], [0.2, 0.4, 0.6])
 
 
-class TestTrackColormapDirectColormap:
+class TestNodeColormapDirectColormap:
     def test_set_tracks_before_any_build_still_populates_it(self, solution_tracks_2d):
         # to_direct_colormap() may be called before any tracks are set (e.g.
         # right after construction, producing an empty colormap); a later
         # set_tracks() must be reflected the next time it's called.
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.to_direct_colormap()
 
         cmap.set_tracks(solution_tracks_2d)
@@ -347,7 +421,7 @@ class TestTrackColormapDirectColormap:
             assert node in direct.color_dict
 
     def test_produces_direct_colormap_with_all_nodes(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         direct = cmap.to_direct_colormap()
@@ -356,7 +430,7 @@ class TestTrackColormapDirectColormap:
             assert node in direct.color_dict
 
     def test_none_key_maps_to_transparent(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         direct = cmap.to_direct_colormap()
@@ -364,7 +438,7 @@ class TestTrackColormapDirectColormap:
         assert np.array_equal(direct.color_dict[None], [0, 0, 0, 0])
 
     def test_alpha_change_is_reflected(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.set_alpha([1], 0.2)
@@ -373,7 +447,7 @@ class TestTrackColormapDirectColormap:
         assert direct.color_dict[1][3] == 0.2
 
     def test_recolor_is_reflected(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         before_color = cmap.to_direct_colormap().color_dict[1][:3].copy()
 
@@ -384,7 +458,7 @@ class TestTrackColormapDirectColormap:
         assert not np.allclose(direct_after.color_dict[1][:3], before_color)
 
     def test_new_node_is_reflected(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.add_node(999, 1)
@@ -393,7 +467,7 @@ class TestTrackColormapDirectColormap:
         assert 999 in direct.color_dict
 
     def test_removed_node_is_reflected(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.remove_node(1)
@@ -402,7 +476,7 @@ class TestTrackColormapDirectColormap:
         assert 1 not in direct.color_dict
 
     def test_set_tracks_drops_stale_entries(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.set_tracks(_tracks_subset(solution_tracks_2d, [2, 3]))
@@ -426,7 +500,7 @@ class TestTrackColormapDirectColormap:
             lambda self, *a, **k: (calls.append(1), original_init(self, *a, **k))[1],
         )
 
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.to_direct_colormap()
         cmap.set_alpha([1], 0.2)
@@ -441,7 +515,7 @@ class TestTrackColormapDirectColormap:
     def test_reflects_alpha_set_before_first_build(self, solution_tracks_2d):
         # alpha set before to_direct_colormap() has ever been called should
         # still show up in the first built colormap
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.set_alpha([1], 0.0)
 
@@ -450,7 +524,7 @@ class TestTrackColormapDirectColormap:
         assert direct.color_dict[1][3] == 0.0
 
     def test_empty_colormap_has_default_key(self):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         direct = cmap.to_direct_colormap()
         assert set(direct.color_dict.keys()) == {None}
         assert np.array_equal(direct.color_dict[None], [0, 0, 0, 0])
@@ -470,9 +544,9 @@ def solution_tracks_2d_empty():
     return SolutionTracks(graph=empty_graph, ndim=3, time_attr="t")
 
 
-class TestTrackColormapEmptyTracks:
+class TestNodeColormapEmptyTracks:
     def test_set_tracks_with_no_nodes(self, solution_tracks_2d_empty):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d_empty)
 
         assert list(cmap.nodes) == []
@@ -482,7 +556,7 @@ class TestTrackColormapEmptyTracks:
 
 class TestGetColorsIsOpaque:
     def test_ignores_per_node_alpha(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.set_alpha([1], 0.3)
 
@@ -492,7 +566,7 @@ class TestGetColorsIsOpaque:
         assert np.array_equal(colors[0][:3], cmap.get_color(1)[:3])
 
     def test_unknown_node_is_transparent(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         colors = cmap.get_colors([1, 999])
@@ -501,7 +575,7 @@ class TestGetColorsIsOpaque:
         assert colors[0][3] == 1.0
 
     def test_empty_inputs(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
 
         assert cmap.get_colors([]).shape == (0, 4)
         assert np.array_equal(cmap.get_colors([1])[0], np.zeros(4))
@@ -511,7 +585,7 @@ class TestGetColorsIsOpaque:
     ):
         # the vectorized lookup caches the node set, so add_node/remove_node
         # have to invalidate it
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.get_colors([1])  # populate the cache
 
@@ -522,7 +596,7 @@ class TestGetColorsIsOpaque:
         assert np.array_equal(cmap.get_colors([1])[0], np.zeros(4))
 
     def test_matches_get_color_per_node(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         nodes = list(cmap.nodes)
 
@@ -533,7 +607,7 @@ class TestGetColorsIsOpaque:
 
     def test_follows_the_feature_key(self, solution_tracks_2d):
         # nodes 4 and 5 both have area 16.0, despite different track ids
-        cmap = TrackColormap(feature_key="area")
+        cmap = NodeColormap(feature_key="area")
         cmap.set_tracks(solution_tracks_2d)
 
         colors = cmap.get_colors([4, 5])
@@ -543,7 +617,7 @@ class TestGetColorsIsOpaque:
     def test_accepts_float_node_ids(self, solution_tracks_2d):
         # the napari Tracks layer maps its vertex colors through get_colors and
         # hands back whatever dtype its property table holds
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         colors = cmap.get_colors(np.asarray([1, 2], dtype=float))
@@ -553,7 +627,7 @@ class TestGetColorsIsOpaque:
 
 class TestColorsByTrackId:
     def test_true_for_the_tracklet_key_and_the_default(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         assert cmap.colors_by_track_id
 
@@ -561,7 +635,7 @@ class TestColorsByTrackId:
         assert cmap.colors_by_track_id
 
     def test_false_for_any_other_feature(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.feature_key = solution_tracks_2d.features.lineage_key
@@ -571,7 +645,7 @@ class TestColorsByTrackId:
 
 class TestPendingNodes:
     def test_colored_by_track_id_when_that_is_the_feature(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.add_node(999, 1)
@@ -581,7 +655,7 @@ class TestPendingNodes:
     def test_new_lineage_when_the_track_has_no_nodes_yet(self, solution_tracks_2d):
         # a brand-new track is a new root, so UserAddNode will mint it a new
         # lineage - which is knowable up front
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.feature_key = solution_tracks_2d.features.lineage_key
 
@@ -593,7 +667,7 @@ class TestPendingNodes:
     def test_lineage_of_the_track_when_it_already_has_nodes(self, solution_tracks_2d):
         # continuing an existing track: UserAddNode takes the lineage from its
         # other nodes
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.feature_key = solution_tracks_2d.features.lineage_key
         track = solution_tracks_2d.get_track_id(1)
@@ -604,7 +678,7 @@ class TestPendingNodes:
 
     def test_grey_when_the_value_cannot_be_known(self, solution_tracks_2d):
         # nothing says what area a node that has not been drawn yet will have
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.feature_key = "area"
 
@@ -615,7 +689,7 @@ class TestPendingNodes:
     def test_survives_a_refresh_before_the_node_is_committed(self, solution_tracks_2d):
         # set_tracks runs on every refresh; dropping the pending node there
         # leaves the label being painted with colorless mid-edit
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.add_node(999, 1)
         before = cmap.get_color(999).copy()
@@ -626,7 +700,7 @@ class TestPendingNodes:
         assert 999 in cmap.to_direct_colormap().color_dict
 
     def test_real_color_takes_over_once_tracks_has_the_node(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.feature_key = "area"  # nothing can be known about it up front
         cmap.add_node(1, 1)  # node 1 *is* in the graph
@@ -637,7 +711,7 @@ class TestPendingNodes:
         assert not np.allclose(cmap.get_color(1)[:3], GREY)
 
     def test_dropped_by_remove_node(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.add_node(999, 1)
 
@@ -647,7 +721,7 @@ class TestPendingNodes:
         assert np.array_equal(cmap.get_color(999), np.zeros(4))
 
     def test_dropped_when_the_tracks_go_away(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.add_node(999, 1)
 
@@ -689,7 +763,7 @@ class TestBinaryColorSource:
         assert np.array_equal(colors[0], colors[1])
 
     def test_scalar_maps_to_a_single_rgba(self):
-        # matches napari's colormaps, which TrackColormap.map relies on
+        # matches napari's colormaps, which NodeColormap.map relies on
         assert BinaryColorSource().map(np.asarray(True)).shape == (4,)
 
     def test_shuffle_picks_two_new_colors(self):
@@ -733,12 +807,12 @@ class TestMakeColorSource:
         _add_group_feature(solution_tracks_2d, "my_group", {1})
 
         assert isinstance(
-            make_color_source(solution_tracks_2d, "my_group"), BinaryColorSource
+            make_node_color_source(solution_tracks_2d, "my_group"), BinaryColorSource
         )
 
     def test_other_features_get_the_cyclic_colors(self, solution_tracks_2d):
         assert isinstance(
-            make_color_source(
+            make_node_color_source(
                 solution_tracks_2d, solution_tracks_2d.features.tracklet_key
             ),
             CategoricalColorSource,
@@ -748,7 +822,7 @@ class TestMakeColorSource:
 class TestSetFeature:
     def test_boolean_feature_does_not_crash(self, solution_tracks_2d):
         _add_group_feature(solution_tracks_2d, "my_group", {1, 2})
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.set_feature("my_group")
@@ -760,7 +834,7 @@ class TestSetFeature:
 
     def test_an_explicit_source_wins_over_the_feature_type(self, solution_tracks_2d):
         _add_group_feature(solution_tracks_2d, "my_group", {1})
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.set_feature("my_group", CategoricalColorSource())
@@ -770,12 +844,10 @@ class TestSetFeature:
     def test_recomputes_colors_only_once(self, solution_tracks_2d, monkeypatch):
         # set_feature exists so that changing key and source together costs one
         # O(node count) recompute, not one per assignment
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         calls = []
-        monkeypatch.setattr(
-            TrackColormap, "set_tracks", lambda self, t: calls.append(t)
-        )
+        monkeypatch.setattr(NodeColormap, "set_tracks", lambda self, t: calls.append(t))
 
         cmap.set_feature(solution_tracks_2d.features.lineage_key)
 
@@ -786,7 +858,7 @@ class TestSetFeature:
         # so the node is painted exactly as a committed node outside the group
         # (node 2), and not as one inside it (node 1)
         _add_group_feature(solution_tracks_2d, "my_group", {1})
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
         cmap.set_feature("my_group")
 
@@ -808,21 +880,22 @@ class TestConstantColorSource:
     def test_scalar_maps_to_a_single_rgba(self):
         assert ConstantColorSource().map(np.asarray(3)).shape == (4,)
 
-    def test_shuffle_picks_a_new_color(self):
+    def test_shuffle_keeps_the_color(self):
+        # "None" means one flat grey; shuffling must not turn it into a color
         source = ConstantColorSource()
         before = source.color.copy()
 
         source.shuffle()
 
-        assert not np.array_equal(source.color, before)
+        assert np.array_equal(source.color, before)
 
     def test_no_feature_gets_one(self, solution_tracks_2d):
         assert isinstance(
-            make_color_source(solution_tracks_2d, None), ConstantColorSource
+            make_node_color_source(solution_tracks_2d, None), ConstantColorSource
         )
 
     def test_gives_every_node_one_color(self, solution_tracks_2d):
-        cmap = TrackColormap()
+        cmap = NodeColormap()
         cmap.set_tracks(solution_tracks_2d)
 
         cmap.set_feature(None)
@@ -838,7 +911,7 @@ class TestFeatureMenu:
     def test_lists_track_lineage_and_groups(self, solution_tracks_2d):
         _add_group_feature(solution_tracks_2d, "my_group", {1})
 
-        keys = categorical_feature_keys(solution_tracks_2d)
+        keys = node_categorical_feature_keys(solution_tracks_2d)
 
         assert keys[:2] == [
             solution_tracks_2d.features.tracklet_key,
@@ -847,14 +920,49 @@ class TestFeatureMenu:
         assert "my_group" in keys
 
     def test_excludes_solution_and_continuous_features(self, solution_tracks_2d):
-        keys = categorical_feature_keys(solution_tracks_2d)
+        keys = node_categorical_feature_keys(solution_tracks_2d)
 
         assert "solution" not in keys
         assert "t" not in keys
         assert "pos" not in keys
 
     def test_no_tracks_no_keys(self):
-        assert categorical_feature_keys(None) == []
+        assert node_categorical_feature_keys(None) == []
+        assert node_value_feature_keys(None) == []
+
+    def test_lists_numeric_features_but_not_ids(self, solution_tracks_2d):
+        _add_area_feature(solution_tracks_2d)
+
+        keys = node_value_feature_keys(solution_tracks_2d)
+
+        assert "t" in keys
+        assert "area" in keys
+        assert solution_tracks_2d.features.tracklet_key not in keys
+        assert solution_tracks_2d.features.lineage_key not in keys
+        # multi-valued, bool and mask features cannot be one gradient
+        for key in ("pos", "bbox", "solution", "mask"):
+            assert key not in keys
+
+    def test_numeric_feature_gets_a_gradient(self, solution_tracks_2d):
+        _add_area_feature(solution_tracks_2d)
+
+        source = make_node_color_source(solution_tracks_2d, "area")
+
+        assert isinstance(source, GradientColorSource)
+
+    def test_coloring_by_a_numeric_feature_spans_the_colormap(self, solution_tracks_2d):
+        _add_area_feature(solution_tracks_2d)
+        cmap = NodeColormap()
+        cmap.set_tracks(solution_tracks_2d)
+
+        cmap.set_feature("area")
+
+        nodes = list(solution_tracks_2d.graph_solution.node_ids())
+        areas = np.asarray(solution_tracks_2d.get_nodes_attr(nodes, "area"))
+        colors = cmap.get_colors(nodes)
+        ends = cmap.color_source.colormap.map(np.asarray([0.0, 1.0]))
+        assert np.allclose(colors[np.argmin(areas)], ends[0])
+        assert np.allclose(colors[np.argmax(areas)], ends[1])
 
     def test_display_names(self, solution_tracks_2d):
         assert feature_display_name(solution_tracks_2d, None) == "None"
@@ -864,3 +972,434 @@ class TestFeatureMenu:
             )
             == "Lineage ID"
         )
+
+
+def _add_area_feature(tracks):
+    """Describe the graph's existing `area` column as a feature."""
+    tracks.features["area"] = {
+        "feature_type": "node",
+        "value_type": "float",
+        "num_values": 1,
+        "display_name": "Area",
+        "default_value": None,
+    }
+
+
+def _add_edge_feature(tracks, key, value_type, values_by_target):
+    """Add an edge feature and set it on every edge, by the edge's target."""
+    tracks.add_feature(
+        key,
+        {
+            "feature_type": "edge",
+            "value_type": value_type,
+            "num_values": 1,
+            "display_name": key,
+            "default_value": None,
+        },
+    )
+    graph = tracks.graph_solution
+    df = graph.edge_attrs(attr_keys=["edge_id", "target_id"])
+    graph.update_edge_attrs(
+        edge_ids=df["edge_id"].to_list(),
+        attrs={key: [values_by_target(t) for t in df["target_id"].to_list()]},
+    )
+
+
+class TestEdgeColormap:
+    def test_inactive_by_default(self, solution_tracks_2d):
+        cmap = EdgeColormap()
+        cmap.set_tracks(solution_tracks_2d)
+
+        assert not cmap.active
+        assert np.all(cmap.get_colors([2, 3]) == 0)
+
+    def test_numeric_feature_is_a_gradient_over_its_range(self, solution_tracks_2d):
+        _add_edge_feature(solution_tracks_2d, "cost", "float", float)
+        cmap = EdgeColormap()
+        cmap.set_tracks(solution_tracks_2d)
+
+        cmap.set_feature("cost")
+
+        targets = solution_tracks_2d.graph_solution.edge_attrs(attr_keys=["target_id"])[
+            "target_id"
+        ].to_list()
+        ends = cmap.color_source.colormap.map(np.asarray([0.0, 1.0]))
+        colors = cmap.get_colors(targets)
+        assert np.allclose(colors[np.argmin(targets)], ends[0])
+        assert np.allclose(colors[np.argmax(targets)], ends[1])
+
+    def test_bool_feature_gets_two_colors(self, solution_tracks_2d):
+        _add_edge_feature(solution_tracks_2d, "flag", "bool", lambda t: t % 2 == 0)
+        cmap = EdgeColormap()
+        cmap.set_tracks(solution_tracks_2d)
+
+        cmap.set_feature("flag")
+
+        assert isinstance(cmap.color_source, BinaryColorSource)
+        targets = solution_tracks_2d.graph_solution.edge_attrs(attr_keys=["target_id"])[
+            "target_id"
+        ].to_list()
+        for target, rgba in zip(targets, cmap.get_colors(targets), strict=True):
+            assert np.allclose(rgba[:3], PINK if target % 2 == 0 else GREY)
+
+    def test_node_without_incoming_edge_is_transparent(self, solution_tracks_2d):
+        _add_edge_feature(solution_tracks_2d, "cost", "float", float)
+        cmap = EdgeColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        cmap.set_feature("cost")
+
+        assert np.all(cmap.get_colors([1]) == 0)  # node 1 is a root
+
+    def test_edge_feature_keys(self, solution_tracks_2d):
+        _add_edge_feature(solution_tracks_2d, "cost", "float", float)
+        _add_edge_feature(solution_tracks_2d, "flag", "bool", lambda t: True)
+
+        keys = edge_color_feature_keys(solution_tracks_2d)
+
+        assert keys == ["cost", "flag"]
+        assert edge_color_feature_keys(None) == []
+
+
+class TestPositionAxes:
+    def test_stacked_position_is_offered_per_axis(self, solution_tracks_2d):
+        position_key = solution_tracks_2d.features.position_key
+
+        keys = node_value_feature_keys(solution_tracks_2d)
+
+        assert FeatureComponent(position_key, 0) in keys
+        assert FeatureComponent(position_key, 1) in keys
+        assert position_key not in keys
+        assert "bbox" not in keys  # other multi-valued features stay out
+
+    def test_axes_are_named_after_their_value_names(self, solution_tracks_2d):
+        position_key = solution_tracks_2d.features.position_key
+        names = solution_tracks_2d.features[position_key]["value_names"]
+
+        assert [
+            feature_display_name(solution_tracks_2d, FeatureComponent(position_key, i))
+            for i in range(len(names))
+        ] == list(names)
+
+    def test_coloring_by_an_axis_is_a_gradient_over_it(self, solution_tracks_2d):
+        position_key = solution_tracks_2d.features.position_key
+        axis = FeatureComponent(position_key, 1)
+        cmap = NodeColormap()
+        cmap.set_tracks(solution_tracks_2d)
+
+        cmap.set_feature(axis)
+
+        assert isinstance(cmap.color_source, GradientColorSource)
+        nodes = list(solution_tracks_2d.graph_solution.node_ids())
+        coords = np.asarray(
+            [p[1] for p in solution_tracks_2d.get_nodes_attr(nodes, position_key)]
+        )
+        colors = cmap.get_colors(nodes)
+        ends = cmap.color_source.colormap.map(np.asarray([0.0, 1.0]))
+        assert np.allclose(colors[np.argmin(coords)], ends[0])
+        assert np.allclose(colors[np.argmax(coords)], ends[1])
+
+    def test_split_position_columns_are_plain_keys(self, solution_tracks_2d):
+        for axis in ("y", "x"):
+            solution_tracks_2d.graph_solution.add_node_attr_key(axis, 0.0)
+            solution_tracks_2d.features[axis] = {
+                "feature_type": "node",
+                "value_type": "float",
+                "num_values": 1,
+                "display_name": axis,
+                "default_value": 0.0,
+            }
+
+        keys = node_value_feature_keys(solution_tracks_2d)
+
+        assert "y" in keys and "x" in keys
+
+
+def _add_node_feature(tracks, key, value_type, value_of_node):
+    """Add a node feature with a value per node."""
+    tracks.add_feature(
+        key,
+        {
+            "feature_type": "node",
+            "value_type": value_type,
+            "num_values": 1,
+            "display_name": key,
+            "default_value": None,
+        },
+    )
+    for node in tracks.graph_solution.node_ids():
+        tracks.graph_solution.nodes[node][key] = value_of_node(node)
+
+
+class TestPaletteColorSource:
+    def test_one_palette_color_per_value_in_sorted_order(self):
+        source = PaletteColorSource.for_values(["b", "a", "c", "a"])
+
+        colors = source.map(np.asarray(["a", "b", "c"], dtype=object))
+
+        assert source.palette == "tab10"
+        assert np.allclose(colors[:, :3], palette_colors("tab10")[:3])
+
+    def test_missing_values_are_grey(self):
+        source = PaletteColorSource.for_values([1, 2])
+
+        colors = source.map(np.asarray([None, 1], dtype=object))
+
+        assert np.allclose(colors[0], (*GREY, 1.0))
+        assert not np.allclose(colors[1], (*GREY, 1.0))
+
+    def test_new_values_do_not_recolor_old_ones(self):
+        source = PaletteColorSource.for_values(["b", "c"])
+        before = source.map(np.asarray(["b", "c"], dtype=object))
+
+        # "a" sorts first, but arrives later: it gets the next free slot
+        source.fit(["a", "b", "c"])
+
+        after = source.map(np.asarray(["b", "c", "a"], dtype=object))
+        assert np.allclose(after[:2], before)
+        assert np.allclose(after[2, :3], palette_colors("tab10")[2])
+
+    def test_unseen_value_is_grey_until_fit(self):
+        source = PaletteColorSource.for_values([1])
+
+        assert np.allclose(source.map(5), (*GREY, 1.0))
+
+    def test_more_than_ten_categories_get_tab20(self):
+        assert PaletteColorSource.for_values(range(15)).palette == "tab20"
+
+    def test_shuffle_keeps_the_palette_and_deals_new_colors(self):
+        source = PaletteColorSource.for_values([1, 2, 3])
+        before = source.map(np.asarray([1, 2, 3]))
+
+        source.shuffle()
+
+        after = source.map(np.asarray([1, 2, 3]))
+        assert source.palette == "tab10"
+        assert not np.allclose(after, before)
+        # still distinct colors, all from the same palette
+        assert len({tuple(c) for c in after[:, :3].round(6)}) == 3
+        tab10 = {tuple(c) for c in palette_colors("tab10").round(6)}
+        assert {tuple(c) for c in after[:, :3].round(6)} <= tab10
+
+    def test_picking_a_palette_starts_it_in_order(self):
+        source = PaletteColorSource.for_values([1, 2])
+        source.shuffle()
+
+        source.choice = "tab20"
+
+        assert np.allclose(
+            source.map(np.asarray([1, 2]))[:, :3], palette_colors("tab20")[:2]
+        )
+
+    def test_scalar_in_scalar_out(self):
+        assert PaletteColorSource.for_values([1]).map(1).shape == (4,)
+
+
+class TestValueFeatureDetection:
+    def test_int_feature_with_few_values_is_categorical(self, solution_tracks_2d):
+        _add_node_feature(solution_tracks_2d, "cell_type", "int", lambda n: n % 2)
+
+        source = make_node_color_source(solution_tracks_2d, "cell_type")
+
+        assert isinstance(source, PaletteColorSource)
+
+    def test_int_feature_with_many_values_is_a_gradient(
+        self, solution_tracks_2d, monkeypatch
+    ):
+        monkeypatch.setattr("napari_track_edit.data_views.colormap.MAX_CATEGORIES", 2)
+        _add_node_feature(solution_tracks_2d, "count", "int", lambda n: n)
+
+        source = make_node_color_source(solution_tracks_2d, "count")
+
+        assert isinstance(source, GradientColorSource)
+
+    def test_time_is_always_a_gradient(self, solution_tracks_2d):
+        # only a handful of time points, but time is an amount, not a category
+        time_key = solution_tracks_2d.features.time_key
+
+        source = make_node_color_source(solution_tracks_2d, time_key)
+
+        assert isinstance(source, GradientColorSource)
+
+    def test_float_feature_is_a_gradient(self, solution_tracks_2d):
+        _add_node_feature(solution_tracks_2d, "score", "float", lambda n: n % 2)
+
+        source = make_node_color_source(solution_tracks_2d, "score")
+
+        assert isinstance(source, GradientColorSource)
+
+    def test_text_feature_is_offered_and_categorical(self, solution_tracks_2d):
+        _add_node_feature(
+            solution_tracks_2d, "label", "str", lambda n: "a" if n < 3 else "b"
+        )
+
+        assert "label" in node_value_feature_keys(solution_tracks_2d)
+        source = make_node_color_source(solution_tracks_2d, "label")
+        assert isinstance(source, PaletteColorSource)
+
+    def test_text_feature_colors_nodes_per_value(self, solution_tracks_2d):
+        _add_node_feature(
+            solution_tracks_2d, "label", "str", lambda n: "a" if n < 3 else "b"
+        )
+        cmap = NodeColormap()
+        cmap.set_tracks(solution_tracks_2d)
+
+        cmap.set_feature("label")
+
+        tab10 = palette_colors("tab10")
+        assert np.allclose(cmap.get_color(1)[:3], tab10[0])
+        assert np.allclose(cmap.get_color(4)[:3], tab10[1])
+
+    def test_a_new_value_after_an_edit_keeps_the_old_colors(self, solution_tracks_2d):
+        _add_node_feature(
+            solution_tracks_2d, "label", "str", lambda n: "b" if n < 3 else "c"
+        )
+        cmap = NodeColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        cmap.set_feature("label")
+        before = cmap.get_colors([1, 4])
+
+        solution_tracks_2d.graph_solution.nodes[5]["label"] = "a"
+        cmap.set_tracks(solution_tracks_2d)  # what every refresh does
+
+        assert np.allclose(cmap.get_colors([1, 4]), before)
+        assert not np.allclose(cmap.get_color(5)[:3], GREY)
+
+    def test_edge_text_feature_is_categorical(self, solution_tracks_2d):
+        _add_edge_feature(
+            solution_tracks_2d, "kind", "str", lambda t: "x" if t % 2 else "y"
+        )
+
+        assert "kind" in edge_color_feature_keys(solution_tracks_2d)
+        cmap = EdgeColormap()
+        cmap.set_tracks(solution_tracks_2d)
+        cmap.set_feature("kind")
+        assert isinstance(cmap.color_source, PaletteColorSource)
+
+
+class TestGeneratedPalettes:
+    def test_hue_palette_has_n_distinct_colors(self):
+        colors = hue_palette(25)
+
+        assert colors.shape == (25, 3)
+        assert len({tuple(c) for c in colors.round(6)}) == 25
+
+    def test_hue_palette_is_the_same_every_time(self):
+        assert np.allclose(
+            hue_palette(12, vary_saturation=True), hue_palette(12, vary_saturation=True)
+        )
+
+    def test_purple_orange_keeps_out_of_greens(self):
+        import colorsys
+
+        hues = [colorsys.rgb_to_hsv(*c)[0] for c in hue_palette(20, purple_orange=True)]
+
+        assert all(not 0.2 < h < 0.6 for h in hues)
+
+    def test_varied_saturation_varies(self):
+        import colorsys
+
+        sats = [
+            colorsys.rgb_to_hsv(*c)[1] for c in hue_palette(20, vary_saturation=True)
+        ]
+
+        assert min(sats) < 0.9
+
+    def test_more_categories_than_tab20_get_generated_hues(self):
+        assert palette_for(30) == "hues"
+        source = PaletteColorSource.for_values(range(30))
+        colors = source.map(np.arange(30))
+        assert len({tuple(c) for c in colors[:, :3].round(6)}) == 30
+
+    def test_generated_palette_for_categories(self):
+        source = PaletteColorSource.for_values(["a", "b", "c"])
+
+        source.choice = "purple-orange"
+
+        colors = source.map(np.asarray(["a", "b", "c"], dtype=object))
+        assert np.allclose(colors[:, :3], palette_colors("purple-orange", 3))
+
+
+class TestIdPalettes:
+    def test_random_is_the_default(self):
+        assert CategoricalColorSource().choice == "random"
+
+    def test_generated_palette_colors_ids_and_keeps_zero_transparent(self):
+        source = CategoricalColorSource()
+        source.choice = "hues"
+
+        colors = source.map(np.asarray([0, 1, 2, 1 + CategoricalColorSource.ID_CYCLE]))
+
+        assert np.all(colors[0] == 0)
+        assert np.allclose(colors[1, :3], palette_colors("hues", 49)[0])
+        assert not np.allclose(colors[1], colors[2])
+        assert np.allclose(colors[1], colors[3])  # ids cycle through the palette
+
+    def test_shuffle_keeps_a_generated_palette(self):
+        source = CategoricalColorSource()
+        source.choice = "hues varied"
+        before = source.map(np.arange(1, 10))
+
+        source.shuffle()
+
+        assert source.choice == "hues varied"
+        assert not np.allclose(source.map(np.arange(1, 10)), before)
+
+
+class TestPaletteMissingValues:
+    def test_nan_next_to_text_is_grey_and_does_not_raise(self):
+        # an imported text column with empty cells holds NaN floats
+        values = np.asarray(["a", np.nan, "b", None], dtype=object)
+        source = PaletteColorSource.for_values(values)
+
+        colors = source.map(values)
+
+        assert np.allclose(colors[1], (*GREY, 1.0))
+        assert np.allclose(colors[3], (*GREY, 1.0))
+        assert not np.allclose(colors[0], colors[2])
+
+    def test_nan_is_not_a_category(self):
+        source = PaletteColorSource.for_values(np.asarray(["a", np.nan], dtype=object))
+
+        assert len(source._slots) == 1
+
+
+class TestPreviewFollowsShuffle:
+    def test_id_palette_in_use(self):
+        source = CategoricalColorSource()
+        source.choice = "hues"
+        before = source.preview("hues").copy()
+        other = source.preview("purple-orange").copy()
+
+        source.shuffle()
+
+        assert not np.allclose(source.preview("hues"), before)
+        assert np.allclose(source.preview("purple-orange"), other)
+
+    def test_category_palette_in_use(self):
+        source = PaletteColorSource.for_values(range(5))
+        before = source.preview("tab10").copy()
+
+        source.shuffle()
+
+        assert not np.allclose(source.preview("tab10"), before)
+        assert np.allclose(source.preview("tab20"), palette_colors("tab20"))
+
+
+class TestReviewEdgeCases:
+    def test_one_value_everywhere_keeps_missing_values_grey(self):
+        source = GradientColorSource()
+        source.fit(np.asarray([3.0, None, 3.0], dtype=object))
+
+        colors = source.map(np.asarray([3.0, None], dtype=object))
+
+        assert np.allclose(colors[1], (*GREY, 1.0))
+        assert not np.allclose(colors[0], (*GREY, 1.0))
+
+    def test_no_categories_yet_still_gives_a_generated_palette_colors(self):
+        source = PaletteColorSource.for_values(np.asarray([None, None], dtype=object))
+        source.choice = "hues"
+
+        source.fit(["a", "b"])
+
+        colors = source.map(np.asarray(["a", "b"], dtype=object))
+        assert not np.allclose(colors[0], colors[1])

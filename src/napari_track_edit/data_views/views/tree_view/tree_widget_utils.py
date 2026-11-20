@@ -8,7 +8,7 @@ import tracksdata as td
 from funtracks.data_model import Tracks
 from tracksdata.constants import DEFAULT_ATTR_KEYS
 
-from napari_track_edit.data_views.colormap import TrackColormap
+from napari_track_edit.data_views.colormap import EdgeColormap, NodeColormap
 from napari_track_edit.data_views.node_type import NodeType
 
 
@@ -68,8 +68,9 @@ def get_tracklets(
 
 def extract_sorted_tracks(
     tracks: Tracks,
-    colormap: TrackColormap,
+    node_colormap: NodeColormap,
     prev_axis_order: list[int] | None = None,
+    edge_colormap: EdgeColormap | None = None,
 ) -> pd.DataFrame | None:
     """
     Extract the information of individual tracks required for constructing the tree
@@ -79,10 +80,14 @@ def extract_sorted_tracks(
     Args:
         tracks (funtracks.data_model.Tracks): A tracks object containing a graph
             to be converted into a dataframe.
-        colormap (TrackColormap): Colors tree-view nodes per node via
-            colormap.get_colors(node_ids), so the tree follows whichever
-            feature the colormap is coloring by, like every other view.
+        node_colormap (NodeColormap): Colors tree-view nodes per node via
+            node_colormap.get_colors(node_ids), so the tree follows whichever
+            feature it is coloring by, like every other view.
         prev_axis_order (list[int], Optional). The previous axis order.
+        edge_colormap (EdgeColormap, Optional): When it is coloring by an edge
+            feature, each row gets an 'edge_color' (0-255 RGBA) for the edge
+            into that node; otherwise there is no such column and the tree
+            colors edges like their nodes.
 
     Returns:
         pd.DataFrame | None: data frame with all the information needed to
@@ -158,7 +163,19 @@ def extract_sorted_tracks(
     # tracklet). Scaled to the 0-255 RGBA the tree plot expects here, vectorized:
     # per node inside the loop below that costs ~17ms on a 14k-node graph.
     node_to_color = dict(
-        zip(node_ids_list, colormap.get_colors(node_ids_list) * 255, strict=True)
+        zip(node_ids_list, node_colormap.get_colors(node_ids_list) * 255, strict=True)
+    )
+    color_edges = edge_colormap is not None and edge_colormap.active
+    node_to_edge_color = (
+        dict(
+            zip(
+                node_ids_list,
+                edge_colormap.get_colors(node_ids_list) * 255,
+                strict=True,
+            )
+        )
+        if color_edges
+        else None
     )
 
     for node_set in tracklets:
@@ -184,6 +201,11 @@ def extract_sorted_tracks(
                 "node_id": node,
                 "track_id": track_id,
                 "color": node_to_color[node],
+                **(
+                    {"edge_color": node_to_edge_color[node]}
+                    if node_to_edge_color is not None
+                    else {}
+                ),
                 "parent_id": 0,
                 "parent_track_id": 0,
                 "state": state,

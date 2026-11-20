@@ -12,9 +12,11 @@ from funtracks.user_actions import UserUpdateSegmentation
 from napari_track_edit.data_views.colormap import (
     GREY,
     PINK,
+    SAME_AS_NODES,
     BinaryColorSource,
     CategoricalColorSource,
-    categorical_feature_keys,
+    GradientColorSource,
+    node_categorical_feature_keys,
 )
 from napari_track_edit.data_views.views.table.custom_table_widget import (
     ColoredTableWidget,
@@ -96,7 +98,7 @@ def test_every_view_starts_on_track_id_colors(tracks_viewer):
 def test_a_new_feature_recolors_every_view(tracks_viewer):
     before = _view_colors(tracks_viewer)
 
-    tracks_viewer.set_color_feature(tracks_viewer.tracks.features.lineage_key)
+    tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.lineage_key)
 
     after = _view_colors(tracks_viewer)
     for view in VIEWS:
@@ -110,8 +112,8 @@ def test_a_new_feature_recolors_every_view(tracks_viewer):
 def test_switching_back_restores_track_id_colors(tracks_viewer):
     before = _view_colors(tracks_viewer)
 
-    tracks_viewer.set_color_feature(tracks_viewer.tracks.features.lineage_key)
-    tracks_viewer.set_color_feature(tracks_viewer.tracks.features.tracklet_key)
+    tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.lineage_key)
+    tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.tracklet_key)
 
     after = _view_colors(tracks_viewer)
     for view in VIEWS:
@@ -124,7 +126,7 @@ def test_tracks_layer_keeps_its_track_ids(tracks_viewer):
     # that update_track_visibility filters on
     before = _view_colors(tracks_viewer)["track_ids"]
 
-    tracks_viewer.set_color_feature(tracks_viewer.tracks.features.lineage_key)
+    tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.lineage_key)
 
     assert np.array_equal(_view_colors(tracks_viewer)["track_ids"], before)
 
@@ -134,7 +136,7 @@ def test_table_follows_the_feature(viewer, tracks_viewer, qtbot):
     qtbot.addWidget(table)
     before = table._model._bg[table._id_to_row[2]].name()
 
-    tracks_viewer.set_color_feature(tracks_viewer.tracks.features.lineage_key)
+    tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.lineage_key)
 
     rows = [table._id_to_row[node] for node in NODES]
     colors = [table._model._bg[row].name() for row in rows]
@@ -203,7 +205,7 @@ class TestNewLabelColor:
         # what you paint with is what you end up with
         track, pending, swatch, committed = _paint_new_label(tracks_viewer)
 
-        expected = tracks_viewer.colormap.map(np.asarray([track]))[0][:3]
+        expected = tracks_viewer.node_colormap.map(np.asarray([track]))[0][:3]
         assert np.allclose(pending, expected)
         assert np.allclose(swatch[:3], expected)
         assert swatch[3] == 1
@@ -212,7 +214,7 @@ class TestNewLabelColor:
     def test_lineage_color_is_kept_through_the_paint(self, tracks_viewer):
         # a new track's lineage id is worked out the same way UserAddNode will,
         # so the colour painted with is the one the node commits to
-        tracks_viewer.set_color_feature(tracks_viewer.tracks.features.lineage_key)
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.lineage_key)
 
         _track, pending, swatch, committed = _paint_new_label(tracks_viewer)
 
@@ -226,7 +228,7 @@ class TestNewLabelColor:
     ):
         # continuing an existing track: the node inherits that track's lineage,
         # not a fresh one
-        tracks_viewer.set_color_feature(tracks_viewer.tracks.features.lineage_key)
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.lineage_key)
         seg = tracks_viewer.tracking_layers.seg_layer
         tracks_viewer.selected_nodes.add(1)
         seg._ensure_valid_label()
@@ -236,7 +238,7 @@ class TestNewLabelColor:
         assert np.allclose(pending, committed)
 
     def test_swatch_has_no_color_while_coloring_by_another_feature(self, tracks_viewer):
-        tracks_viewer.set_color_feature(tracks_viewer.tracks.features.lineage_key)
+        tracks_viewer.set_node_color_feature(tracks_viewer.tracks.features.lineage_key)
 
         tracks_viewer.set_track_id_color(1)
 
@@ -271,14 +273,14 @@ class TestGroupColoring:
     def test_does_not_crash(self, grouped):
         # napari's cyclic colormap rejects a bool dtype outright, so this used
         # to raise ValueError("Invalid integer data type 'b'")
-        grouped.set_color_feature(GROUP)
+        grouped.set_node_color_feature(GROUP)
 
-        assert isinstance(grouped.colormap.color_source, BinaryColorSource)
+        assert isinstance(grouped.node_colormap.color_source, BinaryColorSource)
 
     def test_recolors_every_view(self, grouped):
         before = _view_colors(grouped)
 
-        grouped.set_color_feature(GROUP)
+        grouped.set_node_color_feature(GROUP)
 
         after = _view_colors(grouped)
         for view in VIEWS:
@@ -292,7 +294,7 @@ class TestGroupColoring:
                 )
 
     def test_new_colormap_picks_two_new_colors(self, grouped):
-        grouped.set_color_feature(GROUP)
+        grouped.set_node_color_feature(GROUP)
         before = _view_colors(grouped)
 
         grouped.tracking_layers.seg_layer.new_colormap()
@@ -305,7 +307,7 @@ class TestGroupColoring:
             assert not np.allclose(after[view][1], before[view][1]), view
 
     def test_a_new_label_is_painted_as_not_in_the_group(self, grouped):
-        grouped.set_color_feature(GROUP)
+        grouped.set_node_color_feature(GROUP)
 
         _track, pending, swatch, committed = _paint_new_label(grouped)
 
@@ -314,22 +316,24 @@ class TestGroupColoring:
         assert np.array_equal(swatch, [0, 0, 0, 0])
 
     def test_deleting_the_feature_falls_back_to_track_ids(self, grouped):
-        grouped.set_color_feature(GROUP)
+        grouped.set_node_color_feature(GROUP)
 
         del grouped.tracks.features[GROUP]
         grouped._refresh()  # must not raise
 
-        assert grouped.color_feature_key == grouped.tracks.features.tracklet_key
-        assert isinstance(grouped.colormap.color_source, CategoricalColorSource)
+        assert grouped.node_color_feature_key == grouped.tracks.features.tracklet_key
+        assert isinstance(grouped.node_colormap.color_source, CategoricalColorSource)
 
     def test_new_tracks_reset_to_track_ids(self, grouped, solution_tracks_2d):
-        grouped.set_color_feature(GROUP)
+        grouped.set_node_color_feature(GROUP)
 
         # these tracks have no such group; colouring by it would raise on them
         grouped.update_tracks(tracks=solution_tracks_2d, name="other")
 
-        assert grouped.color_feature_key == solution_tracks_2d.features.tracklet_key
-        assert isinstance(grouped.colormap.color_source, CategoricalColorSource)
+        assert (
+            grouped.node_color_feature_key == solution_tracks_2d.features.tracklet_key
+        )
+        assert isinstance(grouped.node_colormap.color_source, CategoricalColorSource)
 
 
 def test_switching_to_tracks_that_name_their_track_id_differently(tracks_viewer):
@@ -357,7 +361,7 @@ def test_switching_to_tracks_that_name_their_track_id_differently(tracks_viewer)
 
     tracks_viewer.update_tracks(tracks=incoming, name="other")  # must not raise
 
-    assert tracks_viewer.color_feature_key == "track_id"
+    assert tracks_viewer.node_color_feature_key == "track_id"
 
 
 GHOST = "ghost_group"
@@ -384,21 +388,21 @@ def with_ghost_feature(tracks_viewer):
 
 class TestFeatureWithoutAGraphColumn:
     def test_is_not_offered(self, with_ghost_feature):
-        assert GHOST not in categorical_feature_keys(with_ghost_feature.tracks)
+        assert GHOST not in node_categorical_feature_keys(with_ghost_feature.tracks)
 
     def test_selecting_it_anyway_falls_back_to_track_ids(self, with_ghost_feature):
         # nothing in the UI can reach this now, but the fallback is what keeps
         # a bad key from being committed by any other caller
-        with_ghost_feature.set_color_feature(GHOST)
+        with_ghost_feature.set_node_color_feature(GHOST)
 
         tracklet_key = with_ghost_feature.tracks.features.tracklet_key
-        assert with_ghost_feature.color_feature_key == tracklet_key
+        assert with_ghost_feature.node_color_feature_key == tracklet_key
         assert isinstance(
-            with_ghost_feature.colormap.color_source, CategoricalColorSource
+            with_ghost_feature.node_colormap.color_source, CategoricalColorSource
         )
 
     def test_does_not_wedge_every_later_refresh(self, with_ghost_feature):
-        with_ghost_feature.set_color_feature(GHOST)
+        with_ghost_feature.set_node_color_feature(GHOST)
 
         with_ghost_feature._refresh()  # must not raise
 
@@ -407,29 +411,169 @@ class TestClearTracks:
     """clear_tracks is the mirror of update_tracks, colormap included."""
 
     def test_forgets_the_colors_of_the_tracks_that_went_away(self, grouped):
-        grouped.set_color_feature(GROUP)
-        assert len(grouped.colormap.nodes) > 0
+        grouped.set_node_color_feature(GROUP)
+        assert len(grouped.node_colormap.nodes) > 0
 
         grouped.clear_tracks()
 
-        assert len(grouped.colormap.nodes) == 0
+        assert len(grouped.node_colormap.nodes) == 0
 
     def test_resets_the_feature_being_colored_by(self, grouped):
-        grouped.set_color_feature(GROUP)
+        grouped.set_node_color_feature(GROUP)
 
         grouped.clear_tracks()
 
-        assert grouped.color_feature_key is None
+        assert grouped.node_color_feature_key is None
 
     def test_loading_tracks_again_colors_them(self, grouped, solution_tracks_3d):
-        grouped.set_color_feature(GROUP)
+        grouped.set_node_color_feature(GROUP)
         grouped.clear_tracks()
 
         grouped.update_tracks(tracks=solution_tracks_3d, name="test")
 
-        assert grouped.color_feature_key == solution_tracks_3d.features.tracklet_key
+        assert (
+            grouped.node_color_feature_key == solution_tracks_3d.features.tracklet_key
+        )
         nodes = solution_tracks_3d.graph_solution.node_ids()
         # every node has a color again (the colormap also holds the label the
         # labels layer has minted to paint with, so this is a subset check)
-        assert set(nodes) <= set(grouped.colormap.nodes)
-        assert (grouped.colormap.get_colors(nodes)[:, 3] == 1.0).all()
+        assert set(nodes) <= set(grouped.node_colormap.nodes)
+        assert (grouped.node_colormap.get_colors(nodes)[:, 3] == 1.0).all()
+
+
+class TestContinuousColoring:
+    """Coloring by a numeric feature: time, in the 3D fixture node 1 at t=0
+    and nodes 2 and 3 at t=1, so the two ends of the gradient."""
+
+    def test_recolors_every_view(self, tracks_viewer):
+        tracks_viewer.set_node_color_feature("t")
+
+        assert isinstance(tracks_viewer.node_colormap.color_source, GradientColorSource)
+        ends = tracks_viewer.node_colormap.color_source.colormap.map(
+            np.asarray([0.0, 1.0])
+        )
+        colors = _view_colors(tracks_viewer)
+        for view in VIEWS:
+            assert np.allclose(colors[view][1], ends[0][:3]), view
+            assert np.allclose(colors[view][2], ends[1][:3]), view
+            assert np.allclose(colors[view][3], ends[1][:3]), view
+
+    def test_a_new_label_is_painted_grey(self, tracks_viewer):
+        # its value is not known until the node exists
+        tracks_viewer.set_node_color_feature("t")
+
+        _track, pending, swatch, _committed = _paint_new_label(tracks_viewer)
+
+        assert np.allclose(pending, GREY)
+        assert np.array_equal(swatch, [0, 0, 0, 0])
+
+
+EDGE_FEATURE = "iou"
+# the 3D fixture's two edges, 1 -> 2 and 1 -> 3, as (target node, value)
+EDGE_VALUES = {2: 0.2, 3: 0.9}
+
+
+@pytest.fixture
+def with_edge_feature(tracks_viewer):
+    """The same tracks with a numeric edge feature on both edges."""
+    tracks = tracks_viewer.tracks
+    tracks.add_feature(
+        EDGE_FEATURE,
+        {
+            "feature_type": "edge",
+            "value_type": "float",
+            "num_values": 1,
+            "display_name": "IoU",
+            "default_value": None,
+        },
+    )
+    graph = tracks.graph_solution
+    df = graph.edge_attrs(attr_keys=["edge_id", "target_id"])
+    graph.update_edge_attrs(
+        edge_ids=df["edge_id"].to_list(),
+        attrs={EDGE_FEATURE: [EDGE_VALUES[t] for t in df["target_id"].to_list()]},
+    )
+    return tracks_viewer
+
+
+def _tree_edge_colors(tracks_viewer):
+    """The tree's edge color per target node, as `_build_edges` would draw it."""
+    from napari_track_edit.data_views.views.tree_view.tree_plot_fpl import (
+        TreePlot,
+    )
+
+    df = tracks_viewer.track_df
+    plot = TreePlot.__new__(TreePlot)  # only _build_edges' inputs are needed
+    plot._node_ids = df["node_id"].to_numpy()
+    plot._positions = np.zeros((len(df), 3), dtype=np.float32)
+    colors = np.stack(df["color"].to_numpy()).astype(np.float32) / 255.0
+    _pos, edge_cols = plot._build_edges(df, colors)
+    children = df["node_id"].to_numpy()[df["parent_id"].to_numpy() != 0]
+    return {int(c): edge_cols[3 * i][:3] for i, c in enumerate(children)}
+
+
+class TestEdgeColoring:
+    def test_edges_follow_their_nodes_by_default(self, with_edge_feature):
+        colors = _view_colors(with_edge_feature)["tree"]
+
+        edges = _tree_edge_colors(with_edge_feature)
+
+        assert "edge_color" not in with_edge_feature.track_df.columns
+        for target, rgb in edges.items():
+            assert np.allclose(rgb, colors[target], atol=1 / 255), target
+
+    def test_edge_feature_colors_tree_edges_as_a_gradient(self, with_edge_feature):
+        with_edge_feature.set_edge_color_feature(EDGE_FEATURE)
+
+        source = with_edge_feature.edge_colormap.color_source
+        assert isinstance(source, GradientColorSource)
+        assert source.limits == (0.2, 0.9)
+        ends = source.colormap.map(np.asarray([0.0, 1.0]))[:, :3]
+        edges = _tree_edge_colors(with_edge_feature)
+        assert np.allclose(edges[2], ends[0], atol=1 / 255)
+        assert np.allclose(edges[3], ends[1], atol=1 / 255)
+
+    def test_node_colors_are_left_alone(self, with_edge_feature):
+        before = _view_colors(with_edge_feature)
+
+        with_edge_feature.set_edge_color_feature(EDGE_FEATURE)
+
+        after = _view_colors(with_edge_feature)
+        for view in VIEWS:
+            for node in NODES:
+                assert np.allclose(after[view][node], before[view][node]), (
+                    view,
+                    node,
+                )
+
+    def test_none_draws_every_edge_grey(self, with_edge_feature):
+        with_edge_feature.set_edge_color_feature(None)
+
+        edges = _tree_edge_colors(with_edge_feature)
+        for target, rgb in edges.items():
+            assert np.allclose(rgb, GREY, atol=1 / 255), target
+
+    def test_back_to_same_as_nodes(self, with_edge_feature):
+        with_edge_feature.set_edge_color_feature(EDGE_FEATURE)
+
+        with_edge_feature.set_edge_color_feature(SAME_AS_NODES)
+
+        assert "edge_color" not in with_edge_feature.track_df.columns
+
+    def test_deleting_the_feature_falls_back_to_node_colors(self, with_edge_feature):
+        with_edge_feature.set_edge_color_feature(EDGE_FEATURE)
+
+        del with_edge_feature.tracks.features[EDGE_FEATURE]
+        with_edge_feature._refresh()  # must not raise
+
+        assert with_edge_feature.edge_color_feature_key == SAME_AS_NODES
+        assert "edge_color" not in with_edge_feature.track_df.columns
+
+    def test_new_tracks_reset_edge_coloring(
+        self, with_edge_feature, solution_tracks_2d
+    ):
+        with_edge_feature.set_edge_color_feature(EDGE_FEATURE)
+
+        with_edge_feature.update_tracks(tracks=solution_tracks_2d, name="other")
+
+        assert with_edge_feature.edge_color_feature_key == SAME_AS_NODES

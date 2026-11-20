@@ -247,10 +247,12 @@ class CollectionWidget(QWidget):
             # nothing is loaded, so the cleared list above is the whole answer
             return
 
-        # find existing group features on Tracks
+        # find existing group features on Tracks: bool node features. A bool
+        # edge feature is not a group, and has no node column to read.
+        node_features = self.tracks_viewer.tracks.features.node_features
         group_features = [
             (group_name, group_dict)
-            for group_name, group_dict in self.tracks_viewer.tracks.features.items()
+            for group_name, group_dict in node_features.items()
             if group_dict["value_type"] == "bool" and group_name != "solution"
         ]
         group_dict = {}
@@ -455,8 +457,8 @@ class CollectionWidget(QWidget):
         self.collection_list.takeItem(row)
 
         # fall back to coloring by tracklet ID if this group was used for coloring
-        if self.tracks_viewer.color_feature_key == group_name:
-            self.tracks_viewer.set_color_feature(
+        if self.tracks_viewer.node_color_feature_key == group_name:
+            self.tracks_viewer.set_node_color_feature(
                 self.tracks_viewer.tracks.features.tracklet_key
             )
 
@@ -497,7 +499,7 @@ class CollectionWidget(QWidget):
             tracks=self.tracks_viewer.tracks,
             name=group_name,
             nodes_to_keep=nodes_to_keep,
-            colormap=self.tracks_viewer.colormap,
+            node_colormap=self.tracks_viewer.node_colormap,
         )
 
     def _select_nodes(self, item: QListWidgetItem) -> None:
