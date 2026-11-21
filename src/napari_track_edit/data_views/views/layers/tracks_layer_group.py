@@ -166,7 +166,9 @@ class TracksLayerGroup:
         # Set dims.point directly with world coordinates, napari will convert the step
         # indices. Extra leading axes keep their current position.
         point = dims.embed_point(location, self.viewer.dims.point)
-        self.viewer.dims.point = point
+        # jumping to a node should not trigger the follow motion
+        with self.tracks_viewer.block_follow_shift():
+            self.viewer.dims.point = point
 
         # check whether the new coordinates are inside or outside the field of view,
         # then adjust the camera if needed. The points layer is always in world units,
