@@ -5,7 +5,6 @@ from fonticon_fa6 import FA6S
 from funtracks.annotators._regionprops_annotator import (
     DEFAULT_INTENSITY_KEY,
     DEFAULT_POS_KEY,
-    RegionpropsAnnotator,
 )
 from funtracks.features._feature import Feature
 from qtpy.QtCore import Qt
@@ -110,6 +109,8 @@ class FeatureWidget(QWidget):
         # watching, since the dialog reads the layer list each time it opens.
         self.viewer.layers.events.removed.connect(self._on_layer_removed)
 
+        self._update_checkboxes()
+
     def _update_checkboxes(self):
         """Update the list of available checkboxes."""
 
@@ -187,27 +188,30 @@ class FeatureWidget(QWidget):
     def _discover_features(self) -> dict[str, Feature]:
         """Find all features available for the current tracks.
 
-        Excludes position (always computed) and intensity (which has its own row, since
-        it also needs the layers to measure).
+        Excludes core position and track IDs, which the app always maintains,
+        and intensity, which has its own row to choose the layers to measure.
         """
 
         tracks = self.tracks_viewer.tracks
+        features = tracks.get_available_features()
 
-        if tracks.segmentation is not None:
-            features = RegionpropsAnnotator.get_available_features(ndim=tracks.ndim)
-            features.pop(DEFAULT_POS_KEY, None)
-            features.pop(DEFAULT_INTENSITY_KEY, None)
-            self.label.setText(
-                "*Activating the checkboxes will compute the selected feature. \n"
-                "You can see these measurements in the Lineage View (choose Plot > Feature) \n"
-                "and in the Table widget.*"
-            )
-
-        else:
-            features = {}
-            self.label.setText(
-                "*Feature measurements are only supported if you are using a segmentation layer.*"
-            )
+        position_key = tracks.features.position_key
+        position_keys = (
+            position_key if isinstance(position_key, list) else [position_key]
+        )
+        for key in (
+            DEFAULT_POS_KEY,
+            *position_keys,
+            tracks.features.tracklet_key,
+            tracks.features.lineage_key,
+            DEFAULT_INTENSITY_KEY,
+        ):
+            features.pop(key, None)
+        self.label.setText(
+            "*Activating the checkboxes will compute the selected feature. \n"
+            "You can see these measurements in the Lineage View (choose Plot > Feature) \n"
+            "and in the Table widget.*"
+        )
 
         return features
 
