@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
@@ -32,6 +33,9 @@ from napari_track_edit.download_progress import DownloadCancelled, download_prog
 from napari_track_edit.example_data import sample_tracks_path, user_data_dir
 from napari_track_edit.import_export.geff_io import write_geff_over
 from napari_track_edit.import_export.menus.export_dialog import ExportDialog
+from napari_track_edit.import_export.menus.file_dialog_options import (
+    load_dialog_options,
+)
 from napari_track_edit.import_export.menus.import_dialog import (
     ImportDialog,
 )
@@ -41,7 +45,8 @@ from napari_track_edit.import_export.sql_io import (
     sql_database_path,
     tracks_from_sql,
 )
-from napari_track_edit.motile.backend.motile_run import MotileRun
+
+logger = logging.getLogger(__name__)
 
 GEFF_SUFFIX = ".geff"
 
@@ -62,7 +67,7 @@ class TracksButton(QWidget):
     # https://doc.qt.io/qt-5/qlistwidget.html#setItemWidget
     # I think this means if we want static buttons we can just make the row here
     # but if we want to change the buttons we need to do something more complex
-    # Columns: Run name, save, export, delete buttons
+    # Columns: tracks name, save, export, delete buttons
     def __init__(self, tracks: Tracks, name: str):
         super().__init__()
         self.tracks = tracks
@@ -96,7 +101,7 @@ class TracksButton(QWidget):
 
 class TracksList(QGroupBox):
     """Widget for holding in-memory Tracks. Emits a view_tracks signal whenever
-    a run is selected in the list, useful for telling the TracksViewer to display the
+    tracks are selected in the list, useful for telling the TracksViewer to display the
     selected tracks.
     """
 
@@ -110,7 +115,7 @@ class TracksList(QGroupBox):
     tracks_saved = Signal(object, Path)
     """Emitted after tracks are saved to disk. Arguments: (tracks, path).
     Dependent applications can connect to this signal to save additional
-    data (e.g. solver parameters) alongside the tracks.
+    data (e.g. application-specific settings) alongside the tracks.
 
     The path is the geff store the tracks were written to. A geff is a zarr
     directory, and writing one only replaces geff-controlled groups, so
@@ -120,24 +125,23 @@ class TracksList(QGroupBox):
     tracks_loaded = Signal(object, Path)
     """Emitted after tracks are loaded from disk. Arguments: (tracks, path).
     Dependent applications can connect to this signal to load additional
-    data (e.g. solver parameters) from the same location.
+    data (e.g. application-specific settings) from the same location.
 
     The path is the geff store the tracks were read from, matching what
     tracks_saved reports for the same tracks, so data written inside it by a
     tracks_saved listener is found here. It is never a container a geff merely
     happened to be found inside.
 
-    The exceptions are a CSV import, which reports the .csv file, and a v1 motile
-    run directory, which reports the directory holding the networkx graph json. Listeners
-    should tolerate a file as well as a directory."""
+    The exception is a CSV import, which reports the .csv file. Listeners should
+    tolerate a file as well as a directory."""
 
     def __init__(self):
         super().__init__(title="Results List")
 
         self.colormap = None
-        self.file_dialog = QFileDialog()
-        self.file_dialog.setFileMode(QFileDialog.Directory)
-        self.file_dialog.setOption(QFileDialog.ShowDirsOnly, True)
+        self._last_load_dir: Path | None = (
+            None  # explicit, because Ubuntu does not remember
+        )
 
         # Where the save button writes to. Auto-filled, but the user can point
         # it anywhere; edits last for the session. The label and browse button
@@ -184,7 +188,6 @@ class TracksList(QGroupBox):
             [
                 "Tracks (geff)",
                 SQL_LOAD_OPTION,
-                "Motile Run",
                 "External tracks from CSV",
                 "External tracks from geff",
             ]
@@ -205,16 +208,39 @@ class TracksList(QGroupBox):
         layout.addLayout(load_menu)
         self.setLayout(layout)
 
-    def _load_tracks(self, import_type: str) -> tuple[Tracks, str, Path | None] | None:
+    def _load_tracks(
+        self, import_type: str, path: Path | None = None
+    ) -> tuple[Tracks, str, Path | None] | None:
         """Load externally generated tracks (CSV or geff) via the import dialog.
+
+        Args:
+            import_type (str): either 'geff' or 'csv'
+            path (Path | None): For a geff, a path to fill into the dialog
+                instead of leaving the user to browse for it.
 
         Returns (tracks, name, path), where the path may be None because the
         import dialog does not always know the file the tracks came from.
         """
-        dialog = ImportDialog(import_type)
-        if dialog.exec_() != QDialog.Accepted or dialog.tracks is None:
+        dialog = ImportDialog(import_type, start_dir=self._load_start_dir())
+        if path is not None and import_type == "geff":
+            dialog.import_widget.set_path(path)
+        accepted = dialog.exec_() == QDialog.Accepted
+        # Remember where the user browsed to even if the import failed or was
+        # cancelled, like the other load routes do.
+        picked = dialog.import_widget.picked_path
+        if picked is not None:
+            self._last_load_dir = picked.parent
+        if not accepted or dialog.tracks is None:
             return None
         return dialog.tracks, dialog.name, dialog.source_path
+
+    def _load_start_dir(self) -> str:
+        """Folder a load dialog opens in: where the last load came from, else
+        the save directory, else the default save directory."""
+        if self._last_load_dir is not None and self._last_load_dir.is_dir():
+            return str(self._last_load_dir)
+        save_dir = Path(self.save_dir_line.text())
+        return str(save_dir if save_dir.is_dir() else default_save_dir())
 
     def _browse_save_dir(self) -> None:
         """Let the user pick the directory that saved tracks are written to."""
@@ -316,7 +342,7 @@ class TracksList(QGroupBox):
         """Add tracks to the list and optionally select them. Will make a new
         row in the list UI representing the given tracks.
 
-        Accepts any Tracks object directly (including MotileRun).
+        Accepts any Tracks object directly.
 
         Note: selecting the tracks will also emit the selection changed event on
         the list.
@@ -389,8 +415,7 @@ class TracksList(QGroupBox):
         represents the tracks, not the tracks object itself.
 
         Writes a geff store at the path shown in the save fields above the
-        list, confirming first if something is already there. A MotileRun
-        additionally stores its solver params inside that store.
+        list, confirming first if something is already there.
 
         After saving, emits the tracks_saved signal with the geff store that
         was written, so that downstream code can save additional data inside
@@ -413,10 +438,7 @@ class TracksList(QGroupBox):
         widget: TracksButton = self.tracks_list.itemWidget(item)
         tracks: Tracks = widget.tracks
         saved_path.parent.mkdir(parents=True, exist_ok=True)
-        if isinstance(tracks, MotileRun):
-            tracks.save(saved_path)
-        else:
-            write_geff_over(tracks, saved_path)
+        write_geff_over(tracks, saved_path)
         self.tracks_saved.emit(tracks, saved_path)
 
     def remove_tracks(self, item: QListWidgetItem):
@@ -449,15 +471,43 @@ class TracksList(QGroupBox):
             result = self.load_internal_tracks()
         elif selection == SQL_LOAD_OPTION:
             result = self.load_sql_tracks()
-        elif selection == "Motile Run":
-            result = self.load_motile_run()
         elif selection == "External tracks from CSV":
             result = self._load_tracks(import_type="csv")
         elif selection == "External tracks from geff":
             result = self._load_tracks("geff")
         else:
             return
+        self._add_loaded(result)
 
+    def load_tracks_from_path(self, path: Path) -> None:
+        """Load tracks from a geff path without asking for it, as for a path
+        given on the command line.
+
+        The path may be a geff store or a directory holding one. A geff that
+        does not load as-is (no axes metadata, an external segmentation,
+        non-standard property names) opens the geff import dialog with the path
+        filled in, so the user can map it by hand.
+
+        Args:
+            path (Path): The geff store to load.
+        """
+        path = Path(path)
+        try:
+            result = self._load_from_path(path, import_from_geff)
+        except Exception as e:  # noqa: BLE001 - the import dialog can still map it
+            logger.info(
+                "Could not load %s directly (%s), opening import dialog", path, e
+            )
+            result = self._load_tracks("geff", path)
+        self._add_loaded(result)
+
+    def _add_loaded(self, result: tuple[Tracks, str, Path | None] | None) -> None:
+        """Add the result of a loader to the list and announce it.
+
+        Args:
+            result (tuple[Tracks, str, Path | None] | None): (tracks, name, path)
+                as returned by the loaders, or None if nothing was loaded.
+        """
         if result is None:
             return
         tracks, name, source_path = result
@@ -489,28 +539,42 @@ class TracksList(QGroupBox):
     def _load_from_dialog(
         self,
         loader: Callable[[Path], Tracks],
-        geff_path: Callable[[Path], Path | None] | None = None,
     ) -> tuple[Tracks, str, Path] | None:
         """Ask the user for a directory and load tracks from it with `loader`.
 
-        The name shown in the list comes from the directory the user picked. The
-        reported path is the geff store that was actually read, which `geff_path`
-        resolves when the user picks a directory containing one rather than the
-        store itself.
+        The name shown in the list comes from the directory the user picked.
 
         Returns (tracks, name, path), or None if the user cancelled or the
         directory did not contain loadable tracks.
         """
-        if not self.file_dialog.exec_():
+        # A fresh dialog each time: a reused native dialog (seen on Ubuntu) opens
+        # where it was pointed the previous time, ignoring setDirectory.
+        dir_str = QFileDialog.getExistingDirectory(
+            self,
+            "Select tracks directory",
+            self._load_start_dir(),
+            load_dialog_options(directories=True),
+        )
+        if not dir_str:
             return None
-        directory = Path(self.file_dialog.selectedFiles()[0])
+        directory = Path(dir_str)
+        self._last_load_dir = directory.parent
         try:
-            tracks = loader(directory)
+            return self._load_from_path(directory, loader)
         except (ValueError, FileNotFoundError) as e:
             warn(f"Could not load tracks from {directory}: {e}", stacklevel=2)
             return None
-        source = directory if geff_path is None else geff_path(directory)
-        return tracks, directory.stem, source or directory
+
+    @staticmethod
+    def _load_from_path(
+        directory: Path,
+        loader: Callable[[Path], Tracks],
+    ) -> tuple[Tracks, str, Path]:
+        """Load tracks from `directory` with `loader`, letting errors propagate.
+
+        Returns (tracks, name, path) as described in _load_from_dialog.
+        """
+        return loader(directory), directory.stem, directory
 
     def load_internal_tracks(self) -> tuple[Tracks, str, Path] | None:
         """Load tracks saved in internal format. The user selects the GEFF
@@ -533,12 +597,14 @@ class TracksList(QGroupBox):
         path_str, _ = QFileDialog.getOpenFileName(
             self,
             "Open tracks database",
-            str(default_save_dir()),
+            self._load_start_dir(),
             f"SQLite database (*{SQL_SUFFIX});;All files (*)",
+            options=load_dialog_options(),
         )
         if not path_str:
             return None
         path = Path(path_str)
+        self._last_load_dir = path.parent
 
         try:
             tracks = tracks_from_sql(path)
@@ -546,9 +612,3 @@ class TracksList(QGroupBox):
             warn(f"Could not load tracks from {path}: {e}", stacklevel=2)
             return None
         return tracks, path.stem, path
-
-    def load_motile_run(self) -> tuple[Tracks, str, Path] | None:
-        """Load a MotileRun from disk. The user selects the directory created
-        by MotileRun.save(), and the geff store inside it is reported.
-        """
-        return self._load_from_dialog(MotileRun.load, geff_path=MotileRun.geff_path)

@@ -19,6 +19,11 @@ action, so only an instance binding reliably wins: shadowing napari while a
 tracking layer is active is the intended behaviour. Qt widgets that are not
 napari layers (the tree view, the table) dispatch from
 ``current_general_key_actions`` / ``current_tree_widget_specific_actions``.
+
+"app"-targeted actions are not per-TracksViewer, so none of the above picks them
+up: NTEApp binds them as a Qt.WindowShortcut (fires regardless of focus within
+the viewer's window), reading their shortcut out of KEYBINDINGS itself (see
+_nte_app.py).
 """
 
 from __future__ import annotations
@@ -59,7 +64,7 @@ CMD = "meta" if sys.platform == "darwin" else "ctrl"
 # - "description": shown in the panel and in the generated docs table.
 # - "group": section heading in the panel and the docs.
 # - "targets": "tracks_viewer" (napari layers, viewer and the table widget),
-#   "tree_widget", or both.
+#   "tree_widget", or both; or "app" (a window shortcut on NTEApp).
 KEYBINDINGS = {
     "request_new_track": {
         "key": "m",
@@ -168,7 +173,7 @@ KEYBINDINGS = {
         "key": "/",
         "description": "Hide or show all currently active widgets",
         "group": "View",
-        "targets": ["tracks_viewer"],
+        "targets": ["app"],
     },
     "toggle_display_mode": {
         "key": "q",

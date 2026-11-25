@@ -18,8 +18,7 @@ of the application, and it is worth understanding which one you want.
 format, so it can make and enforce assumptions about it: tracks are always written
 as a `geff`_ store, with the metadata and attributes the application needs already
 in place. Anything you save can be loaded back into a later session and picked up
-exactly where you left off, including run-specific extras like the motile solver
-parameters. Use this while you are still working on a dataset.
+exactly where you left off. Use this while you are still working on a dataset.
 
 **Importing and exporting** is for exchanging tracks with other tools. Here the
 application cannot assume much about the format, so it supports more of them (`geff`_
@@ -67,10 +66,6 @@ button starts it:
 - ``SQL database`` - open a tracks database. Unlike the other options this
   does not read the tracks into memory: the database is opened in place and every
   edit is written to it. See :ref:`working-in-a-database`.
-- ``Motile Run`` - load a saved motile run, which restores the solver parameters into
-  the ``Run Editor`` along with the tracks. Select the ``.geff`` store the run was
-  saved to. Runs saved by older versions, which used a timestamped directory
-  containing the tracks and a separate parameters file, can still be loaded.
 - ``External tracks from CSV`` and ``External tracks from geff`` - import tracks that
   were generated elsewhere. These open the import dialog, where you map columns to
   attributes and optionally provide a segmentation; see :ref:`importing-external-tracks`.
@@ -164,8 +159,8 @@ database on disk, where every edit is written as you make it. This is worth doin
 
 - you do not want to lose work if napari closes unexpectedly, since there is nothing
   to remember to save;
-- the graph is large, because the candidate nodes the solver considered but did not
-  select stay on disk rather than in memory;
+- the graph is large, because the candidate nodes that a tracking solver considered
+  but did not select stay on disk rather than in memory;
 - several people annotate the same tracks, for example by each taking a different
   range of timepoints.
 
@@ -192,7 +187,7 @@ above the list.
 What a database holds
 ---------------------
 A database holds the whole graph, including the segmentation and the candidate nodes
-that the solver considered but did not select - which a geff export drops. Deleted
+that a tracking solver considered but did not select - which a geff export drops. Deleted
 nodes are kept as candidates too, so a reopened database still knows about them and
 they can be reconnected. Undo history is not part of the graph and is not kept: after
 reopening, the undo stack starts empty, just as it does after loading a geff.

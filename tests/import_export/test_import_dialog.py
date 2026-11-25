@@ -23,8 +23,6 @@ from funtracks.import_export import (
 
 from napari_track_edit.import_export.menus.import_dialog import ImportDialog
 from napari_track_edit.import_export.menus.prop_map_widget import StandardFieldMapWidget
-from napari_track_edit.motile.backend.motile_run import MotileRun
-from napari_track_edit.motile.backend.solver_params import SolverParams
 
 
 def _remove_geff_shape(root):
@@ -1005,55 +1003,6 @@ def test_geff_import_no_mask_with_segmentation_shape(
         dialog.tracks.graph_solution.num_edges()
         == graph_2d_without_segmentation.num_edges()
     )
-
-
-def test_motile_run_save_load(tmp_path, graph_2d):
-    """Test full MotileRun save/load round-trip."""
-    run = MotileRun(
-        graph=graph_2d,
-        run_name="test_run",
-        solver_params=SolverParams(),
-        ndim=3,
-        time_attr="t",
-    )
-    run_dir = run.save(tmp_path / "test_run.geff")
-
-    # the run dir is itself the geff store, with the run's own files inside it
-    assert (run_dir / "nodes").exists()
-    assert (run_dir / "solver_params.json").exists()
-    assert (run_dir / "attrs.json").exists()
-
-    loaded = MotileRun.load(run_dir)
-    assert loaded.run_name == run.run_name
-    assert loaded.graph_solution.num_nodes() == graph_2d.num_nodes()
-    assert loaded.graph_solution.num_edges() == graph_2d.num_edges()
-    assert loaded.solver_params is not None
-
-
-def test_motile_run_load_backward_compat(tmp_path, graph_2d):
-    """Test that MotileRun.load falls back to 'tracks' when 'tracks.geff' is absent."""
-    run = MotileRun(
-        graph=graph_2d,
-        run_name="old_run",
-        solver_params=SolverParams(),
-        ndim=3,
-        time_attr="t",
-    )
-    saved = run.save(tmp_path / "old_run.geff")
-
-    # Simulate the old save format: the graph in a 'tracks' subdirectory of a
-    # run directory, rather than the run directory being the geff store itself
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    saved.rename(run_dir / "tracks")
-    for name in ("solver_params.json", "attrs.json"):
-        (run_dir / "tracks" / name).rename(run_dir / name)
-    assert not (run_dir / "tracks.geff").exists()
-
-    loaded = MotileRun.load(run_dir)
-    assert loaded.run_name == "old_run"
-    assert loaded.graph_solution.num_nodes() == graph_2d.num_nodes()
-    assert loaded.graph_solution.num_edges() == graph_2d.num_edges()
 
 
 # --- legacy (non-bool) mask conversion -------------------------------------

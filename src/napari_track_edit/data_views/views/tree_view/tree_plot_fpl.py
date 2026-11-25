@@ -105,9 +105,20 @@ _DOCK_RESIZE_EPS_PX = 2.0  # a resize relayouts the whole figure; ignore smaller
 
 
 def _flag_canvas_closed(canvas_ref: weakref.ref) -> None:
-    """Mark a rendercanvas canvas as closed once its C++ widget is gone."""
+    """Close a rendercanvas canvas once its C++ widget is gone.
+
+    close() releases the canvas and, from rendercanvas 3 on, also marks it closed
+    and unregisters it. It ends by closing the native widget, which fails because
+    that widget is already deleted - that error is expected and ignored.
+    Before rendercanvas 3, a Qt canvas only marked itself closed in its Qt close
+    event, which a deleted widget never receives, so the flag is set directly.
+    """
     canvas = canvas_ref()
-    if canvas is not None:
+    if canvas is None:
+        return
+    with contextlib.suppress(RuntimeError):
+        canvas.close()
+    if not canvas.get_closed():  # rendercanvas < 3
         canvas._is_closed = True
 
 

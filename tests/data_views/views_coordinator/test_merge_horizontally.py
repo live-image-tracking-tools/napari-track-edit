@@ -7,13 +7,13 @@ and the resulting graph edits.
 from unittest.mock import patch
 
 import pytest
+from funtracks.data_model import Tracks
 from qtpy.QtCore import Qt
 
 from napari_track_edit.data_views.views_coordinator.tracks_viewer import TracksViewer
 from napari_track_edit.data_views.views_coordinator.user_dialogs import (
     MergeTrackIDDialog,
 )
-from napari_track_edit.motile.backend.motile_run import MotileRun
 
 DIALOG = (
     "napari_track_edit.data_views.views_coordinator.tracks_viewer.select_merge_track_id"
@@ -41,7 +41,7 @@ def tracks_viewer_setup(viewer, graph_2d):
     graph_2d holds nodes 1 (t=0), 2 and 3 (t=1), 4 (t=2), 5 and 6 (t=4), with
     track ids 1, 2, 3, 3, 3 and 5.
     """
-    tracks = MotileRun(graph=graph_2d, run_name="test", ndim=3, time_attr="t")
+    tracks = Tracks(graph=graph_2d, ndim=3, time_attr="t")
     tracks_viewer = TracksViewer.get_instance(viewer)
     tracks_viewer.update_tracks(tracks=tracks, name="test")
     return tracks_viewer, tracks

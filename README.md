@@ -4,16 +4,13 @@
 
 [![tests](https://github.com/live-image-tracking-tools/napari-track-edit/workflows/tests/badge.svg)](https://github.com/live-image-tracking-tools/napari-track-edit/actions)
 [![codecov](https://codecov.io/gh/live-image-tracking-tools/napari-track-edit/branch/main/graph/badge.svg)](https://codecov.io/gh/live-image-tracking-tools/napari-track-edit)
+[![PyPI version](https://badge.fury.io/py/napari-track-edit.svg)](https://badge.fury.io/py/napari-track-edit)
+[![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
 <img src="docs/source/images/logo_transparent.png" align="right" width="180" alt="Napari Track Edit logo" />
 
-A napari plugin for interactive visualization, navigation, and editing of object tracking results. You can open and edit existing tracking data, manually create new tracking results, or run automatic tracking with [motile](https://github.com/funkelab/motile).
+A napari plugin for interactive visualization, navigation, and editing of object tracking results. You can open and edit existing tracking data, and manually create new tracking results.
 The full documentation of the plugin can be found [here](https://liveimagetrackingtools.org/napari-track-edit/).
-
-Motile is a library that makes it easy to solve tracking problems using optimization
-by framing the task as an Integer Linear Program (ILP).
-See the motile [documentation](https://funkelab.github.io/motile)
-for more details on the concepts and method.
 
 ----------------------------------
 
@@ -26,30 +23,10 @@ Currently, napari-track-edit requires python >=3.11.
 
 ### Recommended extras
 
-For better performance, you can install optional extras:
-
-- **numba**: Speeds up candidate graph construction significantly.
-  ```bash
-  pip install napari-track-edit[numba]
-  ```
-
-- **gurobi**: Uses the Gurobi solver instead of the default open-source solver. Gurobi is
-  much faster but requires a license (free for academics).
-  ```bash
-  pip install napari-track-edit[gurobi]
-  ```
-
-You can install multiple extras at once: `pip install napari-track-edit[numba,gurobi]`.
-
-### Gurobi license version mismatch
-
-If you have a Gurobi license and encounter an error about license version mismatch,
-you may need to install a specific version of `gurobipy` that matches your license.
-Use one of the version-specific extras:
-
+For better performance, you can install the optional `numba` extra, which napari uses
+to speed up coloring large label layers:
 ```bash
-pip install napari-track-edit[gurobi12]  # For Gurobi 12.x licenses
-pip install napari-track-edit[gurobi13]  # For Gurobi 13.x licenses
+pip install napari-track-edit[numba]
 ```
 
 ### For developers
@@ -61,7 +38,6 @@ See the developer guide in [`DEVELOPER.md`](DEVELOPER.md) for more information.
 Start napari and open all widgets via `Plugins` > `Napari Track Edit` > `Open all widgets`.
 
 From here you can:
-- load your own Labels or Points data to [track with motile](https://liveimagetrackingtools.org/napari-track-edit/tracking.html#tracking-with-motile),
 - load an image to [manually track objects](https://liveimagetrackingtools.org/napari-track-edit/tracking.html#tracking-from-scratch),
 - or [load existing tracking data](https://liveimagetrackingtools.org/napari-track-edit/saving_loading.html#loading-tracks) to explore or edit.
 

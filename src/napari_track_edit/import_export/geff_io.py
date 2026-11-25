@@ -23,9 +23,8 @@ def is_geff(directory: Path) -> bool:
     contains one, or is empty.
 
     Note that geff's own `check_for_geff` cannot be used here: it reports
-    whether a geff exists at or under a store, and so returns True for an old
-    run directory containing tracks.geff, for a v1 run directory, and even for
-    an empty one.
+    whether a geff exists at or under a store, and so returns True for a
+    directory that merely contains a geff store, and even for an empty one.
     """
     return (directory / "nodes").exists() and (directory / "edges").exists()
 
@@ -34,9 +33,9 @@ def write_geff_over(tracks: Tracks, path: Path) -> None:
     """Write tracks to a geff store, replacing any geff already there.
 
     Saved tracks are a geff store that dependents may also keep their own files
-    in: tracks_saved listeners write extra data (e.g. solver params) inside the
-    store, and it survives because writing a geff only replaces geff-controlled
-    groups. Zarr walks the directory on the way and warns once per file it does
+    in: tracks_saved listeners write extra data (e.g. application-specific
+    settings) inside the store, and it survives because writing a geff only
+    replaces geff-controlled groups. Zarr walks the directory on the way and warns once per file it does
     not recognise, and geff warns that it found non-geff members. Both are
     expected for any store with extras in it and say nothing the caller can act
     on, so they are silenced.
