@@ -24,6 +24,9 @@ napari layers (the tree view, the table) dispatch from
 up: NTEApp binds them as a Qt.WindowShortcut (fires regardless of focus within
 the viewer's window), reading their shortcut out of KEYBINDINGS itself (see
 _nte_app.py).
+
+The "orthogonal_views" action belongs to napari-orthogonal-views, which
+registers it with napari's ``action_manager`` itself.
 """
 
 from __future__ import annotations
@@ -40,6 +43,7 @@ from app_model.backends.qt import QKeyBindingSequence
 from app_model.types import KeyBinding
 from napari.utils.action_manager import action_manager
 from napari.utils.key_bindings import coerce_keybinding
+from napari_orthogonal_views.shortcuts import CENTER_ACTION, set_center_shortcut
 from psygnal import Signal
 from qtpy.QtCore import Qt
 
@@ -64,7 +68,8 @@ CMD = "meta" if sys.platform == "darwin" else "ctrl"
 # - "description": shown in the panel and in the generated docs table.
 # - "group": section heading in the panel and the docs.
 # - "targets": "tracks_viewer" (napari layers, viewer and the table widget),
-#   "tree_widget", or both; or "app" (a window shortcut on NTEApp).
+#   "tree_widget", or both; or "app" (a window shortcut on NTEApp); or
+#   "orthogonal_views" (napari-orthogonal-views' own action
 KEYBINDINGS = {
     "request_new_track": {
         "key": "m",
@@ -174,6 +179,12 @@ KEYBINDINGS = {
         "description": "Hide or show all currently active widgets",
         "group": "View",
         "targets": ["app"],
+    },
+    "center_view_on_mouse": {
+        "key": "T",
+        "description": "Center all views on the mouse position (orthogonal views)",
+        "group": "View",
+        "targets": ["orthogonal_views"],
     },
     "toggle_display_mode": {
         "key": "q",
@@ -356,6 +367,17 @@ def refresh_napari_keymaps(tracks_viewer: TracksViewer) -> None:
             _apply_instance_keymap(target, tracks_viewer)
 
 
+def sync_orthogonal_views_shortcut() -> None:
+    """Give napari-orthogonal-views' center-on-mouse action our current key.
+
+    The action and its shortcut live in napari's process-wide action manager,
+    so this covers every viewer at once and also updates the hint shown in the
+    orthogonal views' controls.
+    """
+    shortcuts = current_shortcuts("center_view_on_mouse")
+    set_center_shortcut(shortcuts[0] if shortcuts else "")
+
+
 def blocked_napari_binding(_layer=None) -> None:
     """No-op stand-in for a napari binding we deliberately swallow."""
 
@@ -399,6 +421,8 @@ def napari_conflicts(shortcut: str) -> list[str]:
     found = []
     # Snapshot: `_shortcuts` is a defaultdict napari writes to lazily.
     for action_id, bound in list(action_manager._shortcuts.items()):
+        if action_id == CENTER_ACTION:
+            continue
         registered = action_manager._actions.get(action_id)
         if registered is not None and key in _normalize(bound):
             found.append(registered.description)

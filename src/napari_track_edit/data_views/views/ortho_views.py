@@ -16,7 +16,11 @@ from napari_orthogonal_views.ortho_view_manager import (  # noqa
 )
 
 from napari_track_edit.data_views.colormap import construct_direct_colormap
-from napari_track_edit.data_views.keybindings_config import bind_keymap
+from napari_track_edit.data_views.keybindings_config import (
+    SHORTCUTS,
+    bind_keymap,
+    sync_orthogonal_views_shortcut,
+)
 from napari_track_edit.data_views.views.layers.click_utils import (
     detect_click,
     detect_side_button,
@@ -473,6 +477,9 @@ def initialize_ortho_views(viewer: Viewer) -> OrthoViewManager:
     Returns:
         OrthoViewManager: reference to the OrthoViewManager instance
     """
+
+    sync_orthogonal_views_shortcut()
+    SHORTCUTS.changed.connect(sync_orthogonal_views_shortcut, unique=True)
 
     orth_view_manager = _get_manager(viewer)
 

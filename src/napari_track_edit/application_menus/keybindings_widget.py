@@ -40,12 +40,14 @@ DOCS_URL = "https://liveimagetrackingtools.org/napari-track-edit/key_bindings.ht
 def _shadows_napari(action: str) -> bool:
     """Whether this action can shadow a napari binding at all.
 
-    Only the "tracks_viewer" actions are bound on napari layers and the viewer.
+    The "tracks_viewer" actions are bound on napari layers and the viewer, and
+    the "orthogonal_views" action is a napari action on every viewer model.
     A lineage-view-only action is dispatched by `TreeWidget.keyPressEvent`, so
     it is live only while that view has focus and never takes a key away from
     napari.
     """
-    return "tracks_viewer" in KEYBINDINGS[action]["targets"]
+    targets = KEYBINDINGS[action]["targets"]
+    return "tracks_viewer" in targets or "orthogonal_views" in targets
 
 
 def _label(action: str) -> str:
@@ -220,8 +222,12 @@ class KeybindingsWidget(QDialog):
             messages.append(
                 "Also used by napari for "
                 + ", ".join(f"<i>{name}</i>" for name in overlaps)
-                + " - the Motile Tracker action wins while a tracking layer is "
-                "active."
+                + (
+                    "."
+                    if "orthogonal_views" in KEYBINDINGS[action]["targets"]
+                    else " - the Motile Tracker action wins while a tracking "
+                    "layer is active."
+                )
             )
         self._status.setText(" ".join(messages))
 

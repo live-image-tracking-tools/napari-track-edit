@@ -60,6 +60,8 @@ View
      - Action
    * - /
      - Hide or show all currently active widgets
+   * - T
+     - Center all views on the mouse position (orthogonal views)
    * - Q
      - Cycle the display mode: All to Lineage to Group. Skips Group when no groups exist
 
