@@ -194,5 +194,7 @@ The remaining options apply to all tracks:
 
       Orthogonal views and clipping planes
 
+    Note: always launch the orthogonal views from the ``Visualization`` tab, not from the napari plugins menu or the command palette, since this does not connect the ``napari-track-edit` functions!
+
 - ``Display keybinds on canvas``: show or hide the text overlay with the most important
   key bindings and the current display mode.
