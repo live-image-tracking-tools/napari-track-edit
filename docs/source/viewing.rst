@@ -181,8 +181,20 @@ The remaining options apply to all tracks:
 - ``Color by``: the node feature used to color the labels, points, tracks, tree and table.
   You can color by tracklet ID (default), lineage ID, membership of a :doc:`group <groups>`,
   or choose ``None`` to paint every node in one flat color.
-- ``Orthogonal views``: show orthogonal views of the data next to the main view.
-  Press ``T`` to center all views on the mouse cursor. For 2D + time data, the ortho views
-  show the time axis.
+- ``Orthogonal views``: show orthogonal views of the data next to the main view. For 2D + time data, the ortho views show the time axis.
+  The orthogonal views controls panel offers additional display options:
+    - ``Crosshairs`` indicate the current slice positions colored by axis (z: yellow, y: magenta, x: cyan). The ``T`` keyboard shortcut centers all views on the mouse cursor. The crosshair lines indicate the position along their axis: moving the x slider moves the x (cyan) crosshair horizontally (along the x axis). In a 3D rendering, the crosshairs show as 2D planes instead.
+    - ``Sync camera`` ensures that the camera zoom, center, and (in 3D) angles are synced.
+    - ``Sync display mode`` syncs the 2D/3D toggle, grid mode, and view reset functionalities across the different views.
+    - The ``Orthoslices`` tab allows you to view a 3D rendering as slices (the same as shown in ortho views, but simultaneously), or as cropped regions using clipping planes. These settings only apply to the views that are rendered in 3D. It is possible to link multiple layers to follow the same slicing: select the layers and click the ``link the selected layers`` checkbox.
+
+    .. figure:: images/ortho_view_usage.gif
+      :width: 700px
+      :align: center
+
+      Orthogonal views and clipping planes
+
+    Note: always launch the orthogonal views from the ``Visualization`` tab, not from the napari plugins menu or the command palette, since this does not connect the ``napari-track-edit` functions!
+
 - ``Display keybinds on canvas``: show or hide the text overlay with the most important
   key bindings and the current display mode.

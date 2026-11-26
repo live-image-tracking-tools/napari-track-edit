@@ -528,8 +528,10 @@ class OrthoViewsController:
 
     def show(self) -> None:
         self.manager.show()
+        self.manager.controls_tab.setVisible(True)
         self.config.orthoviews_enabled = True
 
     def hide(self) -> None:
         self.manager.hide()
+        self.manager.controls_tab.setVisible(False)
         self.config.orthoviews_enabled = False
