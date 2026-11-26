@@ -355,3 +355,48 @@ def test_point_size_stable_when_editing_in_ortho_views(
         assert np.array_equal(copied_layer.size, points_layer.size)
 
     m.cleanup()
+
+
+def test_center_view_on_mouse_follows_rebind(viewer, qtbot):
+    """The orthogonal views' center-on-mouse shortcut is rebindable from our
+    keybindings, and their controls show the current key."""
+    from napari.utils.interactions import Shortcut
+    from napari_orthogonal_views.shortcuts import center_shortcuts
+
+    from napari_track_edit.data_views.keybindings_config import (
+        restore_default_shortcuts,
+        set_shortcut,
+    )
+
+    viewer.add_image(np.zeros((10, 10, 10), dtype=np.uint8))
+    m = initialize_ortho_views(viewer)
+    m.show()
+    qtbot.waitUntil(lambda: m.is_shown(), timeout=1000)
+    label = m.main_controls_widget.controls_widget.center_shortcut_label
+    assert center_shortcuts() == ["T"]
+
+    try:
+        set_shortcut("center_view_on_mouse", "shift+g")
+        assert center_shortcuts() == ["Shift+G"]
+        assert Shortcut("Shift+G").platform in label.text()
+
+        set_shortcut("center_view_on_mouse", "")
+        assert center_shortcuts() == []
+    finally:
+        # The shortcut lives in napari's process-wide action manager.
+        restore_default_shortcuts()
+        m.hide()
+    assert center_shortcuts() == ["T"]
+
+
+def test_center_view_on_mouse_is_not_a_napari_conflict(viewer):
+    """It is our own action, so the keybindings panel must not report it as a
+    napari action taking the key (napari's own uses of "T" are still listed)."""
+    from napari.utils.action_manager import action_manager
+    from napari_orthogonal_views.shortcuts import CENTER_ACTION
+
+    from napari_track_edit.data_views.keybindings_config import napari_conflicts
+
+    initialize_ortho_views(viewer)
+    ours = action_manager._actions[CENTER_ACTION].description
+    assert ours not in napari_conflicts("T")

@@ -63,7 +63,13 @@ class NTEApp:
         specific layer/widget they are bound to. Window (not application) scope
         keeps a second viewer's shortcut from stealing the key.
         """
-        from napari_track_edit.data_views.keybindings_config import KEYBINDINGS
+        from app_model.backends.qt import QKeyBindingSequence
+        from app_model.types import KeyBinding
+
+        from napari_track_edit.data_views.keybindings_config import (
+            KEYBINDINGS,
+            current_shortcuts,
+        )
 
         qt_window = self.viewer.window._qt_window
         for action, config in KEYBINDINGS.items():
@@ -72,8 +78,11 @@ class NTEApp:
             handler = getattr(self, action, None)
             if handler is None:
                 continue
-            for key in config["napari_keys"]:
-                shortcut = QShortcut(key, qt_window)
+            for key in current_shortcuts(action):
+                # Parsed as napari spells it, not as Qt does (they disagree on
+                # macOS about Ctrl/Cmd); see keybindings_config._qt_combo.
+                sequence = QKeyBindingSequence(KeyBinding.from_str(key))
+                shortcut = QShortcut(sequence, qt_window)
                 shortcut.setContext(Qt.WindowShortcut)
                 shortcut.activated.connect(handler)
                 self._shortcuts.append(shortcut)
